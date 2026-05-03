@@ -136,6 +136,75 @@ def test_postgres_snapshot_schema_contains_provider_columns():
     assert "quality_status TEXT" in MARKET_BAR_SNAPSHOT_SCHEMA
 
 
+def test_postgres_snapshot_reader_loads_bar_snapshots_with_filters():
+    """PostgresSnapshotReader should load market bars for TradingAgents context."""
+    from vnpy_router.storage import PostgresSnapshotReader
+
+    connection = FakeConnection(
+        fetchall_result=[
+            {
+                "vt_symbol": "600519.SSE",
+                "symbol": "600519",
+                "exchange": "SSE",
+                "interval": "d",
+                "datetime": datetime(2024, 1, 3),
+                "open_price": 1688,
+                "high_price": 1700,
+                "low_price": 1680,
+                "close_price": 1695,
+                "volume": 1200,
+                "turnover": 2034000,
+                "open_interest": 0,
+                "provider_name": "local_file",
+                "provider_endpoint": "/tmp/600519.SSE_d.csv",
+                "provider_version": "hash:abc",
+                "adjustment": "none",
+                "quality_status": "passed",
+                "quality_report_id": "qr-1",
+            }
+        ]
+    )
+    reader = PostgresSnapshotReader(connection)
+
+    rows = reader.load_bar_snapshots(
+        vt_symbol="600519.SSE",
+        start=datetime(2024, 1, 1),
+        end=datetime(2024, 1, 3),
+        interval="d",
+        provider_name="local_file",
+    )
+
+    sql, params = connection.cursor_obj.executed[0]
+    assert "FROM market_bar_snapshot" in sql
+    assert "interval = %(interval)s" in sql
+    assert "provider_name = %(provider_name)s" in sql
+    assert params["vt_symbol"] == "600519.SSE"
+    assert params["interval"] == "d"
+    assert params["provider_name"] == "local_file"
+    assert rows == [
+        {
+            "vt_symbol": "600519.SSE",
+            "symbol": "600519",
+            "exchange": "SSE",
+            "interval": "d",
+            "datetime": "2024-01-03T00:00:00",
+            "open_price": 1688,
+            "high_price": 1700,
+            "low_price": 1680,
+            "close_price": 1695,
+            "volume": 1200,
+            "turnover": 2034000,
+            "open_interest": 0,
+            "provider_name": "local_file",
+            "provider_endpoint": "/tmp/600519.SSE_d.csv",
+            "provider_version": "hash:abc",
+            "adjustment": "none",
+            "quality_status": "passed",
+            "quality_report_id": "qr-1",
+        }
+    ]
+
+
 def test_akshare_provider_missing_dependency_degrades(monkeypatch):
     """AkshareProvider should degrade to empty data when akshare is missing."""
     import importlib
@@ -169,11 +238,15 @@ def test_akshare_provider_missing_dependency_degrades(monkeypatch):
 class FakeCursor:
     """Tiny DB-API cursor fake for storage unit tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, fetchall_result: list[dict] | None = None) -> None:
         self.executed: list[tuple[str, dict]] = []
+        self.fetchall_result: list[dict] = fetchall_result or []
 
     def execute(self, sql: str, params: dict | None = None) -> None:
         self.executed.append((sql, params or {}))
+
+    def fetchall(self) -> list[dict]:
+        return self.fetchall_result
 
     def close(self) -> None:
         return
@@ -182,8 +255,8 @@ class FakeCursor:
 class FakeConnection:
     """Tiny DB-API connection fake for storage unit tests."""
 
-    def __init__(self) -> None:
-        self.cursor_obj = FakeCursor()
+    def __init__(self, fetchall_result: list[dict] | None = None) -> None:
+        self.cursor_obj = FakeCursor(fetchall_result)
         self.committed = False
 
     def cursor(self) -> FakeCursor:

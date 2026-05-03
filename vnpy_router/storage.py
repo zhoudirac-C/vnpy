@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Protocol, Any
 
 from vnpy.trader.object import BarData
@@ -96,6 +97,9 @@ class Cursor(Protocol):
     def execute(self, sql: str, params: dict[str, Any] | None = None) -> None:
         pass
 
+    def fetchall(self) -> list[Mapping[str, Any]]:
+        pass
+
     def close(self) -> None:
         pass
 
@@ -145,6 +149,82 @@ class PostgresSnapshotStorage:
             cursor.close()
 
 
+class PostgresSnapshotReader:
+    """
+    PostgreSQL snapshot reader for TradingAgents and replay contexts.
+    """
+
+    def __init__(self, connection: Connection) -> None:
+        """"""
+        self.connection: Connection = connection
+
+    def load_bar_snapshots(
+        self,
+        vt_symbol: str,
+        start: datetime,
+        end: datetime,
+        interval: str = "",
+        provider_name: str = "",
+    ) -> list[dict[str, Any]]:
+        """
+        Load market bar snapshots from PostgreSQL.
+        """
+        where_clauses: list[str] = [
+            "vt_symbol = %(vt_symbol)s",
+            "datetime >= %(start)s",
+            "datetime <= %(end)s",
+        ]
+        params: dict[str, Any] = {
+            "vt_symbol": vt_symbol,
+            "start": start,
+            "end": end,
+        }
+
+        if interval:
+            where_clauses.append("interval = %(interval)s")
+            params["interval"] = interval
+
+        if provider_name:
+            where_clauses.append("provider_name = %(provider_name)s")
+            params["provider_name"] = provider_name
+
+        sql: str = SELECT_MARKET_BAR_SNAPSHOT_SQL.format(
+            where_clause=" AND ".join(where_clauses)
+        )
+        cursor: Cursor = self.connection.cursor()
+        try:
+            cursor.execute(sql, params)
+            return [_bar_row_to_dict(row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+
+SELECT_MARKET_BAR_SNAPSHOT_SQL: str = """
+SELECT
+    vt_symbol,
+    symbol,
+    exchange,
+    interval,
+    datetime,
+    open_price,
+    high_price,
+    low_price,
+    close_price,
+    volume,
+    turnover,
+    open_interest,
+    provider_name,
+    provider_endpoint,
+    provider_version,
+    adjustment,
+    quality_status,
+    quality_report_id
+FROM market_bar_snapshot
+WHERE {where_clause}
+ORDER BY datetime ASC;
+"""
+
+
 def _bar_to_params(bar: BarData) -> dict[str, Any]:
     """
     Convert BarData into SQL params.
@@ -172,3 +252,14 @@ def _bar_to_params(bar: BarData) -> dict[str, Any]:
         "quality_status": extra.get("quality_status"),
         "quality_report_id": extra.get("quality_report_id"),
     }
+
+
+def _bar_row_to_dict(row: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Convert a SQL row into a JSON-friendly snapshot dictionary.
+    """
+    data: dict[str, Any] = dict(row)
+    value: Any = data.get("datetime")
+    if isinstance(value, datetime):
+        data["datetime"] = value.isoformat()
+    return data
