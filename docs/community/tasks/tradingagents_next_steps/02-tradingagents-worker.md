@@ -27,7 +27,7 @@
   - 目标：支持 CLI 或子进程运行，支持 JSON 输入输出，支持超时、重试和失败状态。
   - 验收：主进程失败时 runtime 状态变为 degraded；失败不影响策略和风控继续运行。
 
-- [ ] **P2-T05: Worker raw state 和模型信息落库**
+- [x] **P2-T05: Worker raw state 和模型信息落库**
   - 修改：`vnpy_tradingagents/storage.py`
   - 补充字段：`model_provider`、`model_name`、`prompt_version`、`snapshot_ids`、`error_message`
   - 验收：同一输入快照可复跑并对比输出差异。
@@ -45,3 +45,4 @@
 | P2-T02 | 2026-05-03 | `ff7abafb` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
 | P2-T03 | 2026-05-03 | `ab3efcec` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_prompts.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
 | P2-T04 | 2026-05-03 | `55bbd5c0` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_worker_process.py tests/test_tradingagents_prompts.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
+| P2-T05 | 2026-05-03 | `95a18106` | `uv run --with pytest pytest tests/test_tradingagents_storage_service.py -v` |
