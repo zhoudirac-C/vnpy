@@ -14,6 +14,7 @@ from .engine import TradingAgentsEngine
 from .toolkit import MarketDataToolkit, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 from .worker_adapter import TradingAgentsContextPayload, TradingAgentsWorkerAdapter
+from .prompts import ASHARE_RULES_PROMPT, PROMPT_VERSION, build_worker_system_prompt
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
@@ -47,6 +48,7 @@ from .policy import AiSignalPolicy, SignalDecision
 
 __all__ = [
     "AiSignalPolicy",
+    "ASHARE_RULES_PROMPT",
     "DecisionAuditRecord",
     "FusedSignal",
     "GatewayAccountMode",
@@ -63,6 +65,7 @@ __all__ = [
     "PreOrderDecisionResult",
     "PreOrderDecisionService",
     "PortfolioIntent",
+    "PROMPT_VERSION",
     "PortfolioReplayEngine",
     "PortfolioReplayStep",
     "PortfolioReplayStepResult",
@@ -100,4 +103,5 @@ __all__ = [
     "TradingAgentsWorkerResponse",
     "WorkerConfigError",
     "WorkerConfigValidation",
+    "build_worker_system_prompt",
 ]
