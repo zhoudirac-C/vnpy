@@ -36,6 +36,7 @@
 - [x] 事件/新闻/公告/情绪快照管线与降级策略。
 - [x] 股票池批量长期任务、长期调度器、组合约束和绩效反馈。
 - [x] 回测桥接、PaperAccount 仿真桥接、灰度状态持久化、审计导出、schema 初始化和 live gate。
+- [x] 生产级 PostgreSQL migration runner、schema CLI 和 readiness checker。
 
 ## 阶段文档
 
@@ -55,8 +56,7 @@
 
 ## 下一步推荐
 
-1. 先做 P7，把 schema 初始化升级为可追踪 migration，并提供生产健康检查。
-2. 再做 P8，把真实 TradingAgents runner 接到 `TradingAgentsWorkerAdapter`，继续保持 context-only 边界。
-3. 接着做 P9，补真实 provider 能力矩阵和可诊断的数据源降级。
-4. 然后做 P10，进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
-5. 最后做 P11，补运维观测、备份、密钥治理和小资金上线流程。
+1. 先做 P8，把真实 TradingAgents runner 接到 `TradingAgentsWorkerAdapter`，继续保持 context-only 边界。
+2. 接着做 P9，补真实 provider 能力矩阵和可诊断的数据源降级。
+3. 然后做 P10，进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
+4. 最后做 P11，补运维观测、备份、密钥治理和小资金上线流程。

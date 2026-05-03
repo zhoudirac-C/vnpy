@@ -4,7 +4,7 @@
 
 日期：2026-05-03
 
-状态：阶段任务 P1-P6 已实现，进入真实数据源、真实 Worker 和 PaperAccount 联调
+状态：阶段任务 P1-P7 已实现，下一步进入真实 TradingAgents runner、真实数据源和 PaperAccount 联调
 
 > 本文档用于本 fork 的二次开发规划，不构成任何投资建议。任何数据源和 TradingAgents 都只能作为投研与信号辅助；实盘前必须经过回测、人工确认、风控、OMS 和账户对账。
 
@@ -1193,6 +1193,7 @@ P4 --> P5
 | Phase 3B | 已完成 | `ResearchSnapshot`、批量长期任务、长期调度、组合意图 |
 | Phase 4 | 已完成 | `SignalFusionService`、`AiSignalPolicy`、`PreOrderDecisionService`、审计 |
 | Phase 5 | 已完成 | 回测桥接、PaperAccount 仿真桥接、灰度状态、审计导出、live gate |
+| Phase 7 | 已完成 | `MigrationRunner`、schema CLI、`ProductionReadinessChecker` |
 
 ### Phase 1：公共数据底座
 
@@ -1335,7 +1336,7 @@ P4 --> P5
 - 回测桥接：`BacktestingBridge` 在回测时间点读取 `RatingSignal`、`PortfolioIntent`、`IntradayAdvice`，复用融合和风控，不访问真实 Gateway。
 - 仿真 Gateway 配置：`PaperAccountBridge` 只在 `GatewayAccountMode.SIMULATION` 下启用 AI，并把模拟成交写入 feedback。
 - 灰度运行面板或日志：`ReplayRunStatusBuilder` 汇总日内/长期回放结果，`PostgresReplayRunStatusStorage` 持久化 `replay_run_status`，`ReplayRunStatusLog` 输出稳定 JSON line。
-- 审计和迁移：`audit_export` 支持 JSONL/CSV 导出，`initialize_postgres_schema()` 可一键初始化 TradingAgents/router 全部 PostgreSQL 表。
+- 审计和迁移：`audit_export` 支持 JSONL/CSV 导出，`initialize_postgres_schema()` 已改为 migration runner，可一键初始化 TradingAgents/router 全部 PostgreSQL 表并记录 `schema_migration`。
 - 实盘准入：`LiveGate` 检查模拟盘稳定天数、最大回撤、审计完整率和 live AI 显式开启；`pause_manual_takeover()` 可一键暂停所有 AI signal 使用。
 
 验收：
@@ -1360,11 +1361,12 @@ P4 --> P5
 
 ## 11. 推荐近期行动
 
-1. 在真实 PostgreSQL 上执行 `initialize_postgres_schema()`，确认 schema、索引和版本初始化可重复运行。
-2. 用本地 CSV/JSON 和 AKShare provider 跑通 `vnpy_router` 快照写入，再按需接 TuShare、QMT、XT 或 RQData。
+1. 在真实 PostgreSQL 上运行 `vnpy-tradingagents-schema schema init --dsn ...`，确认 `schema_migration` 和业务表创建成功。
+2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
 3. 将真实 TradingAgents runner 接入 `TradingAgentsWorkerAdapter`，继续保持 context-only，不开放 Gateway/MainEngine/send_order。
-4. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
-5. 模拟盘连续稳定后，再通过 `LiveGate` 做小资金实盘准入检查。
+4. 用本地 CSV/JSON 和 AKShare provider 跑通 `vnpy_router` 快照写入，再按需接 TuShare、QMT、XT 或 RQData。
+5. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
+6. 模拟盘连续稳定后，再通过 `LiveGate` 做小资金实盘准入检查。
 
 ## 12. 资料来源
 
