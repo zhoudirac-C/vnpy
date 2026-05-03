@@ -47,10 +47,16 @@
 | P4 | [04-event-news-sentiment.md](04-event-news-sentiment.md) | 补新闻、公告、事件和情绪快照管线 |
 | P5 | [05-batch-portfolio-feedback.md](05-batch-portfolio-feedback.md) | 补长期批量调度、组合约束和绩效反馈 |
 | P6 | [06-backtest-simulation-gray-release.md](06-backtest-simulation-gray-release.md) | 接入真实回测、仿真、灰度审计导出和部署迁移 |
+| P7 | [07-production-postgres-readiness.md](07-production-postgres-readiness.md) | 补生产级 PostgreSQL 迁移、CLI 初始化和健康检查 |
+| P8 | [08-real-tradingagents-runner.md](08-real-tradingagents-runner.md) | 接入真实 TradingAgents runner 和输出校验 |
+| P9 | [09-production-data-sources.md](09-production-data-sources.md) | 补 TuShare/QMT/XT 和新闻社媒生产化数据源 |
+| P10 | [10-vnpy-paper-backtest-integration.md](10-vnpy-paper-backtest-integration.md) | 把桥接层挂到真实 vn.py 回测、PaperAccount 和 UI |
+| P11 | [11-operations-live-readiness.md](11-operations-live-readiness.md) | 补运维观测、备份、密钥治理和小资金上线 Runbook |
 
 ## 下一步推荐
 
-1. 用真实 PostgreSQL 实例跑 `initialize_postgres_schema()`，确认 schema 初始化和重复执行幂等。
-2. 配置 `vnpy_router` 的 provider 顺序，先用本地文件/AKShare 验证数据快照，再接 TuShare/QMT/XT。
-3. 把真实 TradingAgents runner 接到 `TradingAgentsWorkerAdapter`，继续保持 context-only 边界。
-4. 进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
+1. 先做 P7，把 schema 初始化升级为可追踪 migration，并提供生产健康检查。
+2. 再做 P8，把真实 TradingAgents runner 接到 `TradingAgentsWorkerAdapter`，继续保持 context-only 边界。
+3. 接着做 P9，补真实 provider 能力矩阵和可诊断的数据源降级。
+4. 然后做 P10，进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
+5. 最后做 P11，补运维观测、备份、密钥治理和小资金上线流程。
