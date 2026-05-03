@@ -17,12 +17,21 @@ from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
 from .research import LongHorizonAgentJob, ResearchSnapshot, ResearchSnapshotBuilder
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
+from .risk import (
+    DecisionAuditRecord,
+    OrderIntent,
+    PostgresDecisionAuditStorage,
+    RiskCheckResult,
+    RiskDecision,
+    RiskRuleSet,
+)
 from .signals import IntradayAdvice, PortfolioIntent, RatingSignal
 from .policy import AiSignalPolicy, SignalDecision
 
 
 __all__ = [
     "AiSignalPolicy",
+    "DecisionAuditRecord",
     "FusedSignal",
     "IntradayAdvice",
     "IntradayAgentJob",
@@ -30,12 +39,17 @@ __all__ = [
     "IntradaySnapshotBuilder",
     "LongHorizonAgentJob",
     "MarketDataToolkit",
+    "OrderIntent",
     "PortfolioIntent",
     "PostgresAgentStorage",
+    "PostgresDecisionAuditStorage",
     "PostgresSignalReader",
     "RatingSignal",
     "ResearchSnapshot",
     "ResearchSnapshotBuilder",
+    "RiskCheckResult",
+    "RiskDecision",
+    "RiskRuleSet",
     "RuleSignal",
     "SignalStatus",
     "SignalDecision",
