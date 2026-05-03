@@ -235,6 +235,69 @@ def test_postgres_snapshot_reader_loads_bar_snapshots_with_filters():
     ]
 
 
+def test_postgres_snapshot_reader_loads_latest_payload_snapshot():
+    """PostgresSnapshotReader should load latest payload snapshot with provider metadata."""
+    from vnpy_router.storage import PostgresSnapshotReader
+
+    connection = FakeConnection(
+        fetchone_result={
+            "as_of": datetime(2024, 1, 3),
+            "provider_name": "akshare",
+            "provider_version": "2024-01-03",
+            "quality_status": "passed",
+            "payload": {
+                "pe": 25.2,
+                "roe": 0.18,
+            },
+        }
+    )
+    reader = PostgresSnapshotReader(connection)
+
+    snapshot = reader.load_latest_snapshot(
+        snapshot_type="fundamentals",
+        vt_symbol="600519.SSE",
+        as_of=datetime(2024, 1, 4),
+    )
+
+    sql, params = connection.cursor_obj.executed[0]
+    assert "FROM fundamental_snapshot" in sql
+    assert "as_of <= %(as_of)s" in sql
+    assert params["vt_symbol"] == "600519.SSE"
+    assert snapshot == {
+        "pe": 25.2,
+        "roe": 0.18,
+        "_snapshot_type": "fundamentals",
+        "_as_of": "2024-01-03T00:00:00",
+        "_provider_name": "akshare",
+        "_provider_version": "2024-01-03",
+        "_quality_status": "passed",
+    }
+
+
+def test_postgres_snapshot_reader_returns_none_for_missing_or_deferred_snapshot():
+    """PostgresSnapshotReader should degrade cleanly when a snapshot is missing."""
+    from vnpy_router.storage import PostgresSnapshotReader
+
+    reader = PostgresSnapshotReader(FakeConnection(fetchone_result=None))
+
+    assert (
+        reader.load_latest_snapshot(
+            snapshot_type="fundamentals",
+            vt_symbol="600519.SSE",
+            as_of=datetime(2024, 1, 4),
+        )
+        is None
+    )
+    assert (
+        reader.load_latest_snapshot(
+            snapshot_type="news",
+            vt_symbol="600519.SSE",
+            as_of=datetime(2024, 1, 4),
+        )
+        is None
+    )
+
+
 def test_akshare_provider_missing_dependency_degrades(monkeypatch):
     """AkshareProvider should degrade to empty data when akshare is missing."""
     import importlib
@@ -268,15 +331,23 @@ def test_akshare_provider_missing_dependency_degrades(monkeypatch):
 class FakeCursor:
     """Tiny DB-API cursor fake for storage unit tests."""
 
-    def __init__(self, fetchall_result: list[dict] | None = None) -> None:
+    def __init__(
+        self,
+        fetchall_result: list[dict] | None = None,
+        fetchone_result: dict | None = None,
+    ) -> None:
         self.executed: list[tuple[str, dict]] = []
         self.fetchall_result: list[dict] = fetchall_result or []
+        self.fetchone_result: dict | None = fetchone_result
 
     def execute(self, sql: str, params: dict | None = None) -> None:
         self.executed.append((sql, params or {}))
 
     def fetchall(self) -> list[dict]:
         return self.fetchall_result
+
+    def fetchone(self) -> dict | None:
+        return self.fetchone_result
 
     def close(self) -> None:
         return
@@ -285,8 +356,12 @@ class FakeCursor:
 class FakeConnection:
     """Tiny DB-API connection fake for storage unit tests."""
 
-    def __init__(self, fetchall_result: list[dict] | None = None) -> None:
-        self.cursor_obj = FakeCursor(fetchall_result)
+    def __init__(
+        self,
+        fetchall_result: list[dict] | None = None,
+        fetchone_result: dict | None = None,
+    ) -> None:
+        self.cursor_obj = FakeCursor(fetchall_result, fetchone_result)
         self.committed = False
 
     def cursor(self) -> FakeCursor:

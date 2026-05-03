@@ -150,6 +150,32 @@ DO UPDATE SET
 """
 
 
+PAYLOAD_SNAPSHOT_TABLES: dict[str, str] = {
+    "fundamentals": "fundamental_snapshot",
+    "valuation": "valuation_snapshot",
+    "industry": "industry_snapshot",
+    "benchmark": "benchmark_snapshot",
+    "portfolio": "portfolio_snapshot",
+}
+
+DEFERRED_SNAPSHOT_TYPES: frozenset[str] = frozenset({"news", "sentiment"})
+
+
+SELECT_LATEST_PAYLOAD_SNAPSHOT_SQL: str = """
+SELECT
+    as_of,
+    provider_name,
+    provider_version,
+    quality_status,
+    payload
+FROM {table_name}
+WHERE vt_symbol = %(vt_symbol)s
+  AND as_of <= %(as_of)s
+ORDER BY as_of DESC, pulled_at DESC
+LIMIT 1;
+"""
+
+
 class Cursor(Protocol):
     """
     Minimal DB-API cursor protocol used by storage.
@@ -159,6 +185,9 @@ class Cursor(Protocol):
         pass
 
     def fetchall(self) -> list[Mapping[str, Any]]:
+        pass
+
+    def fetchone(self) -> Mapping[str, Any] | None:
         pass
 
     def close(self) -> None:
@@ -259,6 +288,33 @@ class PostgresSnapshotReader:
         finally:
             cursor.close()
 
+    def load_latest_snapshot(
+        self,
+        snapshot_type: str,
+        vt_symbol: str,
+        as_of: datetime,
+    ) -> dict[str, Any] | None:
+        """
+        Load the latest research snapshot payload at or before as_of.
+        """
+        if snapshot_type in DEFERRED_SNAPSHOT_TYPES:
+            return None
+
+        table_name: str | None = PAYLOAD_SNAPSHOT_TABLES.get(snapshot_type)
+        if table_name is None:
+            return None
+
+        sql: str = SELECT_LATEST_PAYLOAD_SNAPSHOT_SQL.format(table_name=table_name)
+        cursor: Cursor = self.connection.cursor()
+        try:
+            cursor.execute(sql, {"vt_symbol": vt_symbol, "as_of": as_of})
+            row: Mapping[str, Any] | None = cursor.fetchone()
+            if row is None:
+                return None
+            return _payload_row_to_dict(snapshot_type, row)
+        finally:
+            cursor.close()
+
 
 SELECT_MARKET_BAR_SNAPSHOT_SQL: str = """
 SELECT
@@ -323,4 +379,23 @@ def _bar_row_to_dict(row: Mapping[str, Any]) -> dict[str, Any]:
     value: Any = data.get("datetime")
     if isinstance(value, datetime):
         data["datetime"] = value.isoformat()
+    return data
+
+
+def _payload_row_to_dict(snapshot_type: str, row: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Convert a JSONB payload snapshot row into toolkit context.
+    """
+    payload: Any = row.get("payload")
+    if isinstance(payload, Mapping):
+        data: dict[str, Any] = dict(payload)
+    else:
+        data = {"payload": payload}
+
+    as_of: Any = row.get("as_of")
+    data["_snapshot_type"] = snapshot_type
+    data["_as_of"] = as_of.isoformat() if isinstance(as_of, datetime) else as_of
+    data["_provider_name"] = row.get("provider_name")
+    data["_provider_version"] = row.get("provider_version")
+    data["_quality_status"] = row.get("quality_status")
     return data
