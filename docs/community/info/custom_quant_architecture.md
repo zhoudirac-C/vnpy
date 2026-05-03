@@ -1364,3 +1364,7 @@ P4 --> P5
 - TradingAgents Release: https://github.com/TauricResearch/TradingAgents/releases
 - AKShare: https://github.com/akfamily/akshare
 - AKShare 数据说明: https://akshare.akfamily.xyz/data_tips.html
+
+## 13. 后续任务跟踪
+
+未实现任务已拆分到 `docs/community/tasks/tradingagents_next_steps/`。每次完成任务时，先在对应阶段文档中把任务从 `- [ ]` 改为 `- [x]`，再补充完成记录、提交号和验证命令。
