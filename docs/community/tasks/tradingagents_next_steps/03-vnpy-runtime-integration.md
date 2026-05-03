@@ -10,7 +10,7 @@
   - UI 控件：全局启用/禁用、report_only / paper_only / live_allowed 模式、live AI 二次确认、runtime 状态展示。
   - 验收：前端关闭后策略读取 AI 状态为 disabled；live_allowed 必须显式确认。
 
-- [ ] **P3-T02: EventEngine 定时触发日内 Job**
+- [x] **P3-T02: EventEngine 定时触发日内 Job**
   - 创建：`vnpy_tradingagents/scheduler.py`
   - 接入：`EVENT_TIMER`、5/15 分钟节流、可选事件触发。
   - 验收：不逐 tick 调用 LLM；Worker 超时不阻塞事件线程。
@@ -41,3 +41,4 @@
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
 | P3-T01 | 2026-05-03 | `4bf29da8` | `uv run --with pytest pytest tests/test_tradingagents_runtime.py tests/test_tradingagents_ui.py tests/test_tradingagents_policy.py tests/test_tradingagents_gateway_policy.py -v` |
+| P3-T02 | 2026-05-03 | `f0e17bd3` | `uv run --with pytest pytest tests/test_tradingagents_scheduler.py tests/test_tradingagents_ui.py tests/test_tradingagents_runtime.py tests/test_tradingagents_intraday.py tests/test_tradingagents_worker_process.py -v` |
