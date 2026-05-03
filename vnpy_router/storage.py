@@ -31,6 +31,67 @@ CREATE TABLE IF NOT EXISTS market_bar_snapshot (
 """
 
 
+RESEARCH_SNAPSHOT_SCHEMA: str = """
+CREATE TABLE IF NOT EXISTS fundamental_snapshot (
+    vt_symbol TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    pulled_at TIMESTAMPTZ DEFAULT now(),
+    quality_status TEXT,
+    payload JSONB NOT NULL,
+    PRIMARY KEY (vt_symbol, as_of, provider_name)
+);
+
+CREATE TABLE IF NOT EXISTS valuation_snapshot (
+    vt_symbol TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    pulled_at TIMESTAMPTZ DEFAULT now(),
+    quality_status TEXT,
+    payload JSONB NOT NULL,
+    PRIMARY KEY (vt_symbol, as_of, provider_name)
+);
+
+CREATE TABLE IF NOT EXISTS industry_snapshot (
+    vt_symbol TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    pulled_at TIMESTAMPTZ DEFAULT now(),
+    quality_status TEXT,
+    payload JSONB NOT NULL,
+    PRIMARY KEY (vt_symbol, as_of, provider_name)
+);
+
+CREATE TABLE IF NOT EXISTS benchmark_snapshot (
+    vt_symbol TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    pulled_at TIMESTAMPTZ DEFAULT now(),
+    quality_status TEXT,
+    payload JSONB NOT NULL,
+    PRIMARY KEY (vt_symbol, as_of, provider_name)
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_snapshot (
+    vt_symbol TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    pulled_at TIMESTAMPTZ DEFAULT now(),
+    quality_status TEXT,
+    payload JSONB NOT NULL,
+    PRIMARY KEY (vt_symbol, as_of, provider_name)
+);
+"""
+
+
+SNAPSHOT_SCHEMA: str = MARKET_BAR_SNAPSHOT_SCHEMA + RESEARCH_SNAPSHOT_SCHEMA
+
+
 UPSERT_MARKET_BAR_SNAPSHOT_SQL: str = """
 INSERT INTO market_bar_snapshot (
     vt_symbol,
@@ -131,7 +192,7 @@ class PostgresSnapshotStorage:
         """
         cursor: Cursor = self.connection.cursor()
         try:
-            cursor.execute(MARKET_BAR_SNAPSHOT_SCHEMA)
+            cursor.execute(SNAPSHOT_SCHEMA)
             self.connection.commit()
         finally:
             cursor.close()

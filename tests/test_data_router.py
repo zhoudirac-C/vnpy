@@ -128,12 +128,42 @@ def test_postgres_snapshot_storage_saves_bar_with_provider_metadata():
 
 def test_postgres_snapshot_schema_contains_provider_columns():
     """PostgreSQL schema should include provider traceability columns."""
-    from vnpy_router.storage import MARKET_BAR_SNAPSHOT_SCHEMA
+    from vnpy_router.storage import MARKET_BAR_SNAPSHOT_SCHEMA, RESEARCH_SNAPSHOT_SCHEMA
 
     assert "CREATE TABLE IF NOT EXISTS market_bar_snapshot" in MARKET_BAR_SNAPSHOT_SCHEMA
     assert "provider_name TEXT NOT NULL" in MARKET_BAR_SNAPSHOT_SCHEMA
     assert "provider_endpoint TEXT" in MARKET_BAR_SNAPSHOT_SCHEMA
     assert "quality_status TEXT" in MARKET_BAR_SNAPSHOT_SCHEMA
+    for table_name in [
+        "fundamental_snapshot",
+        "valuation_snapshot",
+        "industry_snapshot",
+        "benchmark_snapshot",
+        "portfolio_snapshot",
+    ]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in RESEARCH_SNAPSHOT_SCHEMA
+
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("provider_name TEXT NOT NULL") == 5
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("provider_version TEXT") == 5
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("pulled_at TIMESTAMPTZ DEFAULT now()") == 5
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("quality_status TEXT") == 5
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("payload JSONB NOT NULL") == 5
+
+
+def test_postgres_snapshot_storage_create_schema_includes_research_snapshots():
+    """PostgresSnapshotStorage should create market and research snapshot tables."""
+    from vnpy_router.storage import PostgresSnapshotStorage
+
+    connection = FakeConnection()
+    storage = PostgresSnapshotStorage(connection)
+
+    storage.create_schema()
+
+    sql = connection.cursor_obj.executed[0][0]
+    assert connection.committed
+    assert "CREATE TABLE IF NOT EXISTS market_bar_snapshot" in sql
+    assert "CREATE TABLE IF NOT EXISTS fundamental_snapshot" in sql
+    assert "CREATE TABLE IF NOT EXISTS portfolio_snapshot" in sql
 
 
 def test_postgres_snapshot_reader_loads_bar_snapshots_with_filters():
