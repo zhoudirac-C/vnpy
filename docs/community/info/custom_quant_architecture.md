@@ -15,6 +15,8 @@
 - 使用 AKShare 作为免费投研数据源之一，补齐股票、指数、板块、基础财务和部分事件数据。
 - 接入 TradingAgents 多智能体投研框架，把 LLM 输出落成可审计的研究报告和交易评级。
 - 保留 VeighNa 的核心优势：`EventEngine`、`MainEngine`、`Gateway`、`Datafeed`、`OmsEngine`、策略 App 和风控 App。
+- 持久化数据库统一选用 PostgreSQL，用于 raw data、清洗数据、质量报告、研究快照、AI 报告、信号和交易审计。
+- 后续文档中的架构图、流程图和时序图统一使用 PlantUML，不再使用 Mermaid 作为图示格式。
 - 第一阶段先做投研、数据和回测闭环，不让 AI 或策略绕过风控直接下单。
 
 ## 2. 调研结论
@@ -74,29 +76,56 @@ EventEngine
 
 ## 4. 目标架构
 
-```mermaid
-flowchart TD
-    A["AKShare / 其他数据源"] --> B["Raw Data Cache"]
-    B --> C["Data Quality Check"]
-    C --> D["VeighNa Datafeed<br/>BarData / TickData"]
-    C --> E["Research Snapshot<br/>行情/板块/财务/新闻"]
-    E --> F["TradingAgents Worker"]
-    F --> G["Agent Research Report"]
-    F --> H["AI Rating Signal"]
-    D --> I["Strategy App / Backtesting"]
-    H --> J["Signal Fusion"]
-    I --> J
-    J --> K["Portfolio / Risk"]
-    K --> L["MainEngine / OmsEngine"]
-    L --> M["Gateway<br/>QMT/XTP/TORA/仿真"]
-    M --> N["Account / Orders / Trades"]
-    N --> O["Review / Reflection / Metrics"]
-    O --> F
+```plantuml
+@startuml
+title AKShare + TradingAgents + VeighNa 目标架构
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+component "AKShare / 其他数据源" as DataSource
+database "PostgreSQL\nRaw Data / Clean Data\nQuality Report / Signal / Audit" as PG
+component "Data Quality Check" as Quality
+component "VeighNa Datafeed\nBarData / TickData" as Datafeed
+component "Research Snapshot\n行情 / 板块 / 财务 / 新闻" as Snapshot
+component "TradingAgents Worker" as Agents
+component "Agent Research Report" as Report
+component "AI Rating Signal" as Rating
+component "Strategy App / Backtesting" as Strategy
+component "Signal Fusion" as Fusion
+component "Portfolio / Risk" as Risk
+component "MainEngine / OmsEngine" as Main
+component "Gateway\nQMT / XTP / TORA / 仿真" as Gateway
+component "Account / Orders / Trades" as Account
+component "Review / Reflection / Metrics" as Review
+
+DataSource --> PG : raw ingest
+PG --> Quality : load raw data
+Quality --> PG : clean data + quality report
+PG --> Datafeed
+PG --> Snapshot
+Snapshot --> Agents
+Agents --> Report
+Agents --> Rating
+Report --> PG
+Rating --> PG
+Datafeed --> Strategy
+Rating --> Fusion
+Strategy --> Fusion
+Fusion --> Risk
+Risk --> Main
+Main --> Gateway
+Gateway --> Account
+Account --> PG
+PG --> Review
+Review --> Agents
+
+@enduml
 ```
 
 分层说明：
 
-- 数据层：负责 AKShare 调用、缓存、清洗、字段标准化和质量报告。
+- 数据层：负责 AKShare 调用、PostgreSQL 入库、清洗、字段标准化和质量报告。
 - Datafeed 层：把清洗后数据转换为 VeighNa 标准 `BarData` / `TickData`。
 - 研究层：构造 A 股研究快照，供 TradingAgents 使用。
 - 信号层：规则策略、机器学习策略和 TradingAgents 评级统一落成内部信号。
@@ -125,7 +154,7 @@ vnpy/akshare_datafeed/
   __init__.py
   datafeed.py          # Datafeed(BaseDatafeed)
   client.py            # AKShare 调用封装
-  cache.py             # 本地缓存
+  storage.py           # PostgreSQL 持久化
   quality.py           # 数据质量检查
   mapper.py            # DataFrame -> BarData
 ```
@@ -241,13 +270,13 @@ TradingAgents 最终评级映射为内部研究信号：
 
 目标：
 
-- 增加缓存，避免每次回测重复抓取。
+- 使用 PostgreSQL 保存 raw data、清洗数据和数据质量报告，避免每次回测重复抓取。
 - 增加数据质量报告。
 - 区分未复权和前复权数据。
 
 验收：
 
-- 同一请求第二次优先命中缓存。
+- 同一请求第二次优先读取 PostgreSQL 已保存数据。
 - 异常价格和空响应有明确日志。
 - 回测结果可追溯到数据版本。
 
