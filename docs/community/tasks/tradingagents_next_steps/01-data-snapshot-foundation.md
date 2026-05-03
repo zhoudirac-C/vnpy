@@ -10,7 +10,7 @@
   - 能力：读取 `market_bar_snapshot`，支持 `vt_symbol/start/end/interval/provider_name` 过滤，返回 `MarketDataToolkit.load_bar_snapshots()` 需要的字典列表。
   - 验收命令：`uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v`
 
-- [ ] **P1-T02: 补研究快照表结构**
+- [x] **P1-T02: 补研究快照表结构**
   - 修改：`vnpy_router/storage.py`
   - 新增表建议：`fundamental_snapshot`、`valuation_snapshot`、`industry_snapshot`、`benchmark_snapshot`、`portfolio_snapshot`
   - 要求：每张表保留 `provider_name`、`provider_version`、`pulled_at`、`quality_status`，JSONB 保存 provider 原始扩展字段。
@@ -42,3 +42,4 @@
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
 | P1-T01 | 2026-05-03 | `8a3b1d38` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
+| P1-T02 | 2026-05-03 | `aa6a91a9` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
