@@ -12,6 +12,7 @@ A 股规则和执行约束：
 5. 日内分时建议只能作为策略/风控的输入，不能跳过 vn.py Strategy App、Risk App 和订单审计。
 6. benchmark 只能来自 request.context；如果 context 中没有 benchmark，不得默认使用任何境外市场指数。
 7. 新闻、情绪、财务等信息缺失时必须标记 degraded，不得编造来源；market 缺失时应拒绝生成交易动作。
+8. 反思阶段必须使用 A 股 benchmark alpha 和真实持仓绩效，不得套用境外指数或默认 alpha 假设。
 """
 
 
@@ -28,3 +29,13 @@ def build_worker_system_prompt(mode: str) -> str:
             "action 只能是 buy、sell、reduce、hold、watch 之一；不能输出直接下单指令。",
         ]
     )
+
+
+def build_reflection_context(context: dict) -> dict:
+    """
+    Extract benchmark and real feedback for TradingAgents reflection.
+    """
+    return {
+        "benchmark": dict(context.get("benchmark") or {}),
+        "feedback": dict(context.get("feedback") or {}),
+    }

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
@@ -68,6 +68,9 @@ class PortfolioReplayStep:
     rating: RatingSignal
     intent: PortfolioIntent
     order_intent: OrderIntent
+    current_weight: float = 0
+    sector: str = ""
+    equity: float | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,10 @@ class PortfolioReplaySummary:
     rating_blocked: int
     ai_used: int
     results: list[PortfolioReplayStepResult]
+    turnover_rate: float = 0
+    target_weight_deviation: float = 0
+    sector_exposure: dict[str, float] = field(default_factory=dict)
+    max_drawdown: float = 0
 
 
 class IntradayReplayEngine:
@@ -198,6 +205,10 @@ class PortfolioReplayEngine:
             ),
             ai_used=sum(1 for result in results if result.fused_signal.ai_used),
             results=results,
+            turnover_rate=_portfolio_turnover(results),
+            target_weight_deviation=_target_weight_deviation(results),
+            sector_exposure=_sector_exposure(results),
+            max_drawdown=_max_drawdown(results),
         )
 
 
@@ -231,3 +242,49 @@ def _is_bearish(rating: RatingSignal) -> bool:
 def _is_buy_action(action: str) -> bool:
     """"""
     return action.strip().lower() in BUY_ACTIONS
+
+
+def _portfolio_turnover(results: list[PortfolioReplayStepResult]) -> float:
+    """"""
+    return sum(_target_weight_delta(result.step) for result in results)
+
+
+def _target_weight_deviation(results: list[PortfolioReplayStepResult]) -> float:
+    """"""
+    if not results:
+        return 0
+    return _portfolio_turnover(results) / len(results)
+
+
+def _sector_exposure(results: list[PortfolioReplayStepResult]) -> dict[str, float]:
+    """"""
+    exposure: dict[str, float] = {}
+    for result in results:
+        sector: str = result.step.sector or "unknown"
+        exposure[sector] = exposure.get(sector, 0) + _target_weight(result.step)
+    return exposure
+
+
+def _max_drawdown(results: list[PortfolioReplayStepResult]) -> float:
+    """"""
+    peak: float | None = None
+    max_drawdown: float = 0
+    for result in results:
+        equity: float | None = result.step.equity
+        if equity is None:
+            continue
+        if peak is None or equity > peak:
+            peak = equity
+        if peak:
+            max_drawdown = max(max_drawdown, (peak - equity) / peak)
+    return max_drawdown
+
+
+def _target_weight_delta(step: PortfolioReplayStep) -> float:
+    """"""
+    return abs(_target_weight(step) - step.current_weight)
+
+
+def _target_weight(step: PortfolioReplayStep) -> float:
+    """"""
+    return float(step.intent.target_weight_hint or step.current_weight)

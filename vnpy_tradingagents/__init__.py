@@ -14,7 +14,12 @@ from .engine import TradingAgentsEngine
 from .toolkit import MarketDataToolkit, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 from .worker_adapter import TradingAgentsContextPayload, TradingAgentsWorkerAdapter
-from .prompts import ASHARE_RULES_PROMPT, PROMPT_VERSION, build_worker_system_prompt
+from .prompts import (
+    ASHARE_RULES_PROMPT,
+    PROMPT_VERSION,
+    build_reflection_context,
+    build_worker_system_prompt,
+)
 from .worker_process import SubprocessTradingAgentsWorker
 from .source_policy import SnapshotSourcePolicy, SnapshotSourcePolicyResult
 from .scheduler import TradingAgentsIntradayScheduler
@@ -28,6 +33,26 @@ from .intraday_collector import (
     PostgresIntradaySnapshotStorage,
 )
 from .research import LongHorizonAgentJob, ResearchSnapshot, ResearchSnapshotBuilder
+from .batch import BatchLongHorizonAgentJob, BatchRunSummary
+from .long_scheduler import (
+    InMemoryLongRunRegistry,
+    LongHorizonSchedule,
+    LongHorizonScheduler,
+    LongRunResult,
+)
+from .portfolio_constraints import (
+    PortfolioConstraintConfig,
+    PortfolioConstraintEngine,
+    PortfolioConstraintResult,
+    PortfolioConstraintViolation,
+    PortfolioState,
+)
+from .performance_feedback import (
+    PerformanceFeedback,
+    PostgresFeedbackStorage,
+    TradeFeedback,
+    build_feedback_context,
+)
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
 from .gateway_policy import GatewayAccountMode, GatewayAiPolicy, GatewayProfile
 from .replay import (
@@ -58,6 +83,8 @@ from .policy import AiSignalPolicy, SignalDecision
 __all__ = [
     "AiSignalPolicy",
     "ASHARE_RULES_PROMPT",
+    "BatchLongHorizonAgentJob",
+    "BatchRunSummary",
     "DecisionAuditRecord",
     "FusedSignal",
     "GatewayAccountMode",
@@ -69,7 +96,11 @@ __all__ = [
     "IntradaySnapshot",
     "IntradaySnapshotBuilder",
     "IntradayReplayEngine",
+    "InMemoryLongRunRegistry",
     "LongHorizonAgentJob",
+    "LongHorizonSchedule",
+    "LongHorizonScheduler",
+    "LongRunResult",
     "MarketDataToolkit",
     "OrderBridge",
     "OrderBridgeResult",
@@ -77,6 +108,10 @@ __all__ = [
     "PreOrderDecisionResult",
     "PreOrderDecisionService",
     "PortfolioIntent",
+    "PortfolioConstraintConfig",
+    "PortfolioConstraintEngine",
+    "PortfolioConstraintResult",
+    "PortfolioConstraintViolation",
     "PROMPT_VERSION",
     "PortfolioReplayEngine",
     "PortfolioReplayStep",
@@ -84,8 +119,11 @@ __all__ = [
     "PortfolioReplaySummary",
     "PostgresAgentStorage",
     "PostgresDecisionAuditStorage",
+    "PostgresFeedbackStorage",
     "PostgresIntradaySnapshotStorage",
     "PostgresSignalReader",
+    "PerformanceFeedback",
+    "PortfolioState",
     "RatingSignal",
     "ResearchSnapshot",
     "ResearchSnapshotBuilder",
@@ -119,7 +157,10 @@ __all__ = [
     "TradingAgentsService",
     "TradingAgentsWorkerRequest",
     "TradingAgentsWorkerResponse",
+    "TradeFeedback",
     "WorkerConfigError",
     "WorkerConfigValidation",
+    "build_feedback_context",
+    "build_reflection_context",
     "build_worker_system_prompt",
 ]
