@@ -4,6 +4,7 @@ from vnpy_router.event_storage import EVENT_SCHEMA
 from vnpy_router.storage import SNAPSHOT_SCHEMA
 
 from .monitoring import REPLAY_RUN_STATUS_SCHEMA
+from .migrations import Migration, MigrationApplyResult, MigrationRunner
 from .performance_feedback import FEEDBACK_SCHEMA
 from .risk import DECISION_AUDIT_SCHEMA
 from .storage import TRADINGAGENTS_SCHEMA
@@ -54,25 +55,27 @@ class Connection(Protocol):
         pass
 
 
-def initialize_postgres_schema(connection: Connection) -> None:
+DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
+    Migration(
+        version="0001_tradingagents_schema",
+        description="Create vnpy_router and TradingAgents production tables",
+        sql="\n".join(
+            [
+                SCHEMA_VERSION_SQL,
+                SNAPSHOT_SCHEMA,
+                EVENT_SCHEMA,
+                TRADINGAGENTS_SCHEMA,
+                DECISION_AUDIT_SCHEMA,
+                FEEDBACK_SCHEMA,
+                REPLAY_RUN_STATUS_SCHEMA,
+            ]
+        ),
+    ),
+)
+
+
+def initialize_postgres_schema(connection: Connection) -> MigrationApplyResult:
     """
     Idempotently create all TradingAgents and router PostgreSQL tables.
     """
-    cursor = connection.cursor()
-    try:
-        cursor.execute(
-            "\n".join(
-                [
-                    SCHEMA_VERSION_SQL,
-                    SNAPSHOT_SCHEMA,
-                    EVENT_SCHEMA,
-                    TRADINGAGENTS_SCHEMA,
-                    DECISION_AUDIT_SCHEMA,
-                    FEEDBACK_SCHEMA,
-                    REPLAY_RUN_STATUS_SCHEMA,
-                ]
-            )
-        )
-        connection.commit()
-    finally:
-        cursor.close()
+    return MigrationRunner(connection, DEFAULT_MIGRATIONS).apply()

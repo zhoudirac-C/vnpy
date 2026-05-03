@@ -1,0 +1,220 @@
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from enum import Enum
+from importlib.util import find_spec
+from pathlib import Path
+from typing import Any
+
+from vnpy.trader.setting import SETTINGS
+
+
+class ReadinessStatus(Enum):
+    """
+    Production readiness severity.
+    """
+
+    READY = "ready"
+    WARNING = "warning"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class ReadinessItem:
+    """
+    One production readiness check result.
+    """
+
+    name: str
+    status: ReadinessStatus
+    message: str
+
+
+@dataclass(frozen=True)
+class ReadinessReport:
+    """
+    Aggregated production readiness report.
+    """
+
+    items: list[ReadinessItem]
+
+    @property
+    def status(self) -> ReadinessStatus:
+        """
+        Return the worst readiness status.
+        """
+        statuses: set[ReadinessStatus] = {item.status for item in self.items}
+        if ReadinessStatus.FAILED in statuses:
+            return ReadinessStatus.FAILED
+        if ReadinessStatus.WARNING in statuses:
+            return ReadinessStatus.WARNING
+        return ReadinessStatus.READY
+
+    def by_name(self, name: str) -> ReadinessItem:
+        """
+        Return one readiness item by name.
+        """
+        for item in self.items:
+            if item.name == name:
+                return item
+        raise KeyError(name)
+
+
+ModuleAvailable = Callable[[str], bool]
+PathExists = Callable[[str], bool]
+
+
+class ProductionReadinessChecker:
+    """
+    Check runtime prerequisites before production-like TradingAgents runs.
+    """
+
+    def __init__(
+        self,
+        settings: Mapping[str, Any] | None = None,
+        environ: Mapping[str, str] | None = None,
+        module_available: ModuleAvailable | None = None,
+        path_exists: PathExists | None = None,
+    ) -> None:
+        """"""
+        self.settings: Mapping[str, Any] = settings or SETTINGS
+        self.environ: Mapping[str, str] = environ or {}
+        self.module_available: ModuleAvailable = module_available or _module_available
+        self.path_exists: PathExists = path_exists or _path_exists
+
+    def check(self) -> ReadinessReport:
+        """
+        Run all production readiness checks.
+        """
+        items: list[ReadinessItem] = []
+        postgres_enabled: bool = _to_bool(self.settings.get("router.postgres_cache.enabled", False))
+        dsn: str = _postgres_dsn(self.settings)
+
+        if postgres_enabled and not dsn:
+            items.append(_failed("postgres_dsn", "router.postgres_cache.enabled is true but no PostgreSQL DSN is configured"))
+        elif postgres_enabled:
+            items.append(_ready("postgres_dsn", "PostgreSQL DSN is configured"))
+        else:
+            items.append(_warning("postgres_dsn", "PostgreSQL cache is disabled; production snapshots will not persist through router cache"))
+
+        if postgres_enabled and not self.module_available("psycopg"):
+            items.append(_failed("psycopg", "psycopg is required for PostgreSQL connections"))
+        else:
+            items.append(_ready("psycopg", "psycopg dependency is available or PostgreSQL cache is disabled"))
+
+        api_key_env_var: str = str(
+            self.settings.get("tradingagents.api_key_env_var", "OPENAI_API_KEY")
+        )
+        if not self.environ.get(api_key_env_var, "").strip():
+            items.append(_failed("tradingagents_api_key", f"missing API key environment variable: {api_key_env_var}"))
+        else:
+            items.append(_ready("tradingagents_api_key", "TradingAgents API key environment variable is present"))
+
+        items.extend(self._provider_checks())
+        return ReadinessReport(items)
+
+    def _provider_checks(self) -> list[ReadinessItem]:
+        """
+        Check configured providers for obvious missing dependencies or files.
+        """
+        providers: list[tuple[str, str]] = _parse_provider_specs(
+            self.settings.get("router.providers", "")
+        )
+        if not providers:
+            return [_failed("provider_config", "router.providers is empty")]
+
+        items: list[ReadinessItem] = []
+        for name, value in providers:
+            if name == "local_file":
+                path: str = value or str(self.settings.get("router.local_path", ""))
+                if not path:
+                    items.append(_warning("local_file_provider", "local_file provider has no path configured"))
+                elif not self.path_exists(path):
+                    items.append(_warning("local_file_provider", f"local_file path does not exist: {path}"))
+                else:
+                    items.append(_ready("local_file_provider", f"local_file path exists: {path}"))
+            elif name == "akshare":
+                if self.module_available("akshare"):
+                    items.append(_ready("akshare_provider", "akshare dependency is available"))
+                else:
+                    items.append(_warning("akshare_provider", "akshare dependency is not installed"))
+            else:
+                items.append(_warning(f"{name}_provider", f"provider has no production readiness checker: {name}"))
+
+        return items
+
+
+def _postgres_dsn(settings: Mapping[str, Any]) -> str:
+    """
+    Resolve PostgreSQL DSN from router or vn.py database settings.
+    """
+    dsn: str = str(settings.get("router.postgres.dsn", "")).strip()
+    if dsn:
+        return dsn
+
+    database_name: str = str(settings.get("database.name", "")).strip().lower()
+    if database_name not in {"postgres", "postgresql"}:
+        return ""
+
+    database: str = str(settings.get("database.database", "")).strip()
+    host: str = str(settings.get("database.host", "")).strip()
+    user: str = str(settings.get("database.user", "")).strip()
+    if database and host and user:
+        return f"postgresql://{user}@{host}/{database}"
+    return ""
+
+
+def _parse_provider_specs(raw: Any) -> list[tuple[str, str]]:
+    """
+    Parse simple provider specs such as local_file:/path,akshare.
+    """
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        specs: list[tuple[str, str]] = []
+        for item in raw.split(","):
+            text: str = item.strip()
+            if not text:
+                continue
+            if ":" in text:
+                name, value = text.split(":", 1)
+                specs.append((name.strip(), value.strip()))
+            else:
+                specs.append((text, ""))
+        return specs
+    if isinstance(raw, list):
+        return [(str(item), "") for item in raw]
+    return []
+
+
+def _ready(name: str, message: str) -> ReadinessItem:
+    """"""
+    return ReadinessItem(name, ReadinessStatus.READY, message)
+
+
+def _warning(name: str, message: str) -> ReadinessItem:
+    """"""
+    return ReadinessItem(name, ReadinessStatus.WARNING, message)
+
+
+def _failed(name: str, message: str) -> ReadinessItem:
+    """"""
+    return ReadinessItem(name, ReadinessStatus.FAILED, message)
+
+
+def _to_bool(value: Any) -> bool:
+    """"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _module_available(name: str) -> bool:
+    """"""
+    return find_spec(name) is not None
+
+
+def _path_exists(path: str) -> bool:
+    """"""
+    return Path(path).exists()

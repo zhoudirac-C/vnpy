@@ -39,6 +39,9 @@ dependencies = [
 ]
 keywords = ["quant", "quantitative", "investment", "trading", "algotrading"]
 
+[project.scripts]
+vnpy-tradingagents-schema = "vnpy_tradingagents.cli:main"
+
 [project.optional-dependencies]
 alpha = [
     "polars>=1.26.0",

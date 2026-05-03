@@ -57,6 +57,13 @@ from .backtesting_bridge import BacktestingBridge, BacktestingDecisionResult, Ba
 from .paper_bridge import PaperAccountBridge, SimulatedTrade
 from .audit_export import AuditExportRecord, export_audit_csv, export_audit_jsonl
 from .live_gate import LiveGate, LiveGateConfig, LiveGateMetrics, LiveGateResult
+from .migrations import Migration, MigrationApplyResult, MigrationRunner
+from .readiness import (
+    ProductionReadinessChecker,
+    ReadinessItem,
+    ReadinessReport,
+    ReadinessStatus,
+)
 from .schema_init import initialize_postgres_schema
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
 from .gateway_policy import GatewayAccountMode, GatewayAiPolicy, GatewayProfile
@@ -115,6 +122,9 @@ __all__ = [
     "LiveGateMetrics",
     "LiveGateResult",
     "MarketDataToolkit",
+    "Migration",
+    "MigrationApplyResult",
+    "MigrationRunner",
     "OrderBridge",
     "OrderBridgeResult",
     "OrderIntent",
@@ -139,6 +149,10 @@ __all__ = [
     "PortfolioState",
     "PaperAccountBridge",
     "RatingSignal",
+    "ProductionReadinessChecker",
+    "ReadinessItem",
+    "ReadinessReport",
+    "ReadinessStatus",
     "ResearchSnapshot",
     "ResearchSnapshotBuilder",
     "ReplayStep",
