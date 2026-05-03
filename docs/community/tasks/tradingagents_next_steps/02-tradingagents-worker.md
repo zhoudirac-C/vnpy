@@ -22,7 +22,7 @@
   - 内容：A 股交易时间、T+1、涨跌停、停牌、仓位上限和不得绕过风控。
   - 验收：prompt 中不出现美股 benchmark 默认假设。
 
-- [ ] **P2-T04: Worker 进程边界**
+- [x] **P2-T04: Worker 进程边界**
   - 创建：`vnpy_tradingagents/worker_process.py`
   - 目标：支持 CLI 或子进程运行，支持 JSON 输入输出，支持超时、重试和失败状态。
   - 验收：主进程失败时 runtime 状态变为 degraded；失败不影响策略和风控继续运行。
@@ -44,3 +44,4 @@
 | P2-T01 | 2026-05-03 | `4fbf94d7` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
 | P2-T02 | 2026-05-03 | `ff7abafb` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
 | P2-T03 | 2026-05-03 | `ab3efcec` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_prompts.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
+| P2-T04 | 2026-05-03 | `55bbd5c0` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_worker_process.py tests/test_tradingagents_prompts.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
