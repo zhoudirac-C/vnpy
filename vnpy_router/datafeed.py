@@ -10,7 +10,8 @@ from vnpy.trader.setting import SETTINGS
 from .providers.akshare import AkshareProvider
 from .providers.base import BaseProvider
 from .providers.local_file import LocalFileProvider
-from .router import DataProviderRouter
+from .router import DataProviderRouter, SnapshotReader, SnapshotStorage
+from .storage import PostgresSnapshotReader, PostgresSnapshotStorage
 
 
 DEFAULT_PROVIDER_ORDER: tuple[str, ...] = ("local_file", "akshare")
@@ -23,7 +24,12 @@ class Datafeed(BaseDatafeed):
 
     def __init__(self) -> None:
         """"""
-        self.router: DataProviderRouter = DataProviderRouter(_build_providers())
+        snapshot_reader, snapshot_storage = _build_snapshot_cache()
+        self.router: DataProviderRouter = DataProviderRouter(
+            _build_providers(),
+            snapshot_reader=snapshot_reader,
+            snapshot_storage=snapshot_storage,
+        )
 
     def init(self, output: Callable = print) -> bool:
         """
@@ -68,6 +74,20 @@ def _build_providers() -> list[BaseProvider]:
             providers.append(provider)
 
     return providers
+
+
+def _build_snapshot_cache() -> tuple[SnapshotReader | None, SnapshotStorage | None]:
+    """
+    Build PostgreSQL snapshot cache when explicitly enabled.
+    """
+    if not _to_bool(SETTINGS.get("router.postgres_cache.enabled", False)):
+        return None, None
+
+    connection: Any | None = _connect_postgres()
+    if connection is None:
+        return None, None
+
+    return PostgresSnapshotReader(connection), PostgresSnapshotStorage(connection)
 
 
 def _parse_provider_configs(raw_config: Any) -> list[dict[str, Any]]:
@@ -142,3 +162,47 @@ def _build_provider(config: Mapping[str, Any]) -> BaseProvider | None:
         return AkshareProvider()
 
     return None
+
+
+def _connect_postgres() -> Any | None:
+    """
+    Create a psycopg connection from router.postgres.dsn or vn.py database settings.
+    """
+    try:
+        psycopg = __import__("psycopg")
+    except ModuleNotFoundError:
+        return None
+
+    dsn: str = str(SETTINGS.get("router.postgres.dsn", "")).strip()
+    if dsn:
+        return psycopg.connect(dsn)
+
+    database_name: str = str(SETTINGS.get("database.name", "")).strip().lower()
+    if database_name not in {"postgres", "postgresql"}:
+        return None
+
+    params: dict[str, Any] = {
+        "dbname": SETTINGS.get("database.database"),
+        "host": SETTINGS.get("database.host"),
+        "port": SETTINGS.get("database.port"),
+        "user": SETTINGS.get("database.user"),
+        "password": SETTINGS.get("database.password"),
+    }
+    clean_params: dict[str, Any] = {
+        key: value for key, value in params.items() if value not in {"", 0, None}
+    }
+    if not clean_params.get("dbname"):
+        return None
+
+    return psycopg.connect(**clean_params)
+
+
+def _to_bool(value: Any) -> bool:
+    """
+    Parse bool settings edited through vn.py global configuration.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)

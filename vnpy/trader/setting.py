@@ -29,6 +29,8 @@ SETTINGS: dict = {
     "datafeed.password": "",
     "router.providers": "local_file,akshare",
     "router.local_path": "",
+    "router.postgres_cache.enabled": False,
+    "router.postgres.dsn": "",
 
     "database.timezone": get_localzone_name(),
     "database.name": "sqlite",

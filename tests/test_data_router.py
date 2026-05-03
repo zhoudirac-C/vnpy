@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from vnpy.trader.constant import Exchange, Interval
-from vnpy.trader.object import HistoryRequest
+from vnpy.trader.object import BarData, HistoryRequest
 from vnpy.trader.setting import SETTINGS
 
 
@@ -60,6 +60,21 @@ def test_datafeed_honors_configured_provider_order(monkeypatch, tmp_path):
     ]
 
 
+def test_datafeed_wires_snapshot_cache_into_router(monkeypatch, tmp_path):
+    """Datafeed should pass configured snapshot cache objects into the router."""
+    from vnpy_router import datafeed as datafeed_module
+
+    cache = MemorySnapshotCache()
+    monkeypatch.setitem(SETTINGS, "router.local_path", str(tmp_path))
+    monkeypatch.setitem(SETTINGS, "router.providers", "local_file")
+    monkeypatch.setattr(datafeed_module, "_build_snapshot_cache", lambda: (cache, cache))
+
+    datafeed = datafeed_module.Datafeed()
+
+    assert datafeed.router.snapshot_reader is cache
+    assert datafeed.router.snapshot_storage is cache
+
+
 def test_local_file_provider_returns_bar_data(tmp_path):
     """LocalFileProvider should map CSV rows into vn.py BarData."""
     csv_file = tmp_path / "600519.SSE_d.csv"
@@ -105,7 +120,6 @@ def test_local_file_provider_returns_bar_data(tmp_path):
 
 def test_quality_checker_reports_invalid_bar():
     """DataQualityChecker should flag impossible OHLC relationships."""
-    from vnpy.trader.object import BarData
     from vnpy_router.quality import QualityStatus, check_bar_data
 
     bar = BarData(
@@ -127,9 +141,50 @@ def test_quality_checker_reports_invalid_bar():
     assert report.issues[0].code == "invalid_high_price"
 
 
+def test_data_provider_router_reads_snapshot_cache_before_provider():
+    """DataProviderRouter should return cached bars without querying providers."""
+    from vnpy_router.router import DataProviderRouter
+
+    cache = MemorySnapshotCache(rows=[_bar_to_snapshot_row(_bar())])
+    provider = FakeProvider([_bar(gateway_name="akshare")])
+    router = DataProviderRouter(
+        [provider],
+        snapshot_reader=cache,
+        snapshot_storage=cache,
+    )
+
+    bars = router.query_bar_history(_history_request())
+
+    assert provider.query_count == 0
+    assert len(bars) == 1
+    assert bars[0].gateway_name == "local_file"
+    assert bars[0].extra["provider_name"] == "local_file"
+    assert bars[0].extra["provider_endpoint"] == "/tmp/600519.SSE_d.csv"
+
+
+def test_data_provider_router_writes_provider_result_to_snapshot_cache():
+    """DataProviderRouter should cache provider bars for repeated requests."""
+    from vnpy_router.router import DataProviderRouter
+
+    cache = MemorySnapshotCache()
+    provider = FakeProvider([_bar(gateway_name="akshare")])
+    router = DataProviderRouter(
+        [provider],
+        snapshot_reader=cache,
+        snapshot_storage=cache,
+    )
+
+    first_bars = router.query_bar_history(_history_request())
+    second_bars = router.query_bar_history(_history_request())
+
+    assert provider.query_count == 1
+    assert cache.save_count == 1
+    assert first_bars[0].extra["provider_name"] == "akshare"
+    assert second_bars[0].extra["provider_name"] == "akshare"
+
+
 def test_postgres_snapshot_storage_saves_bar_with_provider_metadata():
     """PostgresSnapshotStorage should persist provider metadata with bar data."""
-    from vnpy.trader.object import BarData
     from vnpy_router.storage import PostgresSnapshotStorage
 
     connection = FakeConnection()
@@ -367,6 +422,104 @@ def test_akshare_provider_missing_dependency_degrades(monkeypatch):
     assert not provider.init(output=messages.append)
     assert provider.query_bar_history(req, output=messages.append) == []
     assert any("akshare" in message.lower() for message in messages)
+
+
+def _history_request() -> HistoryRequest:
+    """Build a reusable history request."""
+    return HistoryRequest(
+        symbol="600519",
+        exchange=Exchange.SSE,
+        interval=Interval.DAILY,
+        start=datetime(2024, 1, 1),
+        end=datetime(2024, 1, 3),
+    )
+
+
+def _bar(gateway_name: str = "local_file") -> BarData:
+    """Build a reusable bar."""
+    bar = BarData(
+        symbol="600519",
+        exchange=Exchange.SSE,
+        datetime=datetime(2024, 1, 3),
+        interval=Interval.DAILY,
+        open_price=1688,
+        high_price=1700,
+        low_price=1680,
+        close_price=1695,
+        volume=1200,
+        turnover=2034000,
+        gateway_name=gateway_name,
+    )
+    bar.extra = {
+        "provider_name": gateway_name,
+        "provider_endpoint": f"/tmp/600519.SSE_{Interval.DAILY.value}.csv",
+        "provider_version": "hash:abc",
+        "quality_status": "passed",
+    }
+    return bar
+
+
+def _bar_to_snapshot_row(bar: BarData) -> dict:
+    """Convert a BarData into a snapshot row used by router cache tests."""
+    return {
+        "vt_symbol": bar.vt_symbol,
+        "symbol": bar.symbol,
+        "exchange": bar.exchange.value,
+        "interval": bar.interval.value,
+        "datetime": bar.datetime,
+        "open_price": bar.open_price,
+        "high_price": bar.high_price,
+        "low_price": bar.low_price,
+        "close_price": bar.close_price,
+        "volume": bar.volume,
+        "turnover": bar.turnover,
+        "open_interest": bar.open_interest,
+        "provider_name": bar.extra["provider_name"],
+        "provider_endpoint": bar.extra["provider_endpoint"],
+        "provider_version": bar.extra["provider_version"],
+        "adjustment": bar.extra.get("adjustment"),
+        "quality_status": bar.extra["quality_status"],
+        "quality_report_id": bar.extra.get("quality_report_id"),
+    }
+
+
+class FakeProvider:
+    """Tiny provider fake for router unit tests."""
+
+    name = "fake"
+
+    def __init__(self, bars: list[BarData]) -> None:
+        self.bars = bars
+        self.query_count = 0
+
+    def init(self, output=print) -> bool:
+        return True
+
+    def query_bar_history(self, req, output=print) -> list[BarData]:
+        self.query_count += 1
+        return self.bars
+
+
+class MemorySnapshotCache:
+    """In-memory cache fake with the same methods as Postgres snapshot storage."""
+
+    def __init__(self, rows: list[dict] | None = None) -> None:
+        self.rows: list[dict] = rows or []
+        self.save_count = 0
+
+    def load_bar_snapshots(
+        self,
+        vt_symbol: str,
+        start: datetime,
+        end: datetime,
+        interval: str = "",
+        provider_name: str = "",
+    ) -> list[dict]:
+        return self.rows
+
+    def save_bar_snapshots(self, bars: list[BarData]) -> None:
+        self.save_count += 1
+        self.rows = [_bar_to_snapshot_row(bar) for bar in bars]
 
 
 class FakeCursor:
