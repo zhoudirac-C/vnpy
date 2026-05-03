@@ -26,7 +26,7 @@
   - 目标：提供 `load_ai_intraday_advice()`、`load_ai_rating_signal()`、`fuse_ai_signal()`。
   - 验收：CTA/PortfolioStrategy 可用同一接口读取 AI 信号；关闭 AI 后只返回规则信号。
 
-- [ ] **P3-T05: `OrderIntent -> OrderRequest` 受控转换**
+- [x] **P3-T05: `OrderIntent -> OrderRequest` 受控转换**
   - 创建：`vnpy_tradingagents/order_bridge.py`
   - 目标：只有 `PreOrderDecisionResult.submit_allowed=True` 时才生成 `OrderRequest`；生成前必须保存 `DecisionAuditRecord`。
   - 验收：风控拒绝时不生成 `OrderRequest`；审计里能找到 source_run_id。
@@ -44,3 +44,4 @@
 | P3-T02 | 2026-05-03 | `f0e17bd3` | `uv run --with pytest pytest tests/test_tradingagents_scheduler.py tests/test_tradingagents_ui.py tests/test_tradingagents_runtime.py tests/test_tradingagents_intraday.py tests/test_tradingagents_worker_process.py -v` |
 | P3-T03 | 2026-05-03 | `ca34e4fe` | `uv run --with pytest pytest tests/test_tradingagents_intraday_collector.py tests/test_tradingagents_intraday.py tests/test_tradingagents_scheduler.py tests/test_tradingagents_ui.py tests/test_tradingagents_runtime.py -v` |
 | P3-T04 | 2026-05-03 | `be324b9f` | `uv run --with pytest pytest tests/test_tradingagents_strategy_mixin.py tests/test_tradingagents_fusion.py tests/test_tradingagents_policy.py tests/test_tradingagents_storage_service.py -v` |
+| P3-T05 | 2026-05-03 | `f4eb5f60` | `uv run --with pytest pytest tests/test_tradingagents_order_bridge.py tests/test_tradingagents_decision_service.py tests/test_tradingagents_risk_audit.py tests/test_tradingagents_replay.py -v` |
