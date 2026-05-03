@@ -1,0 +1,183 @@
+from datetime import datetime
+
+
+def test_event_storage_schema_contains_news_social_sentiment_tables():
+    """Event storage schema should cover raw/news/social/sentiment/link tables."""
+    from vnpy_router.event_storage import EVENT_SCHEMA
+
+    for table in [
+        "news_raw",
+        "news_event",
+        "social_post_raw",
+        "sentiment_snapshot",
+        "event_symbol_link",
+    ]:
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in EVENT_SCHEMA
+
+    assert "raw_hash TEXT NOT NULL" in EVENT_SCHEMA
+    assert "provider_version TEXT" in EVENT_SCHEMA
+    assert "source TEXT NOT NULL" in EVENT_SCHEMA
+    assert "pulled_at TIMESTAMPTZ DEFAULT now()" in EVENT_SCHEMA
+
+
+def test_event_storage_saves_news_raw_with_hash_dedup():
+    """PostgresEventStorage should persist raw news with a stable hash."""
+    from vnpy_router.event_storage import NewsRaw, PostgresEventStorage
+
+    connection = FakeConnection()
+    storage = PostgresEventStorage(connection)
+    news = NewsRaw(
+        source="local",
+        url="file://news.json#1",
+        title="贵州茅台公告",
+        content="公告内容",
+        published_at=datetime(2024, 1, 3),
+        provider_name="local_json",
+        provider_version="v1",
+    )
+
+    storage.save_news_raw(news)
+
+    sql, params = connection.cursor_obj.executed[0]
+    assert "INSERT INTO news_raw" in sql
+    assert params["raw_hash"]
+    assert params["source"] == "local"
+    assert connection.committed
+
+
+def test_announcement_provider_generates_news_event_from_json(tmp_path):
+    """AnnouncementProvider should turn local manual events into news_event records."""
+    from vnpy_router.providers.announcement import AnnouncementProvider
+
+    path = tmp_path / "events.json"
+    path.write_text(
+        """
+        [
+          {
+            "vt_symbol": "600519.SSE",
+            "title": "年度分红公告",
+            "summary": "现金分红预案",
+            "event_type": "announcement",
+            "occurred_at": "2024-01-03T09:00:00"
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+
+    events = AnnouncementProvider(path).query_events("600519.SSE")
+
+    assert len(events) == 1
+    assert events[0].vt_symbol == "600519.SSE"
+    assert events[0].event_type == "announcement"
+
+
+def test_news_and_sentiment_providers_build_events_and_scores(tmp_path):
+    """NewsProvider and SentimentProvider should create event and sentiment snapshots."""
+    from vnpy_router.providers.news import NewsProvider
+    from vnpy_router.providers.sentiment import SentimentProvider
+
+    path = tmp_path / "news.csv"
+    path.write_text(
+        "\n".join(
+            [
+                "vt_symbol,title,summary,event_type,occurred_at,sentiment_score",
+                "600519.SSE,行业新闻,白酒板块回暖,industry,2024-01-03T10:00:00,0.6",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    events = NewsProvider(path).query_events("600519.SSE")
+    snapshot = SentimentProvider().score_events("600519.SSE", events, datetime(2024, 1, 3))
+
+    assert events[0].event_type == "industry"
+    assert snapshot.vt_symbol == "600519.SSE"
+    assert snapshot.payload["score"] == 0.6
+    assert snapshot.payload["event_count"] == 1
+
+
+def test_event_normalizer_builds_tradingagents_news_context():
+    """EventNormalizer should output compact context for TradingAgents."""
+    from vnpy_router.event_normalizer import EventNormalizer
+    from vnpy_router.event_storage import NewsEvent, SentimentSnapshot
+
+    normalizer = EventNormalizer()
+    event = NewsEvent(
+        event_id="event-1",
+        vt_symbol="600519.SSE",
+        title="公告",
+        summary="现金分红",
+        event_type="announcement",
+        occurred_at=datetime(2024, 1, 3),
+        source="local",
+        provider_name="local_json",
+    )
+    sentiment = SentimentSnapshot(
+        vt_symbol="600519.SSE",
+        as_of=datetime(2024, 1, 3),
+        provider_name="manual",
+        payload={"score": 0.2},
+    )
+
+    news_context = normalizer.build_news_snapshot("600519.SSE", [event])
+    sentiment_context = normalizer.build_sentiment_snapshot(sentiment)
+
+    assert news_context["events"][0]["title"] == "公告"
+    assert sentiment_context["score"] == 0.2
+
+
+def test_toolkit_degrades_when_news_and_sentiment_missing():
+    """MarketDataToolkit should keep market context when event sources are missing."""
+    from vnpy_tradingagents.toolkit import MarketDataToolkit, SnapshotQuery
+
+    context = MarketDataToolkit(MissingEventReader()).build_context(
+        SnapshotQuery(
+            vt_symbol="600519.SSE",
+            start=datetime(2024, 1, 1),
+            end=datetime(2024, 1, 3),
+        )
+    )
+
+    assert context["market"]["bars"]
+    assert "news" in context["degraded_sources"]
+    assert "sentiment" in context["degraded_sources"]
+
+
+class FakeCursor:
+    """Tiny DB-API cursor fake."""
+
+    def __init__(self) -> None:
+        self.executed = []
+
+    def execute(self, sql, params=None) -> None:
+        self.executed.append((sql, params or {}))
+
+    def close(self) -> None:
+        return
+
+
+class FakeConnection:
+    """Tiny DB-API connection fake."""
+
+    def __init__(self) -> None:
+        self.cursor_obj = FakeCursor()
+        self.committed = False
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def commit(self) -> None:
+        self.committed = True
+
+
+class MissingEventReader:
+    """Snapshot reader with market only."""
+
+    def load_bar_snapshots(self, vt_symbol, start, end):
+        return [{"datetime": "2024-01-03", "close": 10}]
+
+    def load_latest_snapshot(self, snapshot_type, vt_symbol, as_of):
+        if snapshot_type in {"news", "sentiment"}:
+            return None
+        return {}
