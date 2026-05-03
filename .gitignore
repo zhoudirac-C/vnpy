@@ -19,6 +19,7 @@ x64
 build
 dist
 *.local
+uv.lock
 
 # VeighNa
 .vntrader
@@ -33,6 +34,7 @@ dist
 _build
 _static
 _templates
+.plantuml-check/
 
 # Misc
 .DS_Store

@@ -174,8 +174,8 @@ participant "Strategy App\n策略" as Strategy
 participant "Risk App\n风控" as Risk
 participant "MainEngine" as Main
 participant "Gateway\nQMT/XTP/TORA/仿真" as Gateway
-cloud "Broker/Sim" as Broker
-queue "EventEngine" as Event
+participant "Broker/Sim\n券商/仿真" as Broker
+participant "EventEngine" as Event
 participant "OmsEngine\n状态缓存" as Oms
 
 AK -> PG : 拉取并保存原始/清洗数据
