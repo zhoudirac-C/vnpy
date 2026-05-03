@@ -14,7 +14,7 @@ class TradingAgentsApp(BaseApp):
     """
 
     app_name: str = APP_NAME
-    app_module: str = __module__
+    app_module: str = "vnpy_tradingagents"
     app_path: Path = Path(__file__).parent
     display_name: str = "TradingAgents"
     engine_class: type[TradingAgentsEngine] = TradingAgentsEngine
