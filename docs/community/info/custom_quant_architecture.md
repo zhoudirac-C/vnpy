@@ -1298,7 +1298,7 @@ P4 --> P5
 - `SignalFusionService`：融合规则策略、ML 信号、长期 AI 评级和日内 AI 建议；第一版以规则信号为主，AI 只能确认或拦截，不能把 `hold` 单独变成 `buy`。
 - `AiSignalPolicy`：定义 AI 信号强度上限、有效期、冲突处理和禁用开关；第一版已覆盖关闭开关、日内建议过期、长期 `Sell/Underweight` 拦截日内买入。
 - `RiskRuleSet`：仓位上限、单笔金额、撤单频率、涨跌停、黑名单、最大日内成交额和最大回撤；第一版已提供 `OrderIntent -> RiskCheckResult` 的确定性检查，不生成订单。
-- `DecisionAudit`：记录每笔订单前的规则信号、AI 信号、风控输入和风控结论；第一版由 `DecisionAuditRecord` 和 `PostgresDecisionAuditStorage` 写入 `decision_audit` 表。
+- `DecisionAudit`：记录每笔订单前的规则信号、AI 信号、风控输入和风控结论；第一版由 `DecisionAuditRecord` 和 `PostgresDecisionAuditStorage` 写入 `decision_audit` 表，并由 `PreOrderDecisionService` 统一完成风控检查和审计落库。
 
 验收：
 

@@ -1,8 +1,10 @@
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Protocol
+from uuid import uuid4
 
 from .fusion import FusedSignal
 
@@ -178,6 +180,17 @@ class DecisionAuditRecord:
         )
 
 
+@dataclass(frozen=True)
+class PreOrderDecisionResult:
+    """
+    Result of the pre-order risk and audit boundary.
+    """
+
+    submit_allowed: bool
+    risk_result: RiskCheckResult
+    audit_record: DecisionAuditRecord
+
+
 DECISION_AUDIT_SCHEMA: str = """
 CREATE TABLE IF NOT EXISTS decision_audit (
     decision_id TEXT PRIMARY KEY,
@@ -300,6 +313,58 @@ class PostgresDecisionAuditStorage:
             cursor.close()
 
 
+class DecisionAuditStorage(Protocol):
+    """
+    Storage protocol for pre-order audit records.
+    """
+
+    def save_decision(self, record: DecisionAuditRecord) -> None:
+        pass
+
+
+class PreOrderDecisionService:
+    """
+    Evaluate risk and persist audit before any OrderRequest conversion.
+    """
+
+    def __init__(
+        self,
+        rules: RiskRuleSet,
+        audit_storage: DecisionAuditStorage,
+        decision_id_factory: Callable[[], str] | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        """"""
+        self.rules: RiskRuleSet = rules
+        self.audit_storage: DecisionAuditStorage = audit_storage
+        self.decision_id_factory: Callable[[], str] = decision_id_factory or _decision_id
+        self.clock: Callable[[], datetime] = clock or datetime.now
+
+    def evaluate(
+        self,
+        intent: OrderIntent,
+        fused_signal: FusedSignal,
+    ) -> PreOrderDecisionResult:
+        """
+        Run deterministic risk, save audit and return whether submit may continue.
+        """
+        risk_result: RiskCheckResult = self.rules.evaluate(intent)
+        audit_record: DecisionAuditRecord = DecisionAuditRecord.from_decision(
+            decision_id=self.decision_id_factory(),
+            created_at=self.clock(),
+            intent=intent,
+            fused_signal=fused_signal,
+            risk_result=risk_result,
+        )
+        self.audit_storage.save_decision(audit_record)
+
+        return PreOrderDecisionResult(
+            submit_allowed=risk_result.decision == RiskDecision.APPROVED,
+            risk_result=risk_result,
+            audit_record=audit_record,
+        )
+
+
 def _approved() -> RiskCheckResult:
     """"""
     return RiskCheckResult(decision=RiskDecision.APPROVED)
@@ -341,3 +406,8 @@ def _audit_params(record: DecisionAuditRecord) -> dict[str, Any]:
         "risk_failed_rule": record.risk_failed_rule,
         "risk_reason": record.risk_reason,
     }
+
+
+def _decision_id() -> str:
+    """"""
+    return f"decision-{uuid4().hex}"

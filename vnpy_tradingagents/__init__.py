@@ -20,6 +20,8 @@ from .fusion import FusedSignal, RuleSignal, SignalFusionService
 from .risk import (
     DecisionAuditRecord,
     OrderIntent,
+    PreOrderDecisionResult,
+    PreOrderDecisionService,
     PostgresDecisionAuditStorage,
     RiskCheckResult,
     RiskDecision,
@@ -40,6 +42,8 @@ __all__ = [
     "LongHorizonAgentJob",
     "MarketDataToolkit",
     "OrderIntent",
+    "PreOrderDecisionResult",
+    "PreOrderDecisionService",
     "PortfolioIntent",
     "PostgresAgentStorage",
     "PostgresDecisionAuditStorage",
