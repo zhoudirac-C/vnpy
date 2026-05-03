@@ -2,10 +2,10 @@ from datetime import datetime
 
 from vnpy_tradingagents.fusion import RuleSignal, SignalFusionService
 from vnpy_tradingagents.policy import AiSignalPolicy
-from vnpy_tradingagents.replay import IntradayReplayEngine, ReplayStep
+from vnpy_tradingagents.replay import IntradayReplayEngine, PortfolioReplayEngine, PortfolioReplayStep, ReplayStep
 from vnpy_tradingagents.risk import OrderIntent, PreOrderDecisionService, RiskRuleSet
 from vnpy_tradingagents.runtime import TradingAgentsMode, TradingAgentsRuntimeController
-from vnpy_tradingagents.signals import IntradayAdvice, RatingSignal
+from vnpy_tradingagents.signals import IntradayAdvice, PortfolioIntent, RatingSignal
 
 
 def test_intraday_replay_engine_counts_allowed_and_rejected_steps():
@@ -80,6 +80,50 @@ def test_intraday_replay_engine_keeps_rule_logic_when_ai_disabled():
     assert audit_storage.saved == [summary.results[0].decision.audit_record]
 
 
+def test_portfolio_replay_engine_counts_rating_blocks_and_risk_rejections():
+    """PortfolioReplayEngine should replay long-horizon rating, intent and risk checks."""
+    audit_storage = FakeAuditStorage()
+    engine = make_portfolio_engine(audit_storage=audit_storage)
+    steps = [
+        make_portfolio_step(
+            at=datetime(2024, 1, 3, 15, 30),
+            rating="Overweight",
+            action="buy",
+            price=100,
+            volume=50,
+        ),
+        make_portfolio_step(
+            at=datetime(2024, 1, 4, 15, 30),
+            rating="Sell",
+            action="buy",
+            price=100,
+            volume=50,
+        ),
+        make_portfolio_step(
+            at=datetime(2024, 1, 5, 15, 30),
+            rating="Buy",
+            action="buy",
+            price=100,
+            volume=2_000,
+        ),
+    ]
+
+    summary = engine.run(steps)
+
+    assert summary.total_steps == 3
+    assert summary.submit_allowed == 1
+    assert summary.rating_blocked == 1
+    assert summary.risk_rejected == 1
+    assert summary.ai_used == 2
+    assert len(summary.results) == 3
+    assert summary.results[0].submit_allowed
+    assert not summary.results[1].submit_allowed
+    assert summary.results[1].fused_signal.blocked_reason == "rating_block_buy"
+    assert not summary.results[2].submit_allowed
+    assert summary.results[2].decision.risk_result.failed_rule == "max_order_value"
+    assert audit_storage.saved == [result.decision.audit_record for result in summary.results]
+
+
 def make_engine(
     audit_storage,
     tradingagents_enabled: bool = True,
@@ -98,6 +142,18 @@ def make_engine(
             decision_id_factory=counter.next,
         ),
         live=False,
+    )
+
+
+def make_portfolio_engine(audit_storage) -> PortfolioReplayEngine:
+    """Create a portfolio replay engine fixture."""
+    counter = DecisionCounter()
+    return PortfolioReplayEngine(
+        decision_service=PreOrderDecisionService(
+            rules=RiskRuleSet(max_order_value=100_000),
+            audit_storage=audit_storage,
+            decision_id_factory=counter.next,
+        )
     )
 
 
@@ -129,6 +185,40 @@ def make_step(
         intent=OrderIntent(
             vt_symbol="600519.SSE",
             action=rule_action,
+            price=price,
+            volume=volume,
+        ),
+    )
+
+
+def make_portfolio_step(
+    at: datetime,
+    rating: str,
+    action: str,
+    price: float,
+    volume: float,
+) -> PortfolioReplayStep:
+    """Create a portfolio replay step fixture."""
+    return PortfolioReplayStep(
+        at=at,
+        rating=RatingSignal(
+            vt_symbol="600519.SSE",
+            rating=rating,
+            confidence=0.8,
+            source_run_id=f"rating-{at:%Y%m%d}",
+        ),
+        intent=PortfolioIntent(
+            vt_symbol="600519.SSE",
+            trade_date=at.date().isoformat(),
+            action=action,
+            target_weight_hint=0.15,
+            holding_period_hint="20d",
+            risk_notes="回放测试",
+            source_run_id=f"intent-{at:%Y%m%d}",
+        ),
+        order_intent=OrderIntent(
+            vt_symbol="600519.SSE",
+            action=action,
             price=price,
             volume=volume,
         ),

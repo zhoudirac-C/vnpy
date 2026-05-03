@@ -17,7 +17,16 @@ from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
 from .research import LongHorizonAgentJob, ResearchSnapshot, ResearchSnapshotBuilder
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
-from .replay import IntradayReplayEngine, ReplayStep, ReplayStepResult, ReplaySummary
+from .replay import (
+    IntradayReplayEngine,
+    PortfolioReplayEngine,
+    PortfolioReplayStep,
+    PortfolioReplayStepResult,
+    PortfolioReplaySummary,
+    ReplayStep,
+    ReplayStepResult,
+    ReplaySummary,
+)
 from .risk import (
     DecisionAuditRecord,
     OrderIntent,
@@ -47,6 +56,10 @@ __all__ = [
     "PreOrderDecisionResult",
     "PreOrderDecisionService",
     "PortfolioIntent",
+    "PortfolioReplayEngine",
+    "PortfolioReplayStep",
+    "PortfolioReplayStepResult",
+    "PortfolioReplaySummary",
     "PostgresAgentStorage",
     "PostgresDecisionAuditStorage",
     "PostgresSignalReader",

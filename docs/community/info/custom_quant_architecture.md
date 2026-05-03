@@ -1319,7 +1319,7 @@ P4 --> P5
 交付：
 
 - 日内回放脚本：复盘 `IntradaySnapshot -> IntradayAdvice -> Strategy -> Risk`；第一版由 `IntradayReplayEngine` 回放 `RuleSignal + RatingSignal + IntradayAdvice + OrderIntent -> SignalFusionService -> PreOrderDecisionService`，只生成审计和汇总，不触发真实下单。
-- 长期回测脚本：复盘 `ResearchSnapshot -> RatingSignal/PortfolioIntent -> PortfolioStrategy -> Risk`。
+- 长期回测脚本：复盘 `ResearchSnapshot -> RatingSignal/PortfolioIntent -> PortfolioStrategy -> Risk`；第一版由 `PortfolioReplayEngine` 回放 `RatingSignal + PortfolioIntent + OrderIntent -> PreOrderDecisionService`，验证评级拦截、组合意图和风控拒绝。
 - 仿真 Gateway 配置：只在仿真账户启用 AI 信号。
 - 灰度运行面板或日志：展示最新 AI 建议、策略采纳情况、风控拒绝和真实成交。
 
