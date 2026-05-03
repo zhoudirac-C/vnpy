@@ -27,3 +27,7 @@ class TradingAgentsWorkerResponse:
     confidence: float
     report: str
     raw_state: dict[str, Any]
+    action: str = "hold"
+    target_weight_hint: float | None = None
+    holding_period_hint: str = ""
+    risk_notes: str = ""

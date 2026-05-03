@@ -12,10 +12,13 @@ from .app import TradingAgentsApp
 from .engine import TradingAgentsEngine
 from .toolkit import MarketDataToolkit, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
+from .service import TradingAgentsService
+from .storage import PostgresAgentStorage
 
 
 __all__ = [
     "MarketDataToolkit",
+    "PostgresAgentStorage",
     "SignalStatus",
     "SnapshotQuery",
     "TradingAgentsApp",
@@ -23,6 +26,7 @@ __all__ = [
     "TradingAgentsMode",
     "TradingAgentsRuntimeController",
     "TradingAgentsRuntimeState",
+    "TradingAgentsService",
     "TradingAgentsWorkerRequest",
     "TradingAgentsWorkerResponse",
 ]
