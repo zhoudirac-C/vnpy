@@ -17,7 +17,7 @@
   - 验收：单股票单日期能返回结构化报告、评级和动作；超时返回可审计失败结果。
   - 完成范围：先完成 context-only 安全 adapter 边界；真实 runner 必须显式注入，默认不自动启动 upstream `TradingAgentsGraph`，避免其默认 yfinance/Alpha Vantage 工具绕过 PostgreSQL 快照。
 
-- [ ] **P2-T03: Prompt 模板注入 A 股规则**
+- [x] **P2-T03: Prompt 模板注入 A 股规则**
   - 创建：`vnpy_tradingagents/prompts.py`
   - 内容：A 股交易时间、T+1、涨跌停、停牌、仓位上限和不得绕过风控。
   - 验收：prompt 中不出现美股 benchmark 默认假设。
@@ -43,3 +43,4 @@
 | --- | --- | --- | --- |
 | P2-T01 | 2026-05-03 | `4fbf94d7` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
 | P2-T02 | 2026-05-03 | `ff7abafb` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
+| P2-T03 | 2026-05-03 | `ab3efcec` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_prompts.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
