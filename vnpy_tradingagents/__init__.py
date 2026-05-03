@@ -13,6 +13,7 @@ from .app import TradingAgentsApp
 from .engine import TradingAgentsEngine
 from .toolkit import MarketDataToolkit, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
+from .worker_adapter import TradingAgentsContextPayload, TradingAgentsWorkerAdapter
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
@@ -87,7 +88,9 @@ __all__ = [
     "SignalFusionService",
     "SnapshotQuery",
     "TradingAgentsApp",
+    "TradingAgentsContextPayload",
     "TradingAgentsWorkerConfig",
+    "TradingAgentsWorkerAdapter",
     "TradingAgentsEngine",
     "TradingAgentsMode",
     "TradingAgentsRuntimeController",
