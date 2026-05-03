@@ -10,11 +10,12 @@
   - 字段：LLM provider、API key 环境变量名、model、timeout、max retry、checkpoint 目录。
   - 验收：未配置 API key 时返回清晰错误，不启动真实 Worker。
 
-- [ ] **P2-T02: 实现真实 TradingAgents Worker adapter**
+- [x] **P2-T02: 实现真实 TradingAgents Worker adapter**
   - 创建：`vnpy_tradingagents/worker_adapter.py`
   - 复用：`TradingAgentsWorkerRequest`、`TradingAgentsWorkerResponse`
   - 要求：只接收 `request.context`，不允许访问 yfinance、Alpha Vantage、AKShare、TuShare、QMT，不暴露 `MainEngine`、Gateway、send_order。
   - 验收：单股票单日期能返回结构化报告、评级和动作；超时返回可审计失败结果。
+  - 完成范围：先完成 context-only 安全 adapter 边界；真实 runner 必须显式注入，默认不自动启动 upstream `TradingAgentsGraph`，避免其默认 yfinance/Alpha Vantage 工具绕过 PostgreSQL 快照。
 
 - [ ] **P2-T03: Prompt 模板注入 A 股规则**
   - 创建：`vnpy_tradingagents/prompts.py`
@@ -41,3 +42,4 @@
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
 | P2-T01 | 2026-05-03 | `4fbf94d7` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
+| P2-T02 | 2026-05-03 | `ff7abafb` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
