@@ -46,35 +46,116 @@ TradingAgents v0.2.4 已支持结构化输出、checkpoint、持久化决策日�
 - 将最终输出的 Buy / Overweight / Hold / Underweight / Sell 映射为 VeighNa 内部可消费的研究信号。
 - TradingAgents 不持有交易接口，不直接调用 `MainEngine.send_order()`。
 
-## 3. VeighNa 原生架构
+## 3. 先把 vn.py 架构看简单
 
-VeighNa 的底层可以抽象为：
+一句话理解 vn.py：
 
 ```text
-EventEngine
-  -> MainEngine
-     -> LogEngine / OmsEngine / EmailEngine
-     -> Gateway: CTP / XTP / TORA / IB / RPC / ...
-     -> App: CTA / PortfolioStrategy / AlgoTrading / RiskManager / ...
-     -> Datafeed / Database / UI / Script
+MainEngine 是总控；
+EventEngine 是消息总线；
+Gateway 是券商/行情接口；
+OmsEngine 是订单、成交、持仓、资金的本地状态缓存；
+App/Strategy 是你的策略和功能模块。
 ```
 
-关键对象：
+### 3.1 vn.py 启动后有哪些核心对象
 
-- `EventEngine`：事件总线，负责事件队列、事件处理线程和定时器事件。
-- `MainEngine`：主编排器，负责添加 gateway、engine、app，并对外提供连接、订阅、下单、撤单和历史查询接口。
-- `OmsEngine`：订单管理状态缓存，监听 tick、order、trade、position、account、contract 等事件。
-- `BaseGateway`：交易接口抽象，负责 connect、subscribe、send_order、cancel_order、query_account、query_position。
-- `BaseDatafeed`：历史数据服务抽象，核心方法为 `query_bar_history()` 和 `query_tick_history()`。
+```plantuml
+@startuml
+title vn.py 核心对象关系
 
-二次开发时应保持这些边界：
+skinparam shadowing false
+skinparam packageStyle rectangle
 
-- 数据服务走 `BaseDatafeed`。
-- 交易接口走 `BaseGateway`。
-- 策略信号进入策略 App 或自定义研究 App。
-- 订单必须经过 `OmsEngine`、风控 App 或自定义风险规则。
+component "MainEngine\n总控入口" as Main
+queue "EventEngine\n事件队列 + 定时事件" as Event
+component "LogEngine\n日志" as Log
+component "OmsEngine\n订单/成交/持仓/资金缓存" as Oms
+component "EmailEngine\n邮件" as Email
+component "Gateway\n券商/行情接口" as Gateway
+component "App Engine\nCTA/组合/风控/自定义App" as App
+
+Main --> Event : 创建并启动
+Main --> Log : init_engines()
+Main --> Oms : init_engines()
+Main --> Email : init_engines()
+Main --> Gateway : add_gateway()
+Main --> App : add_app()
+
+Gateway --> Event : on_tick/on_order/on_trade
+App --> Event : register handler
+Oms --> Event : 监听订单/成交/持仓/资金事件
+
+Main --> Gateway : connect/subscribe/send_order/cancel_order
+Main --> Oms : get_order/get_position/get_account
+
+@enduml
+```
+
+这张图只表达一件事：**vn.py 不是一个“策略直接连券商”的框架，而是 MainEngine 把事件、接口、订单状态、策略 App 都装起来。**
+
+### 3.2 实盘交易时一笔订单怎么走
+
+```text
+策略只应该产生 OrderRequest；
+真正发单必须走 MainEngine.send_order()；
+Gateway 发给券商后，再把订单/成交回报通过 EventEngine 推回来；
+OmsEngine 监听这些事件，维护最新订单、成交、持仓和资金状态。
+```
+
+```plantuml
+@startuml
+title vn.py 下单和回报链路
+
+skinparam shadowing false
+
+actor "Strategy/App" as Strategy
+component "Risk Check\n风控检查" as Risk
+component "MainEngine" as Main
+component "Gateway" as Gateway
+cloud "Broker/QMT/XTP/TORA" as Broker
+queue "EventEngine" as Event
+database "OmsEngine\n内存状态缓存" as Oms
+
+Strategy --> Risk : 交易意图
+Risk --> Main : OrderRequest
+Main --> Gateway : send_order(req)
+Gateway --> Broker : 委托请求
+Broker --> Gateway : 委托/成交/持仓/资金回报
+Gateway --> Event : on_order/on_trade/on_position/on_account
+Event --> Oms : process_*_event()
+Oms --> Main : get_order/get_position/get_account
+Main --> Strategy : 查询最新状态
+
+@enduml
+```
+
+这张图的关键边界是：**TradingAgents 不能出现在 `MainEngine -> Gateway -> Broker` 这条实盘下单链路里。它最多给策略一个“研究信号”。**
+
+### 3.3 历史数据和交易接口是两条线
+
+很多人第一次看 vn.py 容易把 datafeed 和 gateway 混在一起。这里要拆开：
+
+| 能力 | vn.py 抽象 | 本项目实现 |
+| --- | --- | --- |
+| 历史 K 线 | `BaseDatafeed.query_bar_history()` | `vnpy_akshare` 从 PostgreSQL/AKShare 返回 `BarData` |
+| 历史 Tick | `BaseDatafeed.query_tick_history()` | 第一阶段明确不支持 |
+| 实时行情 | `BaseGateway.subscribe()` + `on_tick()` | 后续走 QMT/XTP/TORA 等 gateway |
+| 下单撤单 | `BaseGateway.send_order()` / `cancel_order()` | 后续走 QMT/XTP/TORA 等 gateway |
+| 状态缓存 | `OmsEngine` | vn.py 原生维护订单、成交、持仓、资金 |
+
+所以第一阶段 AKShare 做的是 **datafeed**，不是 gateway；它不应该承担实盘行情或实盘下单。
 
 ## 4. 目标架构
+
+先看最简版本：
+
+```text
+AKShare 负责补历史和研究数据；
+PostgreSQL 负责把数据、AI 报告、信号、审计都存下来；
+TradingAgents 只读研究快照，写研究报告和评级信号；
+策略/风控读取评级信号，但下单仍走 vn.py MainEngine + Gateway。
+```
 
 ```plantuml
 @startuml
@@ -119,6 +200,40 @@ Gateway --> Account
 Account --> PG
 PG --> Review
 Review --> Agents
+
+@enduml
+```
+
+如果只看 TradingAgents 接入 vn.py，它是下面这条更小的链路：
+
+```plantuml
+@startuml
+title TradingAgents 接入 vn.py 的位置
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+database "PostgreSQL\nA股研究快照" as PG
+component "TradingAgents Worker\n只做研究和评级" as TA
+database "PostgreSQL\nAI报告 + RatingSignal" as SignalStore
+component "自定义 Research App\n读取AI信号" as ResearchApp
+component "Strategy App\n规则/ML/AI辅助策略" as Strategy
+component "Risk App\n风控" as Risk
+component "MainEngine" as Main
+component "Gateway" as Gateway
+cloud "Broker" as Broker
+
+PG --> TA : 读取行情/财务/新闻/板块快照
+TA --> SignalStore : 写报告和评级
+SignalStore --> ResearchApp : 查询AI信号
+ResearchApp --> Strategy : 推送或查询信号
+Strategy --> Risk : 生成交易意图
+Risk --> Main : 通过后才生成OrderRequest
+Main --> Gateway : send_order()
+Gateway --> Broker : 实盘/仿真委托
+
+TA -[#red,dashed]-> Main : 禁止直接下单
+TA -[#red,dashed]-> Gateway : 禁止直接连券商
 
 @enduml
 ```
@@ -198,7 +313,21 @@ class Datafeed(BaseDatafeed):
 
 ## 6. TradingAgents 接入设计
 
-### 6.1 Worker 化
+### 6.1 TradingAgents 在系统里的角色
+
+TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed，也不应该是直接下单的 Strategy。
+
+它在本项目里的角色是：
+
+```text
+研究员 / 分析师 / 辩论员 / 风险评论员
+  -> 产出报告
+  -> 产出评级
+  -> 评级变成策略可参考的信号
+  -> 策略和风控决定是否下单
+```
+
+### 6.2 Worker 化
 
 TradingAgents 建议作为独立 Worker 运行：
 
@@ -215,7 +344,7 @@ VeighNa App / Script
 - VeighNa 主框架依赖 PySide6、TA-Lib、交易接口和 GUI 生态。
 - 两套依赖放在同一进程里容易产生版本冲突。
 
-### 6.2 A 股工具替换
+### 6.3 A 股工具替换
 
 TradingAgents 默认工具应替换为本地工具：
 
@@ -228,7 +357,7 @@ TradingAgents 默认工具应替换为本地工具：
 | sentiment | 可选，先用新闻事件标签和人工备注替代 |
 | benchmark | 沪深 300 / 中证 500，而不是 SPY |
 
-### 6.3 输出映射
+### 6.4 输出映射
 
 TradingAgents 最终评级映射为内部研究信号：
 
@@ -249,6 +378,48 @@ TradingAgents 最终评级映射为内部研究信号：
 - 风险辩论记录。
 - Portfolio Manager 最终决策。
 - 解析后的评级。
+
+### 6.5 从 TradingAgents 到 vn.py 策略的具体接入方式
+
+接入分三步，不要一步到位直接实盘：
+
+```plantuml
+@startuml
+title TradingAgents 到 vn.py 策略的三步接入
+
+skinparam shadowing false
+
+start
+:Step 1\nTradingAgents 读取PostgreSQL研究快照;
+:生成 report + rating;
+:保存到PostgreSQL;
+:Step 2\nResearch App 读取 rating;
+:转换为 RatingSignal;
+:Strategy App 把 RatingSignal\n和规则/ML信号融合;
+:Step 3\nRisk App 检查仓位/金额/频率/黑名单;
+if (风控通过?) then (yes)
+  :MainEngine.send_order();
+  :Gateway 发给券商或仿真接口;
+else (no)
+  :记录拒绝原因;
+endif
+stop
+
+@enduml
+```
+
+建议第一版只实现 Step 1 和 Step 2：
+
+- Step 1：跑出报告和评级，落 PostgreSQL。
+- Step 2：写一个 Research App 或服务，把评级转换成可查询的 `RatingSignal`。
+- Step 3：等回测和模拟盘验证后再接交易链路。
+
+任何版本都不允许：
+
+- TradingAgents 调用 `MainEngine.send_order()`。
+- TradingAgents 调用 Gateway。
+- TradingAgents 直接改持仓或订单。
+- TradingAgents 输出绕过风控。
 
 ## 7. 开发阶段
 
