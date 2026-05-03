@@ -19,6 +19,7 @@ from .worker_process import SubprocessTradingAgentsWorker
 from .source_policy import SnapshotSourcePolicy, SnapshotSourcePolicyResult
 from .scheduler import TradingAgentsIntradayScheduler
 from .strategy_mixin import TradingAgentsStrategyMixin
+from .order_bridge import OrderBridge, OrderBridgeResult
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
@@ -70,6 +71,8 @@ __all__ = [
     "IntradayReplayEngine",
     "LongHorizonAgentJob",
     "MarketDataToolkit",
+    "OrderBridge",
+    "OrderBridgeResult",
     "OrderIntent",
     "PreOrderDecisionResult",
     "PreOrderDecisionService",
