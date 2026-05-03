@@ -15,6 +15,7 @@ from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
+from .research import LongHorizonAgentJob, ResearchSnapshot, ResearchSnapshotBuilder
 from .signals import IntradayAdvice, PortfolioIntent, RatingSignal
 from .policy import AiSignalPolicy, SignalDecision
 
@@ -25,11 +26,14 @@ __all__ = [
     "IntradayAgentJob",
     "IntradaySnapshot",
     "IntradaySnapshotBuilder",
+    "LongHorizonAgentJob",
     "MarketDataToolkit",
     "PortfolioIntent",
     "PostgresAgentStorage",
     "PostgresSignalReader",
     "RatingSignal",
+    "ResearchSnapshot",
+    "ResearchSnapshotBuilder",
     "SignalStatus",
     "SignalDecision",
     "SnapshotQuery",

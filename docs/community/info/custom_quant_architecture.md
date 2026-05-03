@@ -1272,10 +1272,10 @@ P4 --> P5
 
 交付：
 
-- `ResearchSnapshot`：按交易日固化行情、复权口径、财务字段、行业/概念标签、benchmark 和数据版本。
-- `LongHorizonAgentJob`：盘前、盘后或周末批量运行 TradingAgents。
-- `RatingSignal`：保存 Buy/Overweight/Hold/Underweight/Sell、强度、原因、风险点和有效期。
-- `PortfolioIntent`：保存目标权重提示、加减仓方向、持有周期、最大风险暴露和再平衡备注。
+- `ResearchSnapshot`：按交易日固化行情、复权口径、财务字段、行业/概念标签、benchmark 和数据版本；第一版由 `ResearchSnapshotBuilder` 从多周期 K 线和研究字段压缩生成。
+- `LongHorizonAgentJob`：盘前、盘后或周末批量运行 TradingAgents；第一版已提供单标的运行边界，后续补批量调度。
+- `RatingSignal`：保存 Buy/Overweight/Hold/Underweight/Sell、强度、原因、风险点和有效期；第一版由 Worker 输出写入 `rating_signal` 表。
+- `PortfolioIntent`：保存目标权重提示、加减仓方向、持有周期、最大风险暴露和再平衡备注；第一版由 Worker 输出写入 `trade_intent` 表。
 - `PortfolioSignalReader`：PortfolioStrategy 查询候选池和目标仓位建议；第一版由 `PostgresSignalReader.load_latest_rating_signal()` 和 `PostgresSignalReader.load_portfolio_intents()` 提供。
 
 验收：
