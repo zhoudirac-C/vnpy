@@ -146,65 +146,57 @@ Main --> Strategy : 查询最新状态
 
 所以第一阶段 AKShare 做的是 **datafeed**，不是 gateway；它不应该承担实盘行情或实盘下单。
 
-## 4. 目标架构
+## 4. 目标框架：按一次信号到订单的流向看
 
-先看最简版本：
+这张图只按“时间顺序”看，不再把所有模块堆在一张总览图里：
 
 ```text
-AKShare 负责补历史和研究数据；
-PostgreSQL 负责把数据、AI 报告、信号、审计都存下来；
-TradingAgents 只读研究快照，写研究报告和评级信号；
-策略/风控读取评级信号，但下单仍走 vn.py MainEngine + Gateway。
+1. AKShare 拉数据，存 PostgreSQL。
+2. TradingAgents 从 PostgreSQL 读研究快照，生成 AI 买卖观点和评级，也存 PostgreSQL。
+3. vn.py Strategy App 读取历史 K 线和 AI 信号，生成交易意图。
+4. Risk App 先做风控。
+5. 风控通过后才走 MainEngine -> Gateway -> 券商。
+6. 券商回报再通过 EventEngine 回到 OmsEngine。
 ```
 
 ```plantuml
 @startuml
-title AKShare + TradingAgents + VeighNa 目标架构
+title 目标框架：从数据、AI信号到vn.py下单
 
 skinparam shadowing false
-skinparam packageStyle rectangle
+skinparam sequenceMessageAlign center
 
-component "AKShare / 其他数据源" as DataSource
-database "PostgreSQL\nRaw Data / Clean Data\nQuality Report / Signal / Audit" as PG
-component "Data Quality Check" as Quality
-component "VeighNa Datafeed\nBarData / TickData" as Datafeed
-component "Research Snapshot\n行情 / 板块 / 财务 / 新闻" as Snapshot
-component "TradingAgents Worker" as Agents
-component "Agent Research Report" as Report
-component "AI Rating Signal" as Rating
-component "Strategy App / Backtesting" as Strategy
-component "Signal Fusion" as Fusion
-component "Portfolio / Risk" as Risk
-component "MainEngine / OmsEngine" as Main
-component "Gateway\nQMT / XTP / TORA / 仿真" as Gateway
-component "Account / Orders / Trades" as Account
-component "Review / Reflection / Metrics" as Review
+participant "AKShare\n数据源" as AK
+database "PostgreSQL\nraw/clean/snapshot/signal/audit" as PG
+participant "vnpy_akshare\nDatafeed" as DF
+participant "TradingAgents\nWorker" as TA
+participant "Strategy App\n策略" as Strategy
+participant "Risk App\n风控" as Risk
+participant "MainEngine" as Main
+participant "Gateway\nQMT/XTP/TORA/仿真" as Gateway
+cloud "Broker/Sim" as Broker
+queue "EventEngine" as Event
+participant "OmsEngine\n状态缓存" as Oms
 
-DataSource --> PG : raw ingest
-PG --> Quality : load raw data
-Quality --> PG : clean data + quality report
-PG --> Datafeed
-PG --> Snapshot
-Snapshot --> Agents
-Agents --> Report
-Agents --> Rating
-Report --> PG
-Rating --> PG
-Datafeed --> Strategy
-Rating --> Fusion
-Strategy --> Fusion
-Fusion --> Risk
-Risk --> Main
-Main --> Gateway
-Gateway --> Account
-Account --> PG
-PG --> Review
-Review --> Agents
+AK -> PG : 拉取并保存原始/清洗数据
+PG -> TA : 提供研究快照
+TA -> PG : 保存AI报告 + 买卖观点 + 评级
+Strategy -> DF : 请求历史K线
+DF -> PG : 读取BarData数据
+PG --> Strategy : 返回AI信号
+Strategy -> Risk : 生成交易意图
+Risk -> Main : 风控通过后提交OrderRequest
+Main -> Gateway : send_order(req)
+Gateway -> Broker : 委托请求
+Broker --> Gateway : 订单/成交/持仓/资金回报
+Gateway -> Event : on_order/on_trade/on_position/on_account
+Event -> Oms : 更新状态缓存
+Oms --> Strategy : 策略查询最新状态
 
 @enduml
 ```
 
-如果只看 TradingAgents 接入 vn.py，它是下面这条更小的链路：
+如果只看 TradingAgents 接入 vn.py，就是下面这条更小的链路：
 
 ```plantuml
 @startuml
@@ -214,8 +206,8 @@ skinparam shadowing false
 skinparam packageStyle rectangle
 
 database "PostgreSQL\nA股研究快照" as PG
-component "TradingAgents Worker\n只做研究和评级" as TA
-database "PostgreSQL\nAI报告 + RatingSignal" as SignalStore
+component "TradingAgents Worker\n研究 + 买卖观点 + 评级" as TA
+database "PostgreSQL\nAI报告 + TradeIntent + RatingSignal" as SignalStore
 component "自定义 Research App\n读取AI信号" as ResearchApp
 component "Strategy App\n规则/ML/AI辅助策略" as Strategy
 component "Risk App\n风控" as Risk
@@ -224,7 +216,7 @@ component "Gateway" as Gateway
 cloud "Broker" as Broker
 
 PG --> TA : 读取行情/财务/新闻/板块快照
-TA --> SignalStore : 写报告和评级
+TA --> SignalStore : 写报告、买卖观点和评级
 SignalStore --> ResearchApp : 查询AI信号
 ResearchApp --> Strategy : 推送或查询信号
 Strategy --> Risk : 生成交易意图
@@ -238,13 +230,10 @@ TA -[#red,dashed]-> Gateway : 禁止直接连券商
 @enduml
 ```
 
-分层说明：
+看图时抓住两个边界：
 
-- 数据层：负责 AKShare 调用、PostgreSQL 入库、清洗、字段标准化和质量报告。
-- Datafeed 层：把清洗后数据转换为 VeighNa 标准 `BarData` / `TickData`。
-- 研究层：构造 A 股研究快照，供 TradingAgents 使用。
-- 信号层：规则策略、机器学习策略和 TradingAgents 评级统一落成内部信号。
-- 风控和交易层：仍然由 VeighNa 的 MainEngine、OmsEngine、Gateway 和风控规则控制。
+- TradingAgents 可以产出买入、卖出、持有、减仓这类“策略观点”。
+- TradingAgents 不能直接执行买卖；执行仍然必须通过 Strategy App、Risk App、MainEngine 和 Gateway。
 
 ## 5. AKShare 接入设计
 
@@ -311,23 +300,128 @@ class Datafeed(BaseDatafeed):
 - 复权数据是否存在异常负价。
 - 单日涨跌幅是否超过合理阈值，超过则标记为异常而非直接丢弃。
 
-## 6. TradingAgents 接入设计
+## 6. TradingAgents 原生功能和架构
 
-### 6.1 TradingAgents 在系统里的角色
+### 6.1 TradingAgents 原本能做什么
 
-TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed，也不应该是直接下单的 Strategy。
+TradingAgents 原生定位不是“只写研究报告”。它本来就是一个多智能体交易决策框架，会让分析师、研究员、交易员、风险团队和组合经理一起产出交易决策。
+
+官方 README 里描述的原生团队分工可以画成：
+
+```plantuml
+@startuml
+title TradingAgents 原生功能：模拟一个交易团队
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+component "Analyst Team\nMarket / Fundamentals\nSentiment / News" as Analysts
+component "Researcher Team\nBull Researcher\nBear Researcher" as Researchers
+component "Research Manager\n汇总多空辩论" as ResearchManager
+component "Trader Agent\n生成交易计划\n时机 + 方向 + 仓位倾向" as Trader
+component "Risk Team\nAggressive / Neutral\nConservative" as RiskTeam
+component "Portfolio Manager\nApprove / Reject\nBuy / Overweight / Hold\nUnderweight / Sell" as PM
+cloud "Simulated Exchange\n原项目示例可模拟执行" as Sim
+database "Decision Log / Memory\n历史决策和反思" as Memory
+
+Analysts --> Researchers : 分析报告
+Researchers --> ResearchManager : 多空辩论
+ResearchManager --> Trader : 投资观点
+Trader --> RiskTeam : 交易计划
+RiskTeam --> PM : 风险评估
+PM --> Sim : 原生示例中批准后可模拟执行
+PM --> Memory : 保存决策
+Memory --> PM : 下一次运行注入反思
+
+@enduml
+```
+
+所以答案是：**TradingAgents 可以做买卖策略，但它原生做的是“生成交易决策和交易计划”，不是可靠的券商执行系统。**
+
+### 6.2 TradingAgents 原生 LangGraph 架构
+
+TradingAgents 用 LangGraph 编排 Agent。简化后是这条链路：
+
+```plantuml
+@startuml
+title TradingAgents 原生LangGraph架构
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+start
+:选择分析师\nmarket/social/news/fundamentals;
+repeat
+  :Analyst 节点生成报告;
+  :ToolNode 调用数据工具\nstock data / indicators / news / fundamentals;
+repeat while (还有下一个分析师?) is (yes)
+:Bull Researcher;
+:Bear Researcher;
+while (多空辩论未结束?) is (continue)
+  :Bull/Bear 继续辩论;
+endwhile (done)
+:Research Manager 汇总;
+:Trader 生成交易计划;
+:Aggressive Risk Analyst;
+:Conservative Risk Analyst;
+:Neutral Risk Analyst;
+while (风险讨论未结束?) is (continue)
+  :风险团队继续讨论;
+endwhile (done)
+:Portfolio Manager 输出最终决策;
+:SignalProcessor 提取五档评级\nBuy/Overweight/Hold/Underweight/Sell;
+stop
+
+@enduml
+```
+
+原生状态里包含：
+
+- `market_report`
+- `sentiment_report`
+- `news_report`
+- `fundamentals_report`
+- `investment_debate_state`
+- `trader_investment_plan`
+- `risk_debate_state`
+- `final_trade_decision`
+
+### 6.3 原生 TradingAgents 和本 fork 的区别
+
+| 问题 | TradingAgents 原生做法 | 本 fork 中的做法 |
+| --- | --- | --- |
+| 数据 | 默认偏美股，常见工具包括 yfinance、Alpha Vantage、新闻和基本面工具 | 替换成 PostgreSQL 中的 A 股快照、AKShare、QMT 或其他 A 股数据 |
+| Benchmark | 原生记忆/反思里偏 SPY alpha | 替换成沪深 300、中证 500 或策略自定义基准 |
+| 交易决策 | Trader + Portfolio Manager 可以给出交易计划和最终评级 | 可以转成 `TradeIntent` 和 `RatingSignal` |
+| 执行 | 原生示例可送到 simulated exchange | 本 fork 不让 TradingAgents 直接执行，必须走 vn.py 风控和 Gateway |
+| 风险 | LLM 风险团队给建议 | LLM 风险建议之外，还必须有确定性 Risk App 硬规则 |
+
+## 7. TradingAgents 接入设计
+
+### 7.1 TradingAgents 在系统里的角色
+
+TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed。它可以参与买卖策略，但更准确地说，它应该是 **AI 策略决策模块**，而不是 **交易执行模块**。
 
 它在本项目里的角色是：
 
 ```text
 研究员 / 分析师 / 辩论员 / 风险评论员
   -> 产出报告
-  -> 产出评级
-  -> 评级变成策略可参考的信号
+  -> 产出买卖观点和评级
+  -> 买卖观点变成 TradeIntent
+  -> 评级变成 RatingSignal
   -> 策略和风控决定是否下单
 ```
 
-### 6.2 Worker 化
+三种接入等级：
+
+| 等级 | TradingAgents 可以做什么 | 是否允许直接下单 |
+| --- | --- | --- |
+| 研究模式 | 生成报告、风险点、评级 | 不允许 |
+| AI 信号模式 | 输出 `RatingSignal`，参与策略排序和过滤 | 不允许 |
+| AI 策略模式 | 输出 `TradeIntent`，例如买入、卖出、减仓、持有 | 仍然不允许，必须经过 Risk App 和 MainEngine |
+
+### 7.2 Worker 化
 
 TradingAgents 建议作为独立 Worker 运行：
 
@@ -344,7 +438,7 @@ VeighNa App / Script
 - VeighNa 主框架依赖 PySide6、TA-Lib、交易接口和 GUI 生态。
 - 两套依赖放在同一进程里容易产生版本冲突。
 
-### 6.3 A 股工具替换
+### 7.3 A 股工具替换
 
 TradingAgents 默认工具应替换为本地工具：
 
@@ -357,9 +451,9 @@ TradingAgents 默认工具应替换为本地工具：
 | sentiment | 可选，先用新闻事件标签和人工备注替代 |
 | benchmark | 沪深 300 / 中证 500，而不是 SPY |
 
-### 6.4 输出映射
+### 7.4 输出映射
 
-TradingAgents 最终评级映射为内部研究信号：
+TradingAgents 最终评级映射为内部研究信号；交易计划映射为内部交易意图：
 
 | 评级 | 信号方向 | 建议强度 | A 股含义 |
 | --- | --- | --- | --- |
@@ -368,6 +462,20 @@ TradingAgents 最终评级映射为内部研究信号：
 | Hold | neutral | 0.0 | 观望或维持 |
 | Underweight | reduce | -0.4~-0.7 | 减仓或回避 |
 | Sell | exit | -0.8~-1.0 | 卖出或退出候选 |
+
+`TradeIntent` 建议字段：
+
+```text
+symbol
+trade_date
+action: buy / sell / reduce / hold
+confidence
+target_weight_hint
+holding_period_hint
+reason
+risk_notes
+source_run_id
+```
 
 输出必须保存：
 
@@ -379,7 +487,7 @@ TradingAgents 最终评级映射为内部研究信号：
 - Portfolio Manager 最终决策。
 - 解析后的评级。
 
-### 6.5 从 TradingAgents 到 vn.py 策略的具体接入方式
+### 7.5 从 TradingAgents 到 vn.py 策略的具体接入方式
 
 接入分三步，不要一步到位直接实盘：
 
@@ -393,9 +501,9 @@ start
 :Step 1\nTradingAgents 读取PostgreSQL研究快照;
 :生成 report + rating;
 :保存到PostgreSQL;
-:Step 2\nResearch App 读取 rating;
-:转换为 RatingSignal;
-:Strategy App 把 RatingSignal\n和规则/ML信号融合;
+:Step 2\nResearch App 读取 rating + trade intent;
+:转换为 RatingSignal + TradeIntent;
+:Strategy App 把AI意图\n和规则/ML信号融合;
 :Step 3\nRisk App 检查仓位/金额/频率/黑名单;
 if (风控通过?) then (yes)
   :MainEngine.send_order();
@@ -410,8 +518,8 @@ stop
 
 建议第一版只实现 Step 1 和 Step 2：
 
-- Step 1：跑出报告和评级，落 PostgreSQL。
-- Step 2：写一个 Research App 或服务，把评级转换成可查询的 `RatingSignal`。
+- Step 1：跑出报告、买卖观点和评级，落 PostgreSQL。
+- Step 2：写一个 Research App 或服务，把输出转换成可查询的 `RatingSignal` 和 `TradeIntent`。
 - Step 3：等回测和模拟盘验证后再接交易链路。
 
 任何版本都不允许：
@@ -421,7 +529,7 @@ stop
 - TradingAgents 直接改持仓或订单。
 - TradingAgents 输出绕过风控。
 
-## 7. 开发阶段
+## 8. 开发阶段
 
 ### Phase 1：AKShare datafeed POC
 
@@ -491,7 +599,7 @@ stop
 - AI、AKShare、TradingAgents 任一模块失败时，不影响手工风控和撤单。
 - 实盘订单只来自受控策略和风控批准。
 
-## 8. 风险控制
+## 9. 风险控制
 
 | 风险 | 控制措施 |
 | --- | --- |
@@ -504,7 +612,7 @@ stop
 | 策略绕过风控 | 所有订单必须经过 MainEngine/OmsEngine 和风控规则 |
 | 实盘误触发 | 默认关闭实盘开关、模拟盘灰度、小资金验证、一键暂停 |
 
-## 9. 推荐近期行动
+## 10. 推荐近期行动
 
 1. 保持这个 fork 为主开发仓库，不再依赖旧项目文档。
 2. 先做 AKShare datafeed POC，跑通 VeighNa 标准历史数据接口。
@@ -512,7 +620,7 @@ stop
 4. 再做 TradingAgents Worker POC，先输出报告和评级。
 5. 最后把 AI 评级接入策略和风控链路。
 
-## 10. 资料来源
+## 11. 资料来源
 
 - VeighNa GitHub: https://github.com/vnpy/vnpy
 - VeighNa 数据服务文档: https://www.vnpy.com/docs/cn/community/info/datafeed.html
