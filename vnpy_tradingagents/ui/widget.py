@@ -5,6 +5,7 @@ from vnpy.trader.ui import QtWidgets
 from vnpy.event import EventEngine
 
 from ..engine import TradingAgentsEngine
+from ..monitoring import ReplayRunStatus
 from ..runtime import TradingAgentsMode, TradingAgentsRuntimeState
 
 
@@ -38,6 +39,23 @@ def apply_control_state(
     return engine.get_state()
 
 
+def build_status_panel_text(status: ReplayRunStatus) -> str:
+    """
+    Render latest replay/audit status for the UI panel.
+    """
+    source_run_ids: str = ",".join(status.latest_ai_source_run_ids or [])
+    return "\n".join(
+        [
+            f"run={status.run_id} mode={status.mode} health={status.health}",
+            f"steps={status.total_steps} allowed={status.submit_allowed} rejected={status.risk_rejected}",
+            f"decision={status.latest_decision_id} symbol={status.latest_vt_symbol}",
+            f"action={status.latest_action} ai={status.latest_ai_decision} used={status.latest_ai_used}",
+            f"risk={status.latest_risk_decision} failed_rule={status.latest_risk_failed_rule}",
+            f"sources={source_run_ids}",
+        ]
+    )
+
+
 class TradingAgentsWidget(QtWidgets.QWidget):
     """
     Minimal TradingAgents runtime control widget.
@@ -55,6 +73,8 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.mode_combo.addItems([mode.value for mode in TradingAgentsMode])
         self.live_confirm_checkbox = QtWidgets.QCheckBox("Live AI 二次确认")
         self.status_label = QtWidgets.QLabel()
+        self.replay_status_text = QtWidgets.QPlainTextEdit()
+        self.replay_status_text.setReadOnly(True)
         self.apply_button = QtWidgets.QPushButton("应用")
         self.apply_button.clicked.connect(self.apply_settings)
 
@@ -63,6 +83,7 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         form.addRow("模式", self.mode_combo)
         form.addRow("Live", self.live_confirm_checkbox)
         form.addRow("状态", self.status_label)
+        form.addRow("Replay/Gray", self.replay_status_text)
         form.addRow(self.apply_button)
         self.setLayout(form)
 
@@ -101,3 +122,9 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         if state.disabled_reason:
             text = f"{text} / {state.disabled_reason}"
         self.status_label.setText(text)
+
+    def set_replay_status(self, status: ReplayRunStatus) -> None:
+        """
+        Display latest replay or gray-run status.
+        """
+        self.replay_status_text.setPlainText(build_status_panel_text(status))
