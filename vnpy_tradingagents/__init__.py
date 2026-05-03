@@ -18,6 +18,7 @@ from .prompts import ASHARE_RULES_PROMPT, PROMPT_VERSION, build_worker_system_pr
 from .worker_process import SubprocessTradingAgentsWorker
 from .source_policy import SnapshotSourcePolicy, SnapshotSourcePolicyResult
 from .scheduler import TradingAgentsIntradayScheduler
+from .strategy_mixin import TradingAgentsStrategyMixin
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
@@ -108,6 +109,7 @@ __all__ = [
     "TradingAgentsWorkerAdapter",
     "TradingAgentsEngine",
     "TradingAgentsIntradayScheduler",
+    "TradingAgentsStrategyMixin",
     "TradingAgentsMode",
     "TradingAgentsRuntimeController",
     "TradingAgentsRuntimeState",
