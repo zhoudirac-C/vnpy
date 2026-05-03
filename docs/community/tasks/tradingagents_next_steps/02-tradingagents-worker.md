@@ -32,7 +32,7 @@
   - 补充字段：`model_provider`、`model_name`、`prompt_version`、`snapshot_ids`、`error_message`
   - 验收：同一输入快照可复跑并对比输出差异。
 
-- [ ] **P2-T06: SnapshotSourcePolicy**
+- [x] **P2-T06: SnapshotSourcePolicy**
   - 创建：`vnpy_tradingagents/source_policy.py`
   - 目标：定义 market/fundamentals/news/sentiment/benchmark/portfolio 是否必填，以及缺失时是否允许 degraded。
   - 验收：news/sentiment 缺失时可降级；market 缺失时阻止 Worker 运行。
@@ -46,3 +46,4 @@
 | P2-T03 | 2026-05-03 | `ab3efcec` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_prompts.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
 | P2-T04 | 2026-05-03 | `55bbd5c0` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_worker_process.py tests/test_tradingagents_prompts.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
 | P2-T05 | 2026-05-03 | `95a18106` | `uv run --with pytest pytest tests/test_tradingagents_storage_service.py -v` |
+| P2-T06 | 2026-05-03 | `3283cc2b` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_worker_adapter.py tests/test_tradingagents_worker_process.py tests/test_tradingagents_prompts.py tests/test_tradingagents_source_policy.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
