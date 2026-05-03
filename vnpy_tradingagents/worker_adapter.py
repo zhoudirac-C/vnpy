@@ -183,6 +183,17 @@ def _failure_response(
     )
 
 
+def failed_worker_response(
+    request: TradingAgentsWorkerRequest,
+    error_type: str,
+    error_message: str,
+) -> TradingAgentsWorkerResponse:
+    """
+    Public helper for process/service boundaries to create auditable failures.
+    """
+    return _failure_response(request, error_type, error_message)
+
+
 def _find_forbidden_context_key(value: Any, path: str = "") -> str:
     """
     Find forbidden provider or trading handles inside a nested context.

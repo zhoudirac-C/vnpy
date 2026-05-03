@@ -15,6 +15,7 @@ from .toolkit import MarketDataToolkit, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 from .worker_adapter import TradingAgentsContextPayload, TradingAgentsWorkerAdapter
 from .prompts import ASHARE_RULES_PROMPT, PROMPT_VERSION, build_worker_system_prompt
+from .worker_process import SubprocessTradingAgentsWorker
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
@@ -90,6 +91,7 @@ __all__ = [
     "SignalDecision",
     "SignalFusionService",
     "SnapshotQuery",
+    "SubprocessTradingAgentsWorker",
     "TradingAgentsApp",
     "TradingAgentsContextPayload",
     "TradingAgentsWorkerConfig",

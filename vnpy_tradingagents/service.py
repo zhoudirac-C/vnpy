@@ -2,6 +2,7 @@ from typing import Protocol
 
 from .runtime import TradingAgentsRuntimeController
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
+from .worker_adapter import failed_worker_response
 
 
 class Worker(Protocol):
@@ -49,7 +50,14 @@ class TradingAgentsService:
         if not self.runtime.can_generate_report():
             return None
 
-        response: TradingAgentsWorkerResponse = self.worker.run(request)
+        try:
+            response: TradingAgentsWorkerResponse = self.worker.run(request)
+        except Exception as exc:
+            response = failed_worker_response(request, "worker_exception", str(exc))
+
         self.storage.save_worker_result(request, response)
-        self.runtime.mark_success(response.run_id)
+        if response.raw_state.get("status") == "failed":
+            self.runtime.mark_degraded(response.raw_state.get("error_message", ""))
+        else:
+            self.runtime.mark_success(response.run_id)
         return response

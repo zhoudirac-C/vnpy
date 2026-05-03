@@ -82,6 +82,14 @@ class TradingAgentsRuntimeController:
         Record the last successful TradingAgents run id.
         """
         self.state.last_successful_run_id = run_id
+        self.state.signal_status = SignalStatus.ACTIVE
+
+    def mark_degraded(self, reason: str = "") -> None:
+        """
+        Mark TradingAgents as degraded without disabling deterministic trading flow.
+        """
+        self.state.signal_status = SignalStatus.DEGRADED
+        self.state.disabled_reason = reason
 
     def can_generate_report(self) -> bool:
         """
