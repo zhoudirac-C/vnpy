@@ -1,10 +1,10 @@
 # 自定义 A 股量化架构方案：可切换数据源 + TradingAgents + VeighNa
 
-版本：v0.1
+版本：v0.2
 
 日期：2026-05-03
 
-状态：方案草案
+状态：阶段任务 P1-P6 已实现，进入真实数据源、真实 Worker 和 PaperAccount 联调
 
 > 本文档用于本 fork 的二次开发规划，不构成任何投资建议。任何数据源和 TradingAgents 都只能作为投研与信号辅助；实盘前必须经过回测、人工确认、风控、OMS 和账户对账。
 
@@ -1183,6 +1183,17 @@ P4 --> P5
 @enduml
 ```
 
+当前实现状态：
+
+| 阶段 | 状态 | 主要落地模块 |
+| --- | --- | --- |
+| Phase 1 | 已完成 | `vnpy_router`、PostgreSQL 快照、provider router、质量检查 |
+| Phase 2 | 已完成 | `TradingAgentsWorkerAdapter`、worker 进程边界、prompt、source policy |
+| Phase 3A | 已完成 | `IntradaySnapshot`、EventEngine scheduler、日内 collector、策略 mixin |
+| Phase 3B | 已完成 | `ResearchSnapshot`、批量长期任务、长期调度、组合意图 |
+| Phase 4 | 已完成 | `SignalFusionService`、`AiSignalPolicy`、`PreOrderDecisionService`、审计 |
+| Phase 5 | 已完成 | 回测桥接、PaperAccount 仿真桥接、灰度状态、审计导出、live gate |
+
 ### Phase 1：公共数据底座
 
 目标：
@@ -1249,7 +1260,7 @@ P4 --> P5
 交付：
 
 - `IntradaySnapshot`：包含分钟 K 线、VWAP、均线、成交量变化、盘口摘要、板块状态、新闻事件、当前持仓和当日交易纪律；第一版由 `IntradaySnapshotBuilder` 从最近分钟 K 线压缩生成。
-- `IntradayAgentJob`：盘中定时或事件触发调用 TradingAgents；第一版已提供可测试的运行边界，真实 vn.py 事件线程和定时调度后续接入。
+- `IntradayAgentJob`：盘中定时或事件触发调用 TradingAgents；`TradingAgentsIntradayScheduler` 已接入 `EventEngine` 定时事件，`IntradaySnapshotCollector` 可从 tick/minute bar 构建快照。
 - `IntradayAdvice`：保存建议方向、适用窗口、置信度、失效条件、风险备注和来源 run id；第一版由 Worker 输出转换并写入 `intraday_advice` 表。
 - `IntradayAdviceReader`：Strategy App 查询最近有效建议；第一版由 `PostgresSignalReader.load_latest_intraday_advice()` 提供。
 - 降级策略：Worker 超时、LLM 失败或快照缺失时，策略继续按原规则运行。
@@ -1273,7 +1284,7 @@ P4 --> P5
 交付：
 
 - `ResearchSnapshot`：按交易日固化行情、复权口径、财务字段、行业/概念标签、benchmark 和数据版本；第一版由 `ResearchSnapshotBuilder` 从多周期 K 线和研究字段压缩生成。
-- `LongHorizonAgentJob`：盘前、盘后或周末批量运行 TradingAgents；第一版已提供单标的运行边界，后续补批量调度。
+- `LongHorizonAgentJob`：盘前、盘后或周末批量运行 TradingAgents；`BatchLongHorizonAgentJob` 和 `LongHorizonScheduler` 已支持股票池批量、单标的失败隔离和同一 trade_date 幂等重跑。
 - `RatingSignal`：保存 Buy/Overweight/Hold/Underweight/Sell、强度、原因、风险点和有效期；第一版由 Worker 输出写入 `rating_signal` 表。
 - `PortfolioIntent`：保存目标权重提示、加减仓方向、持有周期、最大风险暴露和再平衡备注；第一版由 Worker 输出写入 `trade_intent` 表。
 - `PortfolioSignalReader`：PortfolioStrategy 查询候选池和目标仓位建议；第一版由 `PostgresSignalReader.load_latest_rating_signal()` 和 `PostgresSignalReader.load_portfolio_intents()` 提供。
@@ -1284,6 +1295,7 @@ P4 --> P5
 - `PortfolioIntent` 只影响目标仓位和排序权重，不直接下单。
 - 长期调仓计划必须经过组合约束、仓位上限、行业集中度和回撤规则。
 - 调仓后可以把真实成交、持仓、绩效写回 PostgreSQL，作为下一次 TradingAgents 反思输入。
+- `PortfolioConstraintEngine` 已覆盖单票权重、行业集中度、换手率、现金保留和回撤约束；`PostgresFeedbackStorage` 已支持绩效和成交反馈写回。
 
 ### Phase 4：策略融合和硬风控
 
@@ -1320,8 +1332,11 @@ P4 --> P5
 
 - 日内回放脚本：复盘 `IntradaySnapshot -> IntradayAdvice -> Strategy -> Risk`；第一版由 `IntradayReplayEngine` 回放 `RuleSignal + RatingSignal + IntradayAdvice + OrderIntent -> SignalFusionService -> PreOrderDecisionService`，只生成审计和汇总，不触发真实下单。
 - 长期回测脚本：复盘 `ResearchSnapshot -> RatingSignal/PortfolioIntent -> PortfolioStrategy -> Risk`；第一版由 `PortfolioReplayEngine` 回放 `RatingSignal + PortfolioIntent + OrderIntent -> PreOrderDecisionService`，验证评级拦截、组合意图和风控拒绝。
-- 仿真 Gateway 配置：只在仿真账户启用 AI 信号；第一版由 `GatewayAiPolicy` 根据 `GatewayProfile` 的 backtest/simulation/live 模式配置 TradingAgents runtime，实盘默认禁用 AI，除非显式允许 live AI。
-- 灰度运行面板或日志：展示最新 AI 建议、策略采纳情况、风控拒绝和真实成交；第一版由 `ReplayRunStatusBuilder` 汇总日内/长期回放结果，并由 `ReplayRunStatusLog` 输出稳定 JSON line，真实成交字段在仿真 Gateway 接入后补充。
+- 回测桥接：`BacktestingBridge` 在回测时间点读取 `RatingSignal`、`PortfolioIntent`、`IntradayAdvice`，复用融合和风控，不访问真实 Gateway。
+- 仿真 Gateway 配置：`PaperAccountBridge` 只在 `GatewayAccountMode.SIMULATION` 下启用 AI，并把模拟成交写入 feedback。
+- 灰度运行面板或日志：`ReplayRunStatusBuilder` 汇总日内/长期回放结果，`PostgresReplayRunStatusStorage` 持久化 `replay_run_status`，`ReplayRunStatusLog` 输出稳定 JSON line。
+- 审计和迁移：`audit_export` 支持 JSONL/CSV 导出，`initialize_postgres_schema()` 可一键初始化 TradingAgents/router 全部 PostgreSQL 表。
+- 实盘准入：`LiveGate` 检查模拟盘稳定天数、最大回撤、审计完整率和 live AI 显式开启；`pause_manual_takeover()` 可一键暂停所有 AI signal 使用。
 
 验收：
 
@@ -1345,12 +1360,11 @@ P4 --> P5
 
 ## 11. 推荐近期行动
 
-1. 保持这个 fork 为主开发仓库，不再依赖旧项目文档。
-2. 先做公共数据底座：`vnpy_router` datafeed、PostgreSQL 缓存、质量报告、`ResearchSnapshot` 和 `IntradaySnapshot` 表结构。
-3. 再做 TradingAgents Worker 基础接入，保证它只读快照、只写报告和结构化信号，不接触交易接口。
-4. 长期链路先落地：用 `ResearchSnapshot -> RatingSignal/PortfolioIntent` 跑通候选池、目标仓位和组合回测。
-5. 日内链路随后落地：用 `IntradaySnapshot -> IntradayAdvice` 跑通 5/15 分钟建议、过期机制和日内回放。
-6. 最后做 `SignalFusionService`、`AiSignalPolicy` 和 Risk App 硬规则，统一控制日内建议和长期意图进入订单链路的边界。
+1. 在真实 PostgreSQL 上执行 `initialize_postgres_schema()`，确认 schema、索引和版本初始化可重复运行。
+2. 用本地 CSV/JSON 和 AKShare provider 跑通 `vnpy_router` 快照写入，再按需接 TuShare、QMT、XT 或 RQData。
+3. 将真实 TradingAgents runner 接入 `TradingAgentsWorkerAdapter`，继续保持 context-only，不开放 Gateway/MainEngine/send_order。
+4. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
+5. 模拟盘连续稳定后，再通过 `LiveGate` 做小资金实盘准入检查。
 
 ## 12. 资料来源
 
@@ -1367,4 +1381,4 @@ P4 --> P5
 
 ## 13. 后续任务跟踪
 
-未实现任务已拆分到 `docs/community/tasks/tradingagents_next_steps/`。每次完成任务时，先在对应阶段文档中把任务从 `- [ ]` 改为 `- [x]`，再补充完成记录、提交号和验证命令。
+阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P6 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。

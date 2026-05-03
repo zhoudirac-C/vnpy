@@ -33,6 +33,9 @@
 - [x] `IntradayReplayEngine`、`PortfolioReplayEngine`。
 - [x] `ReplayRunStatusBuilder`、`ReplayRunStatusLog`。
 - [x] `GatewayAiPolicy`。
+- [x] 事件/新闻/公告/情绪快照管线与降级策略。
+- [x] 股票池批量长期任务、长期调度器、组合约束和绩效反馈。
+- [x] 回测桥接、PaperAccount 仿真桥接、灰度状态持久化、审计导出、schema 初始化和 live gate。
 
 ## 阶段文档
 
@@ -45,9 +48,9 @@
 | P5 | [05-batch-portfolio-feedback.md](05-batch-portfolio-feedback.md) | 补长期批量调度、组合约束和绩效反馈 |
 | P6 | [06-backtest-simulation-gray-release.md](06-backtest-simulation-gray-release.md) | 接入真实回测、仿真、灰度审计导出和部署迁移 |
 
-## 下一步推荐顺序
+## 下一步推荐
 
-1. 先做 P1 的 `PostgresSnapshotReader`，因为 Worker、回放和 UI 都依赖它读取统一快照。
-2. 再做 P2 的真实 TradingAgents Worker，把当前 fake worker 边界换成真实调用。
-3. 然后做 P3 的 EventEngine/策略/UI 接入，开始进入 vn.py 真实运行态。
-
+1. 用真实 PostgreSQL 实例跑 `initialize_postgres_schema()`，确认 schema 初始化和重复执行幂等。
+2. 配置 `vnpy_router` 的 provider 顺序，先用本地文件/AKShare 验证数据快照，再接 TuShare/QMT/XT。
+3. 把真实 TradingAgents runner 接到 `TradingAgentsWorkerAdapter`，继续保持 context-only 边界。
+4. 进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
