@@ -17,6 +17,7 @@ from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
 from .research import LongHorizonAgentJob, ResearchSnapshot, ResearchSnapshotBuilder
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
+from .gateway_policy import GatewayAccountMode, GatewayAiPolicy, GatewayProfile
 from .replay import (
     IntradayReplayEngine,
     PortfolioReplayEngine,
@@ -46,6 +47,9 @@ __all__ = [
     "AiSignalPolicy",
     "DecisionAuditRecord",
     "FusedSignal",
+    "GatewayAccountMode",
+    "GatewayAiPolicy",
+    "GatewayProfile",
     "IntradayAdvice",
     "IntradayAgentJob",
     "IntradaySnapshot",
