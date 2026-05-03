@@ -32,7 +32,7 @@
   - 目标：`query_bar_history()` 先查 PostgreSQL 缓存，缓存缺失时再调用 provider，provider 返回后写入 `market_bar_snapshot`。
   - 验收：同一请求第二次不调用 provider；输出保留 provider trace。
 
-- [ ] **P1-T06: 数据质量报告增强**
+- [x] **P1-T06: 数据质量报告增强**
   - 修改：`vnpy_router/quality.py`
   - 补充检查：缺日期、重复 bar、负成交量、复权版本缺失。
   - 验收命令：`uv run --with pytest pytest tests/test_data_router.py -v`
@@ -46,3 +46,4 @@
 | P1-T03 | 2026-05-03 | `8018c8b5` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
 | P1-T04 | 2026-05-03 | `d7ac96d0` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
 | P1-T05 | 2026-05-03 | `94350c20` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
+| P1-T06 | 2026-05-03 | `35a3fb1d` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
