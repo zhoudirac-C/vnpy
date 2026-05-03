@@ -27,7 +27,7 @@
   - 目标：从 `SETTINGS["router.providers"]` 或 JSON 配置读取 provider 顺序；保留当前 `router.local_path` 兼容；明确 AKShare 只是默认 provider 之一。
   - 验收：配置只启用 local_file 时不初始化 AKShare；配置 provider 顺序时按顺序 fallback。
 
-- [ ] **P1-T05: PostgreSQL 缓存命中**
+- [x] **P1-T05: PostgreSQL 缓存命中**
   - 修改：`vnpy_router/datafeed.py`、`vnpy_router/router.py`
   - 目标：`query_bar_history()` 先查 PostgreSQL 缓存，缓存缺失时再调用 provider，provider 返回后写入 `market_bar_snapshot`。
   - 验收：同一请求第二次不调用 provider；输出保留 provider trace。
@@ -45,3 +45,4 @@
 | P1-T02 | 2026-05-03 | `aa6a91a9` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
 | P1-T03 | 2026-05-03 | `8018c8b5` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
 | P1-T04 | 2026-05-03 | `d7ac96d0` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
+| P1-T05 | 2026-05-03 | `94350c20` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
