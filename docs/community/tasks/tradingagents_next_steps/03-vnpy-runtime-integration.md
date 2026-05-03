@@ -15,7 +15,7 @@
   - 接入：`EVENT_TIMER`、5/15 分钟节流、可选事件触发。
   - 验收：不逐 tick 调用 LLM；Worker 超时不阻塞事件线程。
 
-- [ ] **P3-T03: Gateway 行情到 IntradaySnapshot**
+- [x] **P3-T03: Gateway 行情到 IntradaySnapshot**
   - 创建：`vnpy_tradingagents/intraday_collector.py`
   - 输入：tick 或分钟 bar、当前持仓、当日交易纪律。
   - 输出：`IntradaySnapshot`
@@ -42,3 +42,4 @@
 | --- | --- | --- | --- |
 | P3-T01 | 2026-05-03 | `4bf29da8` | `uv run --with pytest pytest tests/test_tradingagents_runtime.py tests/test_tradingagents_ui.py tests/test_tradingagents_policy.py tests/test_tradingagents_gateway_policy.py -v` |
 | P3-T02 | 2026-05-03 | `f0e17bd3` | `uv run --with pytest pytest tests/test_tradingagents_scheduler.py tests/test_tradingagents_ui.py tests/test_tradingagents_runtime.py tests/test_tradingagents_intraday.py tests/test_tradingagents_worker_process.py -v` |
+| P3-T03 | 2026-05-03 | `ca34e4fe` | `uv run --with pytest pytest tests/test_tradingagents_intraday_collector.py tests/test_tradingagents_intraday.py tests/test_tradingagents_scheduler.py tests/test_tradingagents_ui.py tests/test_tradingagents_runtime.py -v` |
