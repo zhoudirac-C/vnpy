@@ -21,7 +21,7 @@
   - 输出：`IntradaySnapshot`
   - 验收：真实事件生成快照；快照可写 PostgreSQL 并被回放复用。
 
-- [ ] **P3-T04: 策略层 AI 信号读取 mixin**
+- [x] **P3-T04: 策略层 AI 信号读取 mixin**
   - 创建：`vnpy_tradingagents/strategy_mixin.py`
   - 目标：提供 `load_ai_intraday_advice()`、`load_ai_rating_signal()`、`fuse_ai_signal()`。
   - 验收：CTA/PortfolioStrategy 可用同一接口读取 AI 信号；关闭 AI 后只返回规则信号。
@@ -43,3 +43,4 @@
 | P3-T01 | 2026-05-03 | `4bf29da8` | `uv run --with pytest pytest tests/test_tradingagents_runtime.py tests/test_tradingagents_ui.py tests/test_tradingagents_policy.py tests/test_tradingagents_gateway_policy.py -v` |
 | P3-T02 | 2026-05-03 | `f0e17bd3` | `uv run --with pytest pytest tests/test_tradingagents_scheduler.py tests/test_tradingagents_ui.py tests/test_tradingagents_runtime.py tests/test_tradingagents_intraday.py tests/test_tradingagents_worker_process.py -v` |
 | P3-T03 | 2026-05-03 | `ca34e4fe` | `uv run --with pytest pytest tests/test_tradingagents_intraday_collector.py tests/test_tradingagents_intraday.py tests/test_tradingagents_scheduler.py tests/test_tradingagents_ui.py tests/test_tradingagents_runtime.py -v` |
+| P3-T04 | 2026-05-03 | `be324b9f` | `uv run --with pytest pytest tests/test_tradingagents_strategy_mixin.py tests/test_tradingagents_fusion.py tests/test_tradingagents_policy.py tests/test_tradingagents_storage_service.py -v` |
