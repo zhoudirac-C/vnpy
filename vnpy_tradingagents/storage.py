@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS agent_run (
     vt_symbol TEXT NOT NULL,
     trade_date DATE NOT NULL,
     mode TEXT NOT NULL,
+    model_provider TEXT,
+    model_name TEXT,
+    prompt_version TEXT,
+    snapshot_ids JSONB,
     context JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -21,6 +25,7 @@ CREATE TABLE IF NOT EXISTS agent_report (
     vt_symbol TEXT NOT NULL,
     report TEXT NOT NULL,
     raw_state JSONB NOT NULL,
+    error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -61,12 +66,20 @@ INSERT INTO agent_run (
     vt_symbol,
     trade_date,
     mode,
+    model_provider,
+    model_name,
+    prompt_version,
+    snapshot_ids,
     context
 ) VALUES (
     %(run_id)s,
     %(vt_symbol)s,
     %(trade_date)s,
     %(mode)s,
+    %(model_provider)s,
+    %(model_name)s,
+    %(prompt_version)s,
+    %(snapshot_ids)s,
     %(context)s
 )
 ON CONFLICT (run_id)
@@ -74,6 +87,10 @@ DO UPDATE SET
     vt_symbol = EXCLUDED.vt_symbol,
     trade_date = EXCLUDED.trade_date,
     mode = EXCLUDED.mode,
+    model_provider = EXCLUDED.model_provider,
+    model_name = EXCLUDED.model_name,
+    prompt_version = EXCLUDED.prompt_version,
+    snapshot_ids = EXCLUDED.snapshot_ids,
     context = EXCLUDED.context;
 """
 
@@ -83,18 +100,21 @@ INSERT INTO agent_report (
     run_id,
     vt_symbol,
     report,
-    raw_state
+    raw_state,
+    error_message
 ) VALUES (
     %(run_id)s,
     %(vt_symbol)s,
     %(report)s,
-    %(raw_state)s
+    %(raw_state)s,
+    %(error_message)s
 )
 ON CONFLICT (run_id)
 DO UPDATE SET
     vt_symbol = EXCLUDED.vt_symbol,
     report = EXCLUDED.report,
-    raw_state = EXCLUDED.raw_state;
+    raw_state = EXCLUDED.raw_state,
+    error_message = EXCLUDED.error_message;
 """
 
 
@@ -277,7 +297,7 @@ class PostgresAgentStorage:
         """
         cursor = self.connection.cursor()
         try:
-            cursor.execute(INSERT_AGENT_RUN_SQL, _agent_run_params(request))
+            cursor.execute(INSERT_AGENT_RUN_SQL, _agent_run_params(request, response))
             cursor.execute(INSERT_AGENT_REPORT_SQL, _agent_report_params(response))
             cursor.execute(INSERT_RATING_SIGNAL_SQL, _rating_signal_params(request, response))
             cursor.execute(INSERT_TRADE_INTENT_SQL, _trade_intent_params(request, response))
@@ -373,20 +393,28 @@ class PostgresSignalReader:
             cursor.close()
 
 
-def _json_dumps(data: dict[str, Any]) -> str:
+def _json_dumps(data: Any) -> str:
     """
     Serialize JSON payloads in a stable, readable format.
     """
     return json.dumps(data, ensure_ascii=False, sort_keys=True)
 
 
-def _agent_run_params(request: TradingAgentsWorkerRequest) -> dict[str, Any]:
+def _agent_run_params(
+    request: TradingAgentsWorkerRequest,
+    response: TradingAgentsWorkerResponse,
+) -> dict[str, Any]:
     """"""
+    metadata: dict[str, Any] = _worker_metadata(request, response)
     return {
         "run_id": request.run_id,
         "vt_symbol": request.vt_symbol,
         "trade_date": request.trade_date,
         "mode": request.mode,
+        "model_provider": metadata["model_provider"],
+        "model_name": metadata["model_name"],
+        "prompt_version": metadata["prompt_version"],
+        "snapshot_ids": _json_dumps(metadata["snapshot_ids"]),
         "context": _json_dumps(request.context),
     }
 
@@ -398,6 +426,27 @@ def _agent_report_params(response: TradingAgentsWorkerResponse) -> dict[str, Any
         "vt_symbol": response.vt_symbol,
         "report": response.report,
         "raw_state": _json_dumps(response.raw_state),
+        "error_message": response.raw_state.get("error_message"),
+    }
+
+
+def _worker_metadata(
+    request: TradingAgentsWorkerRequest,
+    response: TradingAgentsWorkerResponse,
+) -> dict[str, Any]:
+    """
+    Extract model/prompt/snapshot metadata for reproducible worker runs.
+    """
+    raw_state: dict[str, Any] = response.raw_state
+    snapshot_ids: Any = raw_state.get("snapshot_ids") or request.context.get("snapshot_ids") or []
+    if not isinstance(snapshot_ids, list):
+        snapshot_ids = [snapshot_ids]
+
+    return {
+        "model_provider": raw_state.get("model_provider"),
+        "model_name": raw_state.get("model_name"),
+        "prompt_version": raw_state.get("prompt_version"),
+        "snapshot_ids": snapshot_ids,
     }
 
 

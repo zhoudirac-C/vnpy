@@ -10,6 +10,11 @@ def test_tradingagents_schema_contains_core_signal_tables():
     assert "CREATE TABLE IF NOT EXISTS agent_report" in TRADINGAGENTS_SCHEMA
     assert "CREATE TABLE IF NOT EXISTS rating_signal" in TRADINGAGENTS_SCHEMA
     assert "CREATE TABLE IF NOT EXISTS trade_intent" in TRADINGAGENTS_SCHEMA
+    assert "model_provider TEXT" in TRADINGAGENTS_SCHEMA
+    assert "model_name TEXT" in TRADINGAGENTS_SCHEMA
+    assert "prompt_version TEXT" in TRADINGAGENTS_SCHEMA
+    assert "snapshot_ids JSONB" in TRADINGAGENTS_SCHEMA
+    assert "error_message TEXT" in TRADINGAGENTS_SCHEMA
 
 
 def test_agent_storage_saves_worker_response_to_signal_tables():
@@ -32,6 +37,47 @@ def test_agent_storage_saves_worker_response_to_signal_tables():
     assert executed_params[2]["rating"] == "Buy"
     assert executed_params[3]["action"] == "buy"
     assert '"decision": "buy"' in executed_params[1]["raw_state"]
+
+
+def test_agent_storage_saves_model_metadata_and_snapshot_ids():
+    """PostgresAgentStorage should persist replay/audit metadata for worker runs."""
+    connection = FakeConnection()
+    storage = PostgresAgentStorage(connection)
+    request = TradingAgentsWorkerRequest(
+        run_id="run-1",
+        vt_symbol="600519.SSE",
+        trade_date="2024-01-03",
+        mode="report_only",
+        context={
+            "market": {"bars": []},
+            "snapshot_ids": ["bar:600519.SSE:20240103"],
+        },
+    )
+    response = TradingAgentsWorkerResponse(
+        run_id="run-1",
+        vt_symbol="600519.SSE",
+        rating="Unavailable",
+        confidence=0,
+        report="failed",
+        raw_state={
+            "status": "failed",
+            "model_provider": "openai",
+            "model_name": "gpt-test",
+            "prompt_version": "ashare-context-v1",
+            "snapshot_ids": ["bar:600519.SSE:20240103", "fundamental:600519.SSE"],
+            "error_message": "timeout",
+        },
+    )
+
+    storage.save_worker_result(request, response)
+
+    agent_run_params = connection.cursor_obj.executed[0][1]
+    agent_report_params = connection.cursor_obj.executed[1][1]
+    assert agent_run_params["model_provider"] == "openai"
+    assert agent_run_params["model_name"] == "gpt-test"
+    assert agent_run_params["prompt_version"] == "ashare-context-v1"
+    assert "fundamental:600519.SSE" in agent_run_params["snapshot_ids"]
+    assert agent_report_params["error_message"] == "timeout"
 
 
 def test_service_runs_worker_and_persists_when_runtime_enabled():
