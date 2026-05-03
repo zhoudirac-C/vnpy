@@ -8,6 +8,7 @@ from .runtime import (
     TradingAgentsRuntimeController,
     TradingAgentsRuntimeState,
 )
+from .config import TradingAgentsWorkerConfig, WorkerConfigError, WorkerConfigValidation
 from .app import TradingAgentsApp
 from .engine import TradingAgentsEngine
 from .toolkit import MarketDataToolkit, SnapshotQuery
@@ -86,6 +87,7 @@ __all__ = [
     "SignalFusionService",
     "SnapshotQuery",
     "TradingAgentsApp",
+    "TradingAgentsWorkerConfig",
     "TradingAgentsEngine",
     "TradingAgentsMode",
     "TradingAgentsRuntimeController",
@@ -93,4 +95,6 @@ __all__ = [
     "TradingAgentsService",
     "TradingAgentsWorkerRequest",
     "TradingAgentsWorkerResponse",
+    "WorkerConfigError",
+    "WorkerConfigValidation",
 ]

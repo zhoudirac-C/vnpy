@@ -31,6 +31,12 @@ SETTINGS: dict = {
     "router.local_path": "",
     "router.postgres_cache.enabled": False,
     "router.postgres.dsn": "",
+    "tradingagents.llm_provider": "openai",
+    "tradingagents.api_key_env_var": "OPENAI_API_KEY",
+    "tradingagents.model": "gpt-4o-mini",
+    "tradingagents.timeout_seconds": 120,
+    "tradingagents.max_retries": 1,
+    "tradingagents.checkpoint_dir": ".tradingagents/checkpoints",
 
     "database.timezone": get_localzone_name(),
     "database.name": "sqlite",
