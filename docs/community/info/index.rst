@@ -11,6 +11,7 @@
    gateway.md
    database.md
    datafeed.md
+   custom_quant_architecture.md
    pycharm.md
    contribution.md
    i18n.md
