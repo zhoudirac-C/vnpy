@@ -71,7 +71,7 @@ path = "vnpy/__init__.py"
 pattern = "__version__ = ['\"](?P<version>[^'\"]+)['\"]"
 
 [tool.hatch.build.targets.wheel]
-packages = ["vnpy", "vnpy_router"]
+packages = ["vnpy", "vnpy_router", "vnpy_tradingagents"]
 include-package-data = true
 
 [tool.hatch.build.targets.sdist]
