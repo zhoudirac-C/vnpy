@@ -150,6 +150,8 @@ class IntradayAgentJob:
 
 def _bar_interval(bar: BarData) -> str:
     """"""
+    if bar.extra and bar.extra.get("snapshot_interval"):
+        return str(bar.extra["snapshot_interval"])
     return bar.interval.value if bar.interval else ""
 
 
