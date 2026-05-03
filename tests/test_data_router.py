@@ -19,6 +19,47 @@ def test_get_datafeed_loads_router_datafeed(monkeypatch):
     assert isinstance(datafeed, Datafeed)
 
 
+def test_datafeed_builds_only_configured_local_file_provider(monkeypatch, tmp_path):
+    """Datafeed should not instantiate AKShare when only local_file is enabled."""
+    from vnpy_router import datafeed as datafeed_module
+
+    def fail_akshare_provider():
+        raise AssertionError("AkshareProvider should not be built")
+
+    monkeypatch.setitem(SETTINGS, "router.local_path", str(tmp_path))
+    monkeypatch.setitem(SETTINGS, "router.providers", "local_file")
+    monkeypatch.setattr(datafeed_module, "AkshareProvider", fail_akshare_provider)
+
+    datafeed = datafeed_module.Datafeed()
+
+    assert [provider.name for provider in datafeed.router.providers] == ["local_file"]
+
+
+def test_datafeed_honors_configured_provider_order(monkeypatch, tmp_path):
+    """Datafeed should use configured provider order for router fallback."""
+    from vnpy_router import datafeed as datafeed_module
+
+    class FakeAkshareProvider:
+        name = "akshare"
+
+        def init(self, output=print):
+            return True
+
+        def query_bar_history(self, req, output=print):
+            return []
+
+    monkeypatch.setitem(SETTINGS, "router.local_path", str(tmp_path))
+    monkeypatch.setitem(SETTINGS, "router.providers", '["akshare", "local_file"]')
+    monkeypatch.setattr(datafeed_module, "AkshareProvider", FakeAkshareProvider)
+
+    datafeed = datafeed_module.Datafeed()
+
+    assert [provider.name for provider in datafeed.router.providers] == [
+        "akshare",
+        "local_file",
+    ]
+
+
 def test_local_file_provider_returns_bar_data(tmp_path):
     """LocalFileProvider should map CSV rows into vn.py BarData."""
     csv_file = tmp_path / "600519.SSE_d.csv"

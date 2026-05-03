@@ -27,6 +27,8 @@ SETTINGS: dict = {
     "datafeed.name": "",
     "datafeed.username": "",
     "datafeed.password": "",
+    "router.providers": "local_file,akshare",
+    "router.local_path": "",
 
     "database.timezone": get_localzone_name(),
     "database.name": "sqlite",
