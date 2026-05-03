@@ -146,7 +146,128 @@ Main --> Strategy : 查询最新状态
 
 所以第一阶段 AKShare 做的是 **datafeed**，不是 gateway；它不应该承担实盘行情或实盘下单。
 
-## 4. 目标框架：按一次信号到订单的流向看
+## 4. vn.py 如何支持日内分时和长期操作
+
+vn.py 的日内分时和长期操作不是两套底层框架，而是同一个事件驱动架构上不同的策略周期和执行方式。
+
+一句话区分：
+
+```text
+日内分时：实时 tick/分钟K线驱动，策略持续运行，盘中不断判断和下单。
+长期操作：日线/周线/月线或盘前盘后信号驱动，低频产生目标仓位，盘中只做执行和风控。
+```
+
+### 4.1 日内分时操作怎么实现
+
+vn.py 的日内分时链路主要依赖 `Gateway` 的实时行情推送、策略 App 的 `on_tick/on_bar` 回调、算法委托执行和事前风控。
+
+```plantuml
+@startuml
+title vn.py 日内分时操作链路
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+participant "Gateway\n实时行情接口" as Gateway
+participant "EventEngine" as Event
+participant "Strategy App\nCTA/组合策略" as Strategy
+participant "BarGenerator\nTick合成分钟K线" as BarGen
+participant "ArrayManager\n技术指标缓存" as Array
+participant "AlgoTrading\nTWAP/Iceberg/Sniper等" as Algo
+participant "RiskManager\n事前风控" as Risk
+participant "MainEngine" as Main
+participant "Gateway\n交易接口" as TradeGateway
+participant "OmsEngine\n订单/成交/持仓状态" as Oms
+
+Gateway -> Event : on_tick(tick)
+Event -> Strategy : on_tick(tick)
+Strategy -> BarGen : update_tick(tick)
+BarGen -> Strategy : on_bar(1分钟/多分钟K线)
+Strategy -> Array : 更新指标窗口
+Array --> Strategy : MA/MACD/RSI/波动率等
+Strategy -> Algo : 可选：拆单/追价/条件执行
+Algo -> Risk : 生成OrderRequest
+Strategy -> Risk : 或直接生成OrderRequest
+Risk -> Main : 风控通过
+Main -> TradeGateway : send_order(req)
+TradeGateway -> Event : on_order/on_trade
+Event -> Oms : 更新订单和成交状态
+Oms --> Strategy : 查询持仓/活动委托
+
+@enduml
+```
+
+日内分时适合：
+
+- CTA 策略：趋势突破、均线、动量、止损、止盈。
+- 组合策略：多个标的同时看盘、联动调仓。
+- 算法交易：TWAP、冰山、狙击手、条件单、最优限价等。
+- 盘中风控：委托流控、单笔数量、活动委托、撤单次数、成交上限。
+
+核心特点：
+
+- 策略必须在交易时段持续运行。
+- 初始化时先加载历史 K 线，保证指标状态正确。
+- 启动后 `trading=True`，策略里的买卖函数才真正发单。
+- 停止策略时应撤销活动委托，并保存策略变量和逻辑持仓。
+
+### 4.2 长期操作怎么实现
+
+长期操作不是靠每个 tick 决策，而是用低频数据生成目标仓位，再在盘中执行。
+
+```plantuml
+@startuml
+title vn.py 长期操作链路
+
+skinparam shadowing false
+
+start
+:盘前/盘后同步日线、财务、指数、板块数据;
+:写入PostgreSQL;
+:Datafeed返回日线/周线/月线BarData;
+:Alpha/Research/PortfolioStrategy\n计算选股、评分、目标仓位;
+:生成调仓计划;
+:盘中启动策略或执行算法;
+:RiskManager检查仓位、金额、委托频率;
+if (风控通过?) then (yes)
+  :MainEngine.send_order();
+  :Gateway执行委托;
+  :OmsEngine记录订单、成交、持仓;
+else (no)
+  :记录拒绝原因;
+endif
+:盘后保存成交、持仓、绩效、复盘;
+stop
+
+@enduml
+```
+
+长期操作适合：
+
+- 日线级多因子选股。
+- 周期性组合调仓。
+- 指数增强、ETF 轮动、行业轮动。
+- AI/TradingAgents 产出的低频观点和风险复盘。
+
+长期操作的关键不是毫秒级执行，而是：
+
+- 数据版本可复现。
+- 回测和实盘使用同一套复权、交易日历和交易规则。
+- 目标仓位和真实持仓能对账。
+- 盘中执行可以交给 AlgoTrading 分批完成，降低冲击成本。
+
+### 4.3 日内和长期在 vn.py 里的关系
+
+| 维度 | 日内分时操作 | 长期操作 |
+| --- | --- | --- |
+| 主要数据 | Tick、1分钟/5分钟K线、盘口 | 日线、周线、月线、财务、板块 |
+| 触发方式 | `on_tick/on_bar` 实时回调 | 盘前/盘后批处理，或日线 bar 更新 |
+| 主要 App | CTA、PortfolioStrategy、AlgoTrading、RiskManager | Alpha、PortfolioStrategy、DataManager/Datafeed、AlgoTrading |
+| 交易频率 | 高频或中低频盘中多次 | 低频调仓，通常日级或周级 |
+| 执行重点 | 盘口、滑点、撤单、追价、止损 | 目标仓位、换手率、组合约束、对账 |
+| 风险重点 | 委托流控、撤单次数、活动委托、成交上限 | 仓位上限、行业集中度、回撤、再平衡纪律 |
+
+## 5. 目标框架：按一次信号到订单的流向看
 
 这张图只按“时间顺序”看，不再把所有模块堆在一张总览图里：
 
@@ -235,9 +356,9 @@ TA -[#red,dashed]-> Gateway : 禁止直接连券商
 - TradingAgents 可以产出买入、卖出、持有、减仓这类“策略观点”。
 - TradingAgents 不能直接执行买卖；执行仍然必须通过 Strategy App、Risk App、MainEngine 和 Gateway。
 
-## 5. AKShare 接入设计
+## 6. AKShare 接入设计
 
-### 5.1 第一阶段支持范围
+### 6.1 第一阶段支持范围
 
 第一阶段只做稳定的日频研究数据：
 
@@ -251,7 +372,7 @@ TA -[#red,dashed]-> Gateway : 禁止直接连券商
 
 分钟线、tick、实时盘口和实盘行情不作为 AKShare 第一阶段目标；实盘确认应优先使用券商或 QMT 行情。
 
-### 5.2 模块建议
+### 6.2 模块建议
 
 ```text
 vnpy/akshare_datafeed/
@@ -287,7 +408,7 @@ class Datafeed(BaseDatafeed):
 
 第一版 `query_tick_history()` 可以明确返回空列表并输出“不支持 tick”，不要伪造数据。
 
-### 5.3 数据质量规则
+### 6.3 数据质量规则
 
 所有 AKShare 数据进入 VeighNa 前应检查：
 
@@ -300,9 +421,9 @@ class Datafeed(BaseDatafeed):
 - 复权数据是否存在异常负价。
 - 单日涨跌幅是否超过合理阈值，超过则标记为异常而非直接丢弃。
 
-## 6. TradingAgents 原生功能和架构
+## 7. TradingAgents 原生功能和架构
 
-### 6.1 TradingAgents 原本能做什么
+### 7.1 TradingAgents 原本能做什么
 
 TradingAgents 原生定位不是“只写研究报告”。它本来就是一个多智能体交易决策框架，会让分析师、研究员、交易员、风险团队和组合经理一起产出交易决策。
 
@@ -338,7 +459,7 @@ Memory --> PM : 下一次运行注入反思
 
 所以答案是：**TradingAgents 可以做买卖策略，但它原生做的是“生成交易决策和交易计划”，不是可靠的券商执行系统。**
 
-### 6.2 TradingAgents 原生 LangGraph 架构
+### 7.2 TradingAgents 原生 LangGraph 架构
 
 TradingAgents 用 LangGraph 编排 Agent。简化后是这条链路：
 
@@ -386,7 +507,7 @@ stop
 - `risk_debate_state`
 - `final_trade_decision`
 
-### 6.3 原生 TradingAgents 和本 fork 的区别
+### 7.3 原生 TradingAgents 和本 fork 的区别
 
 | 问题 | TradingAgents 原生做法 | 本 fork 中的做法 |
 | --- | --- | --- |
@@ -396,9 +517,9 @@ stop
 | 执行 | 原生示例可送到 simulated exchange | 本 fork 不让 TradingAgents 直接执行，必须走 vn.py 风控和 Gateway |
 | 风险 | LLM 风险团队给建议 | LLM 风险建议之外，还必须有确定性 Risk App 硬规则 |
 
-## 7. TradingAgents 接入设计
+## 8. TradingAgents 接入设计
 
-### 7.1 TradingAgents 在系统里的角色
+### 8.1 TradingAgents 在系统里的角色
 
 TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed。它可以参与买卖策略，但更准确地说，它应该是 **AI 策略决策模块**，而不是 **交易执行模块**。
 
@@ -421,7 +542,7 @@ TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed。它可以参与买
 | AI 信号模式 | 输出 `RatingSignal`，参与策略排序和过滤 | 不允许 |
 | AI 策略模式 | 输出 `TradeIntent`，例如买入、卖出、减仓、持有 | 仍然不允许，必须经过 Risk App 和 MainEngine |
 
-### 7.2 Worker 化
+### 8.2 Worker 化
 
 TradingAgents 建议作为独立 Worker 运行：
 
@@ -438,7 +559,7 @@ VeighNa App / Script
 - VeighNa 主框架依赖 PySide6、TA-Lib、交易接口和 GUI 生态。
 - 两套依赖放在同一进程里容易产生版本冲突。
 
-### 7.3 A 股工具替换
+### 8.3 A 股工具替换
 
 TradingAgents 默认工具应替换为本地工具：
 
@@ -451,7 +572,7 @@ TradingAgents 默认工具应替换为本地工具：
 | sentiment | 可选，先用新闻事件标签和人工备注替代 |
 | benchmark | 沪深 300 / 中证 500，而不是 SPY |
 
-### 7.4 输出映射
+### 8.4 输出映射
 
 TradingAgents 最终评级映射为内部研究信号；交易计划映射为内部交易意图：
 
@@ -487,7 +608,7 @@ source_run_id
 - Portfolio Manager 最终决策。
 - 解析后的评级。
 
-### 7.5 从 TradingAgents 到 vn.py 策略的具体接入方式
+### 8.5 从 TradingAgents 到 vn.py 策略的具体接入方式
 
 接入分三步，不要一步到位直接实盘：
 
@@ -529,7 +650,63 @@ stop
 - TradingAgents 直接改持仓或订单。
 - TradingAgents 输出绕过风控。
 
-## 8. 开发阶段
+### 8.6 TradingAgents 能不能做日内分时操作建议
+
+可以，但要定义清楚：TradingAgents 可以做 **日内分时操作建议**，不适合做 **逐 tick 高频执行器**。
+
+推荐接入方式：
+
+```plantuml
+@startuml
+title TradingAgents 日内分时建议链路
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+participant "Gateway\n实时行情" as Gateway
+participant "Intraday Snapshot Builder\n分时快照" as Snapshot
+database "PostgreSQL\n1m/5m K线 + 新闻 + 盘口摘要" as PG
+participant "TradingAgents Worker\n日内分析" as TA
+database "PostgreSQL\nIntradayAdvice" as AdviceStore
+participant "Strategy App\n执行策略" as Strategy
+participant "RiskManager\n硬风控" as Risk
+participant "MainEngine" as Main
+participant "Gateway\n交易接口" as TradeGateway
+
+Gateway -> Snapshot : tick/分钟K线/盘口
+Snapshot -> PG : 保存分时快照
+PG -> TA : 每1/5/15分钟或事件触发读取快照
+TA -> AdviceStore : 写入日内建议\nbuy_on_pullback/sell_on_break/reduce/hold
+AdviceStore -> Strategy : 策略读取建议
+Strategy -> Risk : 建议转成OrderRequest前先检查
+Risk -> Main : 风控通过
+Main -> TradeGateway : send_order(req)
+
+@enduml
+```
+
+适合让 TradingAgents 做的日内建议：
+
+- “分时回踩 5 分钟均线但承接较强，可以观察低吸”。
+- “放量跌破开盘价且板块转弱，建议减仓或不加仓”。
+- “冲高回落且盘口撤单明显，追高风险上升”。
+- “已有长期持仓，日内不建议新增，只允许止盈/止损”。
+
+不适合让 TradingAgents 做的事情：
+
+- 每个 tick 都请求大模型。
+- 毫秒级追价、抢单、撤单。
+- 直接决定委托价格和数量后绕过风控下单。
+- 用 AKShare 的非实时数据做实盘盘口判断。
+
+工程建议：
+
+- 日内建议频率先从 5 分钟或 15 分钟开始，不要逐 tick。
+- 输入给 TradingAgents 的不是原始 tick 流，而是压缩后的 `IntradaySnapshot`：价格位置、均线、成交量、盘口摘要、新闻事件、当前持仓和当天交易纪律。
+- 输出落成 `IntradayAdvice`，再由策略和风控决定是否变成 `OrderRequest`。
+- 对短线执行，仍交给 vn.py 的 Strategy App、AlgoTrading 和 RiskManager。
+
+## 9. 开发阶段
 
 ### Phase 1：AKShare datafeed POC
 
@@ -599,7 +776,7 @@ stop
 - AI、AKShare、TradingAgents 任一模块失败时，不影响手工风控和撤单。
 - 实盘订单只来自受控策略和风控批准。
 
-## 9. 风险控制
+## 10. 风险控制
 
 | 风险 | 控制措施 |
 | --- | --- |
@@ -612,7 +789,7 @@ stop
 | 策略绕过风控 | 所有订单必须经过 MainEngine/OmsEngine 和风控规则 |
 | 实盘误触发 | 默认关闭实盘开关、模拟盘灰度、小资金验证、一键暂停 |
 
-## 10. 推荐近期行动
+## 11. 推荐近期行动
 
 1. 保持这个 fork 为主开发仓库，不再依赖旧项目文档。
 2. 先做 AKShare datafeed POC，跑通 VeighNa 标准历史数据接口。
@@ -620,7 +797,7 @@ stop
 4. 再做 TradingAgents Worker POC，先输出报告和评级。
 5. 最后把 AI 评级接入策略和风控链路。
 
-## 11. 资料来源
+## 12. 资料来源
 
 - VeighNa GitHub: https://github.com/vnpy/vnpy
 - VeighNa 数据服务文档: https://www.vnpy.com/docs/cn/community/info/datafeed.html
