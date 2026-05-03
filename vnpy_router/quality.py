@@ -41,8 +41,23 @@ def check_bar_data(provider_name: str, bars: list[BarData]) -> DataQualityReport
     Check OHLCV sanity for bar data.
     """
     report: DataQualityReport = DataQualityReport(provider_name=provider_name)
+    seen_keys: set[tuple[str, str, object]] = set()
 
     for bar in bars:
+        if bar.datetime is None:
+            report.issues.append(
+                QualityIssue("missing_datetime", "bar datetime is missing", bar.vt_symbol)
+            )
+        else:
+            interval: str = bar.interval.value if bar.interval else ""
+            key: tuple[str, str, object] = (bar.vt_symbol, interval, bar.datetime)
+            if key in seen_keys:
+                report.issues.append(
+                    QualityIssue("duplicate_bar", "duplicate bar datetime", bar.vt_symbol)
+                )
+            else:
+                seen_keys.add(key)
+
         if min(bar.open_price, bar.high_price, bar.low_price, bar.close_price) < 0:
             report.issues.append(
                 QualityIssue("negative_price", "OHLC price contains negative value", bar.vt_symbol)
@@ -66,6 +81,16 @@ def check_bar_data(provider_name: str, bars: list[BarData]) -> DataQualityReport
         if bar.turnover < 0:
             report.issues.append(
                 QualityIssue("negative_turnover", "turnover is negative", bar.vt_symbol)
+            )
+
+        extra: dict = bar.extra or {}
+        if extra.get("adjustment") and not extra.get("provider_version"):
+            report.issues.append(
+                QualityIssue(
+                    "missing_adjustment_version",
+                    "adjusted data is missing provider version",
+                    bar.vt_symbol,
+                )
             )
 
     if report.issues:

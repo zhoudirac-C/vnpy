@@ -141,6 +141,45 @@ def test_quality_checker_reports_invalid_bar():
     assert report.issues[0].code == "invalid_high_price"
 
 
+def test_quality_checker_reports_duplicate_bar_and_missing_datetime():
+    """DataQualityChecker should flag duplicate bars and missing datetimes."""
+    from vnpy_router.quality import QualityStatus, check_bar_data
+
+    first_bar = _bar()
+    duplicate_bar = _bar()
+    missing_datetime_bar = _bar()
+    missing_datetime_bar.datetime = None
+
+    report = check_bar_data(
+        "local_file",
+        [first_bar, duplicate_bar, missing_datetime_bar],
+    )
+
+    codes = {issue.code for issue in report.issues}
+    assert report.status == QualityStatus.FAILED
+    assert "duplicate_bar" in codes
+    assert "missing_datetime" in codes
+
+
+def test_quality_checker_reports_negative_volume_and_missing_adjustment_version():
+    """DataQualityChecker should flag negative volume and unversioned adjustment."""
+    from vnpy_router.quality import QualityStatus, check_bar_data
+
+    bar = _bar()
+    bar.volume = -1
+    bar.extra = {
+        "provider_name": "akshare",
+        "adjustment": "qfq",
+    }
+
+    report = check_bar_data("akshare", [bar])
+
+    codes = {issue.code for issue in report.issues}
+    assert report.status == QualityStatus.FAILED
+    assert "negative_volume" in codes
+    assert "missing_adjustment_version" in codes
+
+
 def test_data_provider_router_reads_snapshot_cache_before_provider():
     """DataProviderRouter should return cached bars without querying providers."""
     from vnpy_router.router import DataProviderRouter
