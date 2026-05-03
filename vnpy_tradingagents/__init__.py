@@ -17,6 +17,7 @@ from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
 from .research import LongHorizonAgentJob, ResearchSnapshot, ResearchSnapshotBuilder
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
+from .replay import IntradayReplayEngine, ReplayStep, ReplayStepResult, ReplaySummary
 from .risk import (
     DecisionAuditRecord,
     OrderIntent,
@@ -39,6 +40,7 @@ __all__ = [
     "IntradayAgentJob",
     "IntradaySnapshot",
     "IntradaySnapshotBuilder",
+    "IntradayReplayEngine",
     "LongHorizonAgentJob",
     "MarketDataToolkit",
     "OrderIntent",
@@ -51,6 +53,9 @@ __all__ = [
     "RatingSignal",
     "ResearchSnapshot",
     "ResearchSnapshotBuilder",
+    "ReplayStep",
+    "ReplayStepResult",
+    "ReplaySummary",
     "RiskCheckResult",
     "RiskDecision",
     "RiskRuleSet",
