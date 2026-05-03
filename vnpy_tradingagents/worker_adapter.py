@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol, Any
 
 from .config import TradingAgentsWorkerConfig
+from .source_policy import SnapshotSourcePolicy
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 
 
@@ -59,11 +60,13 @@ class TradingAgentsWorkerAdapter:
         self,
         config: TradingAgentsWorkerConfig | None = None,
         runner: TradingAgentsRunner | None = None,
+        source_policy: SnapshotSourcePolicy | None = None,
         environ: Mapping[str, str] | None = None,
     ) -> None:
         """"""
         self.config: TradingAgentsWorkerConfig = config or TradingAgentsWorkerConfig.from_settings()
         self.runner: TradingAgentsRunner | None = runner
+        self.source_policy: SnapshotSourcePolicy = source_policy or SnapshotSourcePolicy.default()
         self.environ: Mapping[str, str] | None = environ
 
     def run(self, request: TradingAgentsWorkerRequest) -> TradingAgentsWorkerResponse:
@@ -80,6 +83,14 @@ class TradingAgentsWorkerAdapter:
                 request,
                 "forbidden_context",
                 f"Forbidden provider or trading handle in context: {forbidden_key}",
+            )
+
+        source_result = self.source_policy.evaluate(request.context)
+        if not source_result.allowed:
+            return _failure_response(
+                request,
+                "source_policy_blocked",
+                source_result.blocked_reason,
             )
 
         if self.runner is None:

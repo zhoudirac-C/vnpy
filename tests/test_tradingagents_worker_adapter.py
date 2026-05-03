@@ -71,6 +71,25 @@ def test_worker_adapter_rejects_forbidden_provider_context():
     assert "akshare" in response.raw_state["error_message"]
 
 
+def test_worker_adapter_blocks_missing_required_market_source():
+    """Worker adapter should not run TradingAgents without required market data."""
+    from vnpy_tradingagents.worker_adapter import TradingAgentsWorkerAdapter
+
+    runner = RecordingRunner()
+    adapter = TradingAgentsWorkerAdapter(
+        config=TradingAgentsWorkerConfig(api_key_env_var="TEST_KEY"),
+        runner=runner,
+        environ={"TEST_KEY": "secret"},
+    )
+
+    response = adapter.run(make_request(context={"market": {"bars": []}}))
+
+    assert runner.payload is None
+    assert response.action == "hold"
+    assert response.raw_state["error_type"] == "source_policy_blocked"
+    assert response.raw_state["error_message"] == "missing_required_source:market"
+
+
 def test_worker_adapter_returns_auditable_failure_on_timeout():
     """Worker adapter should return a failed response when the runner times out."""
     from vnpy_tradingagents.worker_adapter import TradingAgentsWorkerAdapter
