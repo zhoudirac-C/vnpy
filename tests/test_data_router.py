@@ -86,6 +86,56 @@ def test_quality_checker_reports_invalid_bar():
     assert report.issues[0].code == "invalid_high_price"
 
 
+def test_postgres_snapshot_storage_saves_bar_with_provider_metadata():
+    """PostgresSnapshotStorage should persist provider metadata with bar data."""
+    from vnpy.trader.object import BarData
+    from vnpy_router.storage import PostgresSnapshotStorage
+
+    connection = FakeConnection()
+    storage = PostgresSnapshotStorage(connection)
+    bar = BarData(
+        symbol="600519",
+        exchange=Exchange.SSE,
+        datetime=datetime(2024, 1, 2),
+        interval=Interval.DAILY,
+        open_price=1680,
+        high_price=1690,
+        low_price=1670,
+        close_price=1688,
+        volume=1000,
+        turnover=1688000,
+        gateway_name="local_file",
+    )
+    bar.extra = {
+        "provider_name": "local_file",
+        "provider_endpoint": "/tmp/600519.SSE_d.csv",
+        "provider_version": "hash:abc",
+        "quality_status": "passed",
+    }
+
+    storage.save_bar_snapshots([bar])
+
+    assert connection.committed
+    sql, params = connection.cursor_obj.executed[-1]
+    assert "INSERT INTO market_bar_snapshot" in sql
+    assert "ON CONFLICT" in sql
+    assert params["vt_symbol"] == "600519.SSE"
+    assert params["provider_name"] == "local_file"
+    assert params["provider_endpoint"] == "/tmp/600519.SSE_d.csv"
+    assert params["provider_version"] == "hash:abc"
+    assert params["quality_status"] == "passed"
+
+
+def test_postgres_snapshot_schema_contains_provider_columns():
+    """PostgreSQL schema should include provider traceability columns."""
+    from vnpy_router.storage import MARKET_BAR_SNAPSHOT_SCHEMA
+
+    assert "CREATE TABLE IF NOT EXISTS market_bar_snapshot" in MARKET_BAR_SNAPSHOT_SCHEMA
+    assert "provider_name TEXT NOT NULL" in MARKET_BAR_SNAPSHOT_SCHEMA
+    assert "provider_endpoint TEXT" in MARKET_BAR_SNAPSHOT_SCHEMA
+    assert "quality_status TEXT" in MARKET_BAR_SNAPSHOT_SCHEMA
+
+
 def test_akshare_provider_missing_dependency_degrades(monkeypatch):
     """AkshareProvider should degrade to empty data when akshare is missing."""
     import importlib
@@ -114,3 +164,30 @@ def test_akshare_provider_missing_dependency_degrades(monkeypatch):
     assert not provider.init(output=messages.append)
     assert provider.query_bar_history(req, output=messages.append) == []
     assert any("akshare" in message.lower() for message in messages)
+
+
+class FakeCursor:
+    """Tiny DB-API cursor fake for storage unit tests."""
+
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, dict]] = []
+
+    def execute(self, sql: str, params: dict | None = None) -> None:
+        self.executed.append((sql, params or {}))
+
+    def close(self) -> None:
+        return
+
+
+class FakeConnection:
+    """Tiny DB-API connection fake for storage unit tests."""
+
+    def __init__(self) -> None:
+        self.cursor_obj = FakeCursor()
+        self.committed = False
+
+    def cursor(self) -> FakeCursor:
+        return self.cursor_obj
+
+    def commit(self) -> None:
+        self.committed = True
