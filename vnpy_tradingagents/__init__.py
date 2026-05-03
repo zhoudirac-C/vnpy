@@ -14,12 +14,17 @@ from .toolkit import MarketDataToolkit, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage
+from .policy import AiSignalPolicy, IntradayAdvice, RatingSignal, SignalDecision
 
 
 __all__ = [
+    "AiSignalPolicy",
+    "IntradayAdvice",
     "MarketDataToolkit",
     "PostgresAgentStorage",
+    "RatingSignal",
     "SignalStatus",
+    "SignalDecision",
     "SnapshotQuery",
     "TradingAgentsApp",
     "TradingAgentsEngine",
