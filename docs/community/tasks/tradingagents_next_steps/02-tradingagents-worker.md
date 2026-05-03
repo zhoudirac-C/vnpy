@@ -4,7 +4,7 @@
 
 ## 任务清单
 
-- [ ] **P2-T01: 增加 Worker 配置模型**
+- [x] **P2-T01: 增加 Worker 配置模型**
   - 创建：`vnpy_tradingagents/config.py`
   - 测试：`tests/test_tradingagents_worker_config.py`
   - 字段：LLM provider、API key 环境变量名、model、timeout、max retry、checkpoint 目录。
@@ -40,4 +40,4 @@
 
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
-
+| P2-T01 | 2026-05-03 | `4fbf94d7` | `uv run --with pytest pytest tests/test_tradingagents_worker_config.py tests/test_tradingagents_toolkit.py tests/test_tradingagents_storage_service.py tests/test_tradingagents_intraday.py tests/test_tradingagents_research.py -v` |
