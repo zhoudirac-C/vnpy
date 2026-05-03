@@ -27,6 +27,7 @@ from .replay import (
     ReplayStepResult,
     ReplaySummary,
 )
+from .monitoring import ReplayRunStatus, ReplayRunStatusBuilder, ReplayRunStatusLog
 from .risk import (
     DecisionAuditRecord,
     OrderIntent,
@@ -69,6 +70,9 @@ __all__ = [
     "ReplayStep",
     "ReplayStepResult",
     "ReplaySummary",
+    "ReplayRunStatus",
+    "ReplayRunStatusBuilder",
+    "ReplayRunStatusLog",
     "RiskCheckResult",
     "RiskDecision",
     "RiskRuleSet",
