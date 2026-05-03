@@ -53,6 +53,11 @@ from .performance_feedback import (
     TradeFeedback,
     build_feedback_context,
 )
+from .backtesting_bridge import BacktestingBridge, BacktestingDecisionResult, BacktestingSignalBundle
+from .paper_bridge import PaperAccountBridge, SimulatedTrade
+from .audit_export import AuditExportRecord, export_audit_csv, export_audit_jsonl
+from .live_gate import LiveGate, LiveGateConfig, LiveGateMetrics, LiveGateResult
+from .schema_init import initialize_postgres_schema
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
 from .gateway_policy import GatewayAccountMode, GatewayAiPolicy, GatewayProfile
 from .replay import (
@@ -83,6 +88,10 @@ from .policy import AiSignalPolicy, SignalDecision
 __all__ = [
     "AiSignalPolicy",
     "ASHARE_RULES_PROMPT",
+    "AuditExportRecord",
+    "BacktestingBridge",
+    "BacktestingDecisionResult",
+    "BacktestingSignalBundle",
     "BatchLongHorizonAgentJob",
     "BatchRunSummary",
     "DecisionAuditRecord",
@@ -101,6 +110,10 @@ __all__ = [
     "LongHorizonSchedule",
     "LongHorizonScheduler",
     "LongRunResult",
+    "LiveGate",
+    "LiveGateConfig",
+    "LiveGateMetrics",
+    "LiveGateResult",
     "MarketDataToolkit",
     "OrderBridge",
     "OrderBridgeResult",
@@ -124,6 +137,7 @@ __all__ = [
     "PostgresSignalReader",
     "PerformanceFeedback",
     "PortfolioState",
+    "PaperAccountBridge",
     "RatingSignal",
     "ResearchSnapshot",
     "ResearchSnapshotBuilder",
@@ -140,6 +154,7 @@ __all__ = [
     "SignalStatus",
     "SignalDecision",
     "SignalFusionService",
+    "SimulatedTrade",
     "SnapshotQuery",
     "SnapshotSourcePolicy",
     "SnapshotSourcePolicyResult",
@@ -163,4 +178,7 @@ __all__ = [
     "build_feedback_context",
     "build_reflection_context",
     "build_worker_system_prompt",
+    "export_audit_csv",
+    "export_audit_jsonl",
+    "initialize_postgres_schema",
 ]

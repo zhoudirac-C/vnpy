@@ -1,8 +1,8 @@
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from .replay import (
     PortfolioReplayStepResult,
@@ -11,6 +11,50 @@ from .replay import (
     ReplaySummary,
 )
 from .risk import DecisionAuditRecord
+
+
+REPLAY_RUN_STATUS_SCHEMA: str = """
+CREATE TABLE IF NOT EXISTS replay_run_status (
+    run_id TEXT PRIMARY KEY,
+    mode TEXT NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL,
+    health TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+"""
+
+
+INSERT_REPLAY_RUN_STATUS_SQL: str = """
+INSERT INTO replay_run_status (
+    run_id,
+    mode,
+    generated_at,
+    health,
+    payload
+) VALUES (
+    %(run_id)s,
+    %(mode)s,
+    %(generated_at)s,
+    %(health)s,
+    %(payload)s
+)
+ON CONFLICT (run_id)
+DO UPDATE SET
+    mode = EXCLUDED.mode,
+    generated_at = EXCLUDED.generated_at,
+    health = EXCLUDED.health,
+    payload = EXCLUDED.payload;
+"""
+
+
+SELECT_REPLAY_RUN_STATUS_SQL: str = """
+SELECT
+    payload
+FROM replay_run_status
+WHERE run_id = %(run_id)s
+LIMIT 1;
+"""
 
 
 @dataclass(frozen=True)
@@ -137,6 +181,92 @@ class ReplayRunStatusLog:
         return json.dumps(status.to_dict(), ensure_ascii=False, sort_keys=True) + "\n"
 
 
+class Cursor(Protocol):
+    """
+    Minimal DB-API cursor protocol.
+    """
+
+    def execute(self, sql: str, params: dict[str, Any] | None = None) -> None:
+        pass
+
+    def fetchone(self) -> Mapping[str, Any] | None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+class Connection(Protocol):
+    """
+    Minimal DB-API connection protocol.
+    """
+
+    def cursor(self) -> Cursor:
+        pass
+
+    def commit(self) -> None:
+        pass
+
+
+class PostgresReplayRunStatusStorage:
+    """
+    PostgreSQL storage for replay and gray-run status snapshots.
+    """
+
+    def __init__(self, connection: Connection) -> None:
+        """"""
+        self.connection: Connection = connection
+
+    def create_schema(self) -> None:
+        """
+        Create replay status table.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(REPLAY_RUN_STATUS_SCHEMA)
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+    def save_status(self, status: ReplayRunStatus) -> None:
+        """
+        Persist one replay status snapshot.
+        """
+        cursor = self.connection.cursor()
+        try:
+            payload: dict[str, Any] = status.to_dict()
+            cursor.execute(
+                INSERT_REPLAY_RUN_STATUS_SQL,
+                {
+                    "run_id": status.run_id,
+                    "mode": status.mode,
+                    "generated_at": status.generated_at,
+                    "health": status.health,
+                    "payload": json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                },
+            )
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+    def load_latest_status(self, run_id: str) -> ReplayRunStatus | None:
+        """
+        Load the latest status by run id.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(SELECT_REPLAY_RUN_STATUS_SQL, {"run_id": run_id})
+            row = cursor.fetchone()
+            if not row:
+                return None
+            payload = row.get("payload", row)
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            return _status_from_payload(payload)
+        finally:
+            cursor.close()
+
+
 def _latest_audit(
     results: Sequence[ReplayStepResult | PortfolioReplayStepResult],
 ) -> DecisionAuditRecord | None:
@@ -180,3 +310,31 @@ def _health(
         return "ready"
 
     return "watch"
+
+
+def _status_from_payload(payload: Mapping[str, Any]) -> ReplayRunStatus:
+    """"""
+    generated_at = payload["generated_at"]
+    if isinstance(generated_at, str):
+        generated_at = datetime.fromisoformat(generated_at)
+
+    return ReplayRunStatus(
+        run_id=str(payload["run_id"]),
+        mode=str(payload["mode"]),
+        generated_at=generated_at,
+        health=str(payload["health"]),
+        total_steps=int(payload["total_steps"]),
+        submit_allowed=int(payload["submit_allowed"]),
+        risk_rejected=int(payload["risk_rejected"]),
+        ai_blocked=int(payload["ai_blocked"]),
+        rating_blocked=int(payload["rating_blocked"]),
+        ai_used=int(payload["ai_used"]),
+        latest_decision_id=str(payload.get("latest_decision_id") or ""),
+        latest_vt_symbol=str(payload.get("latest_vt_symbol") or ""),
+        latest_action=str(payload.get("latest_action") or ""),
+        latest_ai_decision=str(payload.get("latest_ai_decision") or ""),
+        latest_ai_used=bool(payload.get("latest_ai_used")),
+        latest_risk_decision=str(payload.get("latest_risk_decision") or ""),
+        latest_risk_failed_rule=str(payload.get("latest_risk_failed_rule") or ""),
+        latest_ai_source_run_ids=list(payload.get("latest_ai_source_run_ids") or []),
+    )

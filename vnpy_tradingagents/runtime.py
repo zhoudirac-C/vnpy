@@ -71,6 +71,12 @@ class TradingAgentsRuntimeController:
         self.state.disabled_reason = reason
         self.state.signal_status = SignalStatus.DISABLED
 
+    def pause_manual_takeover(self, reason: str = "manual_takeover") -> None:
+        """
+        Immediately pause AI signal use for manual operator takeover.
+        """
+        self.disable(reason)
+
     def heartbeat(self, at: datetime | None = None) -> None:
         """
         Record worker heartbeat.
