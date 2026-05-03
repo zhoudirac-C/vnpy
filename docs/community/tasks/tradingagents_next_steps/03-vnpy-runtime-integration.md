@@ -4,7 +4,7 @@
 
 ## 任务清单
 
-- [ ] **P3-T01: TradingAgentsWidget 前端开关**
+- [x] **P3-T01: TradingAgentsWidget 前端开关**
   - 创建：`vnpy_tradingagents/ui/widget.py`
   - 修改：`vnpy_tradingagents/app.py`
   - UI 控件：全局启用/禁用、report_only / paper_only / live_allowed 模式、live AI 二次确认、runtime 状态展示。
@@ -40,4 +40,4 @@
 
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
-
+| P3-T01 | 2026-05-03 | `4bf29da8` | `uv run --with pytest pytest tests/test_tradingagents_runtime.py tests/test_tradingagents_ui.py tests/test_tradingagents_policy.py tests/test_tradingagents_gateway_policy.py -v` |
