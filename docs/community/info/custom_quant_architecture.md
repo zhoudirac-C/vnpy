@@ -1248,9 +1248,9 @@ P4 --> P5
 
 交付：
 
-- `IntradaySnapshot`：包含分钟 K 线、VWAP、均线、成交量变化、盘口摘要、板块状态、新闻事件、当前持仓和当日交易纪律。
-- `IntradayAgentJob`：盘中定时或事件触发调用 TradingAgents。
-- `IntradayAdvice`：保存建议方向、适用窗口、置信度、失效条件、风险备注和来源 run id。
+- `IntradaySnapshot`：包含分钟 K 线、VWAP、均线、成交量变化、盘口摘要、板块状态、新闻事件、当前持仓和当日交易纪律；第一版由 `IntradaySnapshotBuilder` 从最近分钟 K 线压缩生成。
+- `IntradayAgentJob`：盘中定时或事件触发调用 TradingAgents；第一版已提供可测试的运行边界，真实 vn.py 事件线程和定时调度后续接入。
+- `IntradayAdvice`：保存建议方向、适用窗口、置信度、失效条件、风险备注和来源 run id；第一版由 Worker 输出转换并写入 `intraday_advice` 表。
 - `IntradayAdviceReader`：Strategy App 查询最近有效建议；第一版由 `PostgresSignalReader.load_latest_intraday_advice()` 提供。
 - 降级策略：Worker 超时、LLM 失败或快照缺失时，策略继续按原规则运行。
 
