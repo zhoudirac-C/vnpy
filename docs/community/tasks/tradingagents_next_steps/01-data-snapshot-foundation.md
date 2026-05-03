@@ -4,7 +4,7 @@
 
 ## 任务清单
 
-- [ ] **P1-T01: 实现 `PostgresSnapshotReader`**
+- [x] **P1-T01: 实现 `PostgresSnapshotReader`**
   - 创建或扩展：`vnpy_router/storage.py`
   - 测试：`tests/test_data_router.py`
   - 能力：读取 `market_bar_snapshot`，支持 `vt_symbol/start/end/interval/provider_name` 过滤，返回 `MarketDataToolkit.load_bar_snapshots()` 需要的字典列表。
@@ -41,4 +41,4 @@
 
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
-
+| P1-T01 | 2026-05-03 | `8a3b1d38` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
