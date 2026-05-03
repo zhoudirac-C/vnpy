@@ -1251,7 +1251,7 @@ P4 --> P5
 - `IntradaySnapshot`：包含分钟 K 线、VWAP、均线、成交量变化、盘口摘要、板块状态、新闻事件、当前持仓和当日交易纪律。
 - `IntradayAgentJob`：盘中定时或事件触发调用 TradingAgents。
 - `IntradayAdvice`：保存建议方向、适用窗口、置信度、失效条件、风险备注和来源 run id。
-- `IntradayAdviceReader`：Strategy App 查询最近有效建议。
+- `IntradayAdviceReader`：Strategy App 查询最近有效建议；第一版由 `PostgresSignalReader.load_latest_intraday_advice()` 提供。
 - 降级策略：Worker 超时、LLM 失败或快照缺失时，策略继续按原规则运行。
 
 验收：
@@ -1276,7 +1276,7 @@ P4 --> P5
 - `LongHorizonAgentJob`：盘前、盘后或周末批量运行 TradingAgents。
 - `RatingSignal`：保存 Buy/Overweight/Hold/Underweight/Sell、强度、原因、风险点和有效期。
 - `PortfolioIntent`：保存目标权重提示、加减仓方向、持有周期、最大风险暴露和再平衡备注。
-- `PortfolioSignalReader`：PortfolioStrategy 查询候选池和目标仓位建议。
+- `PortfolioSignalReader`：PortfolioStrategy 查询候选池和目标仓位建议；第一版由 `PostgresSignalReader.load_latest_rating_signal()` 和 `PostgresSignalReader.load_portfolio_intents()` 提供。
 
 验收：
 

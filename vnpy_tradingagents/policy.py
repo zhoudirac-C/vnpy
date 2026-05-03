@@ -1,8 +1,8 @@
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
 from .runtime import TradingAgentsRuntimeController
+from .signals import IntradayAdvice, RatingSignal
 
 
 BUY_ACTIONS: frozenset[str] = frozenset(
@@ -25,31 +25,6 @@ class SignalDecision(Enum):
     ALLOW = "allow"
     IGNORE = "ignore"
     BLOCK_BUY = "block_buy"
-
-
-@dataclass(frozen=True)
-class RatingSignal:
-    """
-    Long-horizon TradingAgents rating persisted from a worker run.
-    """
-
-    vt_symbol: str
-    rating: str
-    confidence: float
-    source_run_id: str
-
-
-@dataclass(frozen=True)
-class IntradayAdvice:
-    """
-    Short-lived intraday advice generated from an intraday snapshot.
-    """
-
-    vt_symbol: str
-    action: str
-    confidence: float
-    valid_until: datetime
-    source_run_id: str
 
 
 class AiSignalPolicy:
