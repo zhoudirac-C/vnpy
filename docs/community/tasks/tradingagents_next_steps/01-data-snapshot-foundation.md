@@ -16,7 +16,7 @@
   - 要求：每张表保留 `provider_name`、`provider_version`、`pulled_at`、`quality_status`，JSONB 保存 provider 原始扩展字段。
   - 验收命令：`uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v`
 
-- [ ] **P1-T03: 实现 `PostgresSnapshotReader.load_latest_snapshot()`**
+- [x] **P1-T03: 实现 `PostgresSnapshotReader.load_latest_snapshot()`**
   - 修改：`vnpy_router/storage.py` 或新增 `vnpy_router/snapshots.py`
   - 对接：`fundamentals`、`news`、`sentiment`、`benchmark`、`portfolio`
   - 缺失快照时返回 `None`，让 `MarketDataToolkit` 标记 `degraded_sources`。
@@ -43,3 +43,4 @@
 | --- | --- | --- | --- |
 | P1-T01 | 2026-05-03 | `8a3b1d38` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
 | P1-T02 | 2026-05-03 | `aa6a91a9` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
+| P1-T03 | 2026-05-03 | `8018c8b5` | `uv run --with pytest pytest tests/test_data_router.py tests/test_tradingagents_toolkit.py -v` |
