@@ -17,6 +17,7 @@ from .worker_adapter import TradingAgentsContextPayload, TradingAgentsWorkerAdap
 from .prompts import ASHARE_RULES_PROMPT, PROMPT_VERSION, build_worker_system_prompt
 from .worker_process import SubprocessTradingAgentsWorker
 from .source_policy import SnapshotSourcePolicy, SnapshotSourcePolicyResult
+from .scheduler import TradingAgentsIntradayScheduler
 from .service import TradingAgentsService
 from .storage import PostgresAgentStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
@@ -100,6 +101,7 @@ __all__ = [
     "TradingAgentsWorkerConfig",
     "TradingAgentsWorkerAdapter",
     "TradingAgentsEngine",
+    "TradingAgentsIntradayScheduler",
     "TradingAgentsMode",
     "TradingAgentsRuntimeController",
     "TradingAgentsRuntimeState",
