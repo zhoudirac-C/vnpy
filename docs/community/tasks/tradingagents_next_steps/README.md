@@ -37,6 +37,7 @@
 - [x] 股票池批量长期任务、长期调度器、组合约束和绩效反馈。
 - [x] 回测桥接、PaperAccount 仿真桥接、灰度状态持久化、审计导出、schema 初始化和 live gate。
 - [x] 生产级 PostgreSQL migration runner、schema CLI 和 readiness checker。
+- [x] 真实 TradingAgents runner 边界、结构化输出校验、checkpoint 隔离和 runner smoke。
 
 ## 阶段文档
 
@@ -56,7 +57,6 @@
 
 ## 下一步推荐
 
-1. 先做 P8，把真实 TradingAgents runner 接到 `TradingAgentsWorkerAdapter`，继续保持 context-only 边界。
-2. 接着做 P9，补真实 provider 能力矩阵和可诊断的数据源降级。
-3. 然后做 P10，进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
-4. 最后做 P11，补运维观测、备份、密钥治理和小资金上线流程。
+1. 先做 P9，补真实 provider 能力矩阵和可诊断的数据源降级。
+2. 然后做 P10，进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
+3. 最后做 P11，补运维观测、备份、密钥治理和小资金上线流程。

@@ -1,10 +1,10 @@
 # 自定义 A 股量化架构方案：可切换数据源 + TradingAgents + VeighNa
 
-版本：v0.2
+版本：v0.3
 
-日期：2026-05-03
+日期：2026-05-04
 
-状态：阶段任务 P1-P7 已实现，下一步进入真实 TradingAgents runner、真实数据源和 PaperAccount 联调
+状态：阶段任务 P1-P8 已实现，下一步进入真实数据源和 PaperAccount 联调
 
 > 本文档用于本 fork 的二次开发规划，不构成任何投资建议。任何数据源和 TradingAgents 都只能作为投研与信号辅助；实盘前必须经过回测、人工确认、风控、OMS 和账户对账。
 
@@ -66,6 +66,7 @@ TradingAgents v0.2.4 已支持结构化输出、checkpoint、持久化决策日�
 - 替换其数据工具，让 market、fundamentals、news、sentiment 都从本地 A 股数据快照读取。
 - 将最终输出的 Buy / Overweight / Hold / Underweight / Sell 映射为 VeighNa 内部可消费的研究信号。
 - TradingAgents 不持有交易接口，不直接调用 `MainEngine.send_order()`。
+- 当前 P8 已实现 `TradingAgentsRunnerAdapter`，支持注入真实 native runner、兼容 `TradingAgentsGraph.propagate(symbol, date)` 形态和 Pydantic 风格结构化输出，但生产环境仍要用替换后的 A 股数据工具或外部包装器，不能让上游默认 yfinance/Alpha Vantage 工具直接进入实盘链路。
 
 ## 3. 先把 vn.py 架构看简单
 
@@ -649,6 +650,15 @@ VeighNa App / Script
 - VeighNa 主框架依赖 PySide6、TA-Lib、交易接口和 GUI 生态。
 - 两套依赖放在同一进程里容易产生版本冲突。
 
+P8 已落地的 Worker 边界：
+
+- `TradingAgentsRunnerAdapter` 只接收 `TradingAgentsContextPayload`，把 run id、标的、日期、模式、LLM 配置、checkpoint 目录和 PostgreSQL 快照 context 交给 native runner。
+- Adapter 支持四类 native runner 形态：`run(native_input)`、`invoke(native_input)`、可调用对象、以及上游 `TradingAgentsGraph.propagate(symbol, trade_date)`。
+- 没安装 TradingAgents 依赖时返回结构化 `dependency_error`，不会让异常穿透到 vn.py 事件线程。
+- `output_validation` 统一校验 rating、action、confidence 和 risk notes。非法 action 会降级为 `hold`，非法 rating 会降级为 `Unavailable`，非法 confidence 会降级为 0 或夹到 0-1。
+- `PostgresAgentStorage` 入库前再次执行输出校验，保证非法 action 不能写入 `trade_intent`。
+- `TradingAgentsWorkerConfig.checkpoint_path_for(run_id, vt_symbol, trade_date)` 按日期、标的和 run id 隔离 checkpoint/memory，避免多标的串状态。
+
 ### 8.3 A 股工具替换
 
 TradingAgents 默认工具应替换为本地工具：
@@ -1149,6 +1159,28 @@ Risk -> Main : 风控通过后才发单
 - 前端关闭开关：所有策略立即进入非 AI 模式。
 - 风控触发熔断：即使前端开关打开，也禁止 AI 信号影响新订单。
 
+### 8.11 TradingAgents Worker 部署和 smoke
+
+生产部署时，TradingAgents Worker 应该和 vn.py GUI/交易主进程分开：
+
+```text
+vn.py main process
+  -> TradingAgentsService / WorkerProcessClient
+  -> isolated tradingagents-worker environment
+  -> TradingAgentsRunnerAdapter
+  -> patched native TradingAgents runner
+```
+
+部署要点：
+
+- 独立 Python 环境安装 TradingAgents、LangGraph、LLM provider SDK、pandas/stockstats 等依赖，避免污染 vn.py 主环境。
+- API key 只通过环境变量进入 Worker，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
+- `tradingagents.llm_provider`、`tradingagents.model`、`tradingagents.timeout_seconds`、`tradingagents.max_retries`、`tradingagents.checkpoint_dir` 从 vn.py 全局配置或部署配置读取。
+- native runner 必须被包装成 context-only runner。它只能使用 `native_input["context"]` 中的 PostgreSQL 快照，不允许直接访问 yfinance、Alpha Vantage、AKShare、TuShare、QMT 或 Gateway。
+- 上游 `TradingAgentsGraph.propagate(symbol, date)` 可以被 adapter 识别，但生产 A 股路径要替换其默认数据工具后再启用。
+- Worker 超时、依赖缺失、LLM 失败或输出结构异常时，统一返回 `hold/Unavailable`，并在 `raw_state.validation_errors` 或 `raw_state.error_type` 中记录原因。
+- `TradingAgentsRunnerSmoke` 用真实 PostgreSQL 快照构造一次 request，成功时写入 `agent_run`、`agent_report`、`rating_signal`、`trade_intent`；失败时返回可诊断结果且不写订单。
+
 ## 9. 开发阶段
 
 开发阶段不再只按“先报告、再信号、最后交易”一条线推进，而是拆成一个公共底座和两条 TradingAgents 接入链路：
@@ -1172,6 +1204,8 @@ component "Phase 3A\n日内分时接入" as P3A
 component "Phase 3B\n长期操作接入" as P3B
 component "Phase 4\n策略融合 + 风控" as P4
 component "Phase 5\n回测/仿真/灰度" as P5
+component "Phase 7\nPostgreSQL生产就绪" as P7
+component "Phase 8\n真实Runner边界" as P8
 
 P1 --> P2
 P2 --> P3A
@@ -1179,6 +1213,8 @@ P2 --> P3B
 P3A --> P4
 P3B --> P4
 P4 --> P5
+P5 --> P7
+P7 --> P8
 
 @enduml
 ```
@@ -1194,6 +1230,7 @@ P4 --> P5
 | Phase 4 | 已完成 | `SignalFusionService`、`AiSignalPolicy`、`PreOrderDecisionService`、审计 |
 | Phase 5 | 已完成 | 回测桥接、PaperAccount 仿真桥接、灰度状态、审计导出、live gate |
 | Phase 7 | 已完成 | `MigrationRunner`、schema CLI、`ProductionReadinessChecker` |
+| Phase 8 | 已完成 | `TradingAgentsRunnerAdapter`、`output_validation`、checkpoint 隔离、runner smoke |
 
 ### Phase 1：公共数据底座
 
@@ -1346,6 +1383,49 @@ P4 --> P5
 - 模拟盘连续稳定运行后，才能进入小资金实盘。
 - 每次实盘灰度必须能导出完整决策审计。
 
+### Phase 7：生产级 PostgreSQL 就绪
+
+目标：
+
+- 用 migration runner 管理 TradingAgents 和 router schema，不再只依赖一次性建表字符串。
+- 提供 CLI 初始化、状态查询和 readiness 检查，方便生产环境上线前验证。
+
+交付：
+
+- `MigrationRunner`：记录 `schema_migration`，只执行未应用迁移。
+- `initialize_postgres_schema()`：改为统一 migration runner。
+- `vnpy-tradingagents-schema`：支持 `schema init`、`schema status` 和 `readiness`。
+- `ProductionReadinessChecker`：检查 PostgreSQL DSN、`psycopg`、API key、provider 配置和本地文件路径。
+
+验收：
+
+- 重复执行 schema init 不会重复建表或静默失败。
+- 无 DSN、缺 API key、缺 provider 依赖时给出结构化错误。
+- readiness 可输出 JSON，方便部署脚本和监控系统消费。
+
+### Phase 8：真实 TradingAgents Runner 边界
+
+目标：
+
+- 把 context-only adapter 接到真实 TradingAgents native runner，同时不开放交易接口和外部数据源直连权限。
+- 校验 native runner 的结构化输出，保证非法 action 不会进入交易意图表。
+- 支持 runner smoke，用真实 PostgreSQL 快照验证一轮 AI 分析链路。
+
+交付：
+
+- `TradingAgentsRunnerAdapter`：兼容 `run()`、`invoke()`、callable 和 `TradingAgentsGraph.propagate(symbol, date)`。
+- `output_validation`：校验 rating、action、confidence，异常输出统一降级。
+- checkpoint 隔离：按 `trade_date/vt_symbol/run_id` 生成目录。
+- `TradingAgentsRunnerSmoke`：从 PostgreSQL 快照构造 request，调用 Worker，成功后写入报告、评级和交易意图。
+- 入库前二次校验：`PostgresAgentStorage.save_worker_result()` 保存前再次执行输出校验。
+
+验收：
+
+- 未安装 TradingAgents 时返回 `dependency_error`，系统继续运行。
+- 注入 native runner 时只能收到 context-only 输入，不包含 Gateway、MainEngine 或 `send_order`。
+- 上游 tuple 决策、Pydantic 风格结构化输出和非法输出都能被归一化。
+- smoke 成功只写 AI 信号和报告，不生成订单；失败返回诊断信息。
+
 ## 10. 风险控制
 
 | 风险 | 控制措施 |
@@ -1363,10 +1443,11 @@ P4 --> P5
 
 1. 在真实 PostgreSQL 上运行 `vnpy-tradingagents-schema schema init --dsn ...`，确认 `schema_migration` 和业务表创建成功。
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
-3. 将真实 TradingAgents runner 接入 `TradingAgentsWorkerAdapter`，继续保持 context-only，不开放 Gateway/MainEngine/send_order。
+3. 在独立 Worker 环境安装 TradingAgents，并用替换后的 A 股 context-only native runner 跑 `TradingAgentsRunnerSmoke`。
 4. 用本地 CSV/JSON 和 AKShare provider 跑通 `vnpy_router` 快照写入，再按需接 TuShare、QMT、XT 或 RQData。
-5. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
-6. 模拟盘连续稳定后，再通过 `LiveGate` 做小资金实盘准入检查。
+5. 进入 P9，补新闻、社媒、QMT/XT、TuShare 等生产数据源能力矩阵和降级诊断。
+6. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
+7. 模拟盘连续稳定后，再通过 `LiveGate` 做小资金实盘准入检查。
 
 ## 12. 资料来源
 
@@ -1377,10 +1458,11 @@ P4 --> P5
 - `lpf6/vnpy_akshare`: https://github.com/lpf6/vnpy_akshare
 - `wade1010/vnpy_akshare`: https://github.com/wade1010/vnpy_akshare
 - TradingAgents: https://github.com/TauricResearch/TradingAgents
+- TradingAgents Python Usage: https://tauricresearch.github.io/TradingAgents/#tradingagents-package
 - TradingAgents Release: https://github.com/TauricResearch/TradingAgents/releases
 - AKShare: https://github.com/akfamily/akshare
 - AKShare 数据说明: https://akshare.akfamily.xyz/data_tips.html
 
 ## 13. 后续任务跟踪
 
-阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P6 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。
+阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P8 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。
