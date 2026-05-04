@@ -2,6 +2,7 @@ import json
 from collections.abc import Mapping
 from typing import Any, Protocol
 
+from .output_validation import validate_worker_response
 from .signals import IntradayAdvice, PortfolioIntent, RatingSignal
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 
@@ -295,6 +296,7 @@ class PostgresAgentStorage:
         """
         Persist a worker response into auditable signal tables.
         """
+        response = validate_worker_response(response)
         cursor = self.connection.cursor()
         try:
             cursor.execute(INSERT_AGENT_RUN_SQL, _agent_run_params(request, response))

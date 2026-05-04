@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol, Any
 
 from .config import TradingAgentsWorkerConfig
+from .output_validation import validate_worker_response
 from .source_policy import SnapshotSourcePolicy
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 
@@ -148,10 +149,10 @@ def _response_from_result(
     Normalize runner output into the vn.py worker response contract.
     """
     if isinstance(result, TradingAgentsWorkerResponse):
-        return result
+        return validate_worker_response(result)
 
     raw_state: dict[str, Any] = dict(result.get("raw_state") or {})
-    return TradingAgentsWorkerResponse(
+    response = TradingAgentsWorkerResponse(
         run_id=request.run_id,
         vt_symbol=request.vt_symbol,
         rating=str(result.get("rating", "Unavailable")),
@@ -163,6 +164,7 @@ def _response_from_result(
         holding_period_hint=str(result.get("holding_period_hint") or ""),
         risk_notes=str(result.get("risk_notes") or ""),
     )
+    return validate_worker_response(response)
 
 
 def _failure_response(

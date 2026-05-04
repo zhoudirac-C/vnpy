@@ -58,12 +58,15 @@ from .paper_bridge import PaperAccountBridge, SimulatedTrade
 from .audit_export import AuditExportRecord, export_audit_csv, export_audit_jsonl
 from .live_gate import LiveGate, LiveGateConfig, LiveGateMetrics, LiveGateResult
 from .migrations import Migration, MigrationApplyResult, MigrationRunner
+from .output_validation import validate_worker_response
 from .readiness import (
     ProductionReadinessChecker,
     ReadinessItem,
     ReadinessReport,
     ReadinessStatus,
 )
+from .real_runner import TradingAgentsRunnerAdapter
+from .runner_smoke import RunnerSmokeConfig, RunnerSmokeResult, TradingAgentsRunnerSmoke
 from .schema_init import initialize_postgres_schema
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
 from .gateway_policy import GatewayAccountMode, GatewayAiPolicy, GatewayProfile
@@ -169,6 +172,8 @@ __all__ = [
     "SignalDecision",
     "SignalFusionService",
     "SimulatedTrade",
+    "RunnerSmokeConfig",
+    "RunnerSmokeResult",
     "SnapshotQuery",
     "SnapshotSourcePolicy",
     "SnapshotSourcePolicyResult",
@@ -183,6 +188,8 @@ __all__ = [
     "TradingAgentsMode",
     "TradingAgentsRuntimeController",
     "TradingAgentsRuntimeState",
+    "TradingAgentsRunnerAdapter",
+    "TradingAgentsRunnerSmoke",
     "TradingAgentsService",
     "TradingAgentsWorkerRequest",
     "TradingAgentsWorkerResponse",
@@ -195,4 +202,5 @@ __all__ = [
     "export_audit_csv",
     "export_audit_jsonl",
     "initialize_postgres_schema",
+    "validate_worker_response",
 ]

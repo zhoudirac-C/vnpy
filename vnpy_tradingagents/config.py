@@ -1,4 +1,5 @@
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,3 +87,27 @@ class TradingAgentsWorkerConfig:
             return WorkerConfigValidation(False, str(exc))
 
         return WorkerConfigValidation(True)
+
+    def checkpoint_path_for(
+        self,
+        run_id: str,
+        vt_symbol: str,
+        trade_date: str,
+    ) -> Path:
+        """
+        Return an isolated checkpoint/memory path for one worker run.
+        """
+        return (
+            self.checkpoint_dir
+            / _safe_path_part(trade_date)
+            / _safe_path_part(vt_symbol)
+            / _safe_path_part(run_id)
+        )
+
+
+def _safe_path_part(value: str) -> str:
+    """
+    Convert run metadata into a filesystem-safe path segment.
+    """
+    text: str = re.sub(r"[^A-Za-z0-9-]+", "_", value.strip())
+    return text.strip("_") or "unknown"
