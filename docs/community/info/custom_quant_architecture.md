@@ -1,10 +1,10 @@
 # 自定义 A 股量化架构方案：可切换数据源 + TradingAgents + VeighNa
 
-版本：v0.4
+版本：v0.5
 
 日期：2026-05-04
 
-状态：阶段任务 P1-P9 已实现，下一步进入 PaperAccount/回测联调
+状态：阶段任务 P1-P11 已实现，下一步进入真实 PostgreSQL、paper 环境和小资金前演练
 
 > 本文档用于本 fork 的二次开发规划，不构成任何投资建议。任何数据源和 TradingAgents 都只能作为投研与信号辅助；实盘前必须经过回测、人工确认、风控、OMS 和账户对账。
 
@@ -1215,6 +1215,8 @@ component "Phase 5\n回测/仿真/灰度" as P5
 component "Phase 7\nPostgreSQL生产就绪" as P7
 component "Phase 8\n真实Runner边界" as P8
 component "Phase 9\n生产数据源" as P9
+component "Phase 10\n回测/Paper/UI" as P10
+component "Phase 11\n运维/上线" as P11
 
 P1 --> P2
 P2 --> P3A
@@ -1225,6 +1227,8 @@ P4 --> P5
 P5 --> P7
 P7 --> P8
 P8 --> P9
+P9 --> P10
+P10 --> P11
 
 @enduml
 ```
@@ -1242,6 +1246,8 @@ P8 --> P9
 | Phase 7 | 已完成 | `MigrationRunner`、schema CLI、`ProductionReadinessChecker` |
 | Phase 8 | 已完成 | `TradingAgentsRunnerAdapter`、`output_validation`、checkpoint 隔离、runner smoke |
 | Phase 9 | 已完成 | `ProviderCapability`、`TuShareProvider`、`QmtProvider`、`XtProvider`、`SocialProvider`、事件源生产规则 |
+| Phase 10 | 已完成 | `BacktestingAppBridge`、`PaperAccountSnapshot`、UI 手工接管、状态查询、`TradingAgentsPaperSmoke` |
+| Phase 11 | 已完成 | `PostgresOpsStorage`、`MetricsCollector`、`secrets_policy`、备份恢复文档、小资金上线 Runbook |
 
 ### Phase 1：公共数据底座
 
@@ -1463,6 +1469,55 @@ P8 --> P9
 - 新闻和社媒事件没有 `source` 或 `provider_name` 时不能进入 TradingAgents context。
 - 社媒源缺失只让 news/sentiment 降级，不阻塞 market/fundamentals context。
 
+### Phase 10：vn.py 回测、PaperAccount 和 UI 联调
+
+目标：
+
+- 把已有桥接层挂到 vn.py 回测和 paper 路径，让 AI 影响过的每次决策都能审计。
+- 让 PaperAccount 仿真成交、资金回报和持仓变化写回 feedback。
+- 在 UI 上提供手工接管和 replay/gray 状态查询能力。
+
+交付：
+
+- `BacktestingAppBridge`：封装回测决策点 `BacktestingDecisionPoint`，调用信号读取、融合和 `PreOrderDecisionService`，不持有 Gateway/MainEngine。
+- `PaperAccountSnapshot`：把仿真账户权益、benchmark return、换手率和回撤转换为 `PerformanceFeedback`。
+- UI 手工接管：`apply_manual_takeover()` 和“手工接管”按钮调用 `pause_manual_takeover()`，paper/live 信号消费立即关闭。
+- UI 状态查询：`load_replay_status_panel_text()` 从 `PostgresReplayRunStatusStorage` 按 run id 读取状态并渲染。
+- `TradingAgentsPaperSmoke`：执行 snapshot -> worker -> signal persistence -> paper fill -> feedback 的 paper-only 演练，不触发 live Gateway。
+
+验收：
+
+- 回测桥接不访问真实 Gateway。
+- 每笔 AI 影响的回测决策都有 `decision_audit`。
+- Paper feedback 只允许在 `GatewayAccountMode.SIMULATION` 下写入。
+- 手工接管后 `can_use_signal(live=False)` 和 `can_use_signal(live=True)` 都为 false。
+- Paper smoke 成功写入 worker result 和 trade feedback，且 `live_gateway_touched=false`。
+
+### Phase 11：运维、观测和小资金上线
+
+目标：
+
+- 补齐生产运行所需的 heartbeat、metrics、备份恢复、密钥治理和小资金上线流程。
+- 确保异常不仅在日志里出现，也能进入 PostgreSQL 和监控采集。
+- 让 LiveGate、UI 开关、手工接管和 runbook 形成一致上线流程。
+
+交付：
+
+- `PostgresOpsStorage` / `OpsHeartbeat`：记录 worker heartbeat、最近错误、数据源延迟、队列积压和降级来源。
+- `MetricsCollector`：导出 run count、failure count、平均 latency、degraded sources、blocked orders 和 blocked reasons 的 JSON line。
+- `secrets_policy`：提供 `mask_secret()`、`sanitize_mapping()` 和 `assert_context_has_no_secrets()`；`TradingAgentsWorkerAdapter` 运行前拦截 secret context。
+- `0003_ops_heartbeat` migration：为既有数据库补 `ops_heartbeat` 表。
+- 备份恢复文档：`docs/community/ops/postgres_backup_restore.md`。
+- 小资金上线 Runbook：`docs/community/ops/live_gray_runbook.md`。
+
+验收：
+
+- heartbeat 可入库，异常可追溯。
+- metrics 可被日志或监控系统采集。
+- API key/token/password 不进入 TradingAgents context、日志或 DB payload。
+- 备份恢复文档包含可执行 `pg_dump` / `pg_restore` 命令和验收 SQL。
+- 不满足 LiveGate 或 runbook 禁止条件时不能进入 `live_allowed`。
+
 ## 10. 风险控制
 
 | 风险 | 控制措施 |
@@ -1482,9 +1537,9 @@ P8 --> P9
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
 3. 在独立 Worker 环境安装 TradingAgents，并用替换后的 A 股 context-only native runner 跑 `TradingAgentsRunnerSmoke`。
 4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；开通 QMT/XT 后补真实历史接口实现。
-5. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
-6. 进入 P10，把桥接层挂到真实 vn.py 回测、PaperAccount 和 UI 控制面。
-7. 模拟盘连续稳定后，再通过 `LiveGate` 做小资金实盘准入检查。
+5. 用真实 PostgreSQL 跑 `TradingAgentsRunnerSmoke` 和 `TradingAgentsPaperSmoke`，检查 `decision_audit`、`replay_run_status`、feedback 和 `ops_heartbeat`。
+6. 开通 QMT/XT 后，把历史数据 provider 边界补成真实查询实现。
+7. 模拟盘连续稳定后，严格按 `docs/community/ops/live_gray_runbook.md` 和 `LiveGate` 做小资金实盘准入检查。
 
 ## 12. 资料来源
 
@@ -1502,4 +1557,4 @@ P8 --> P9
 
 ## 13. 后续任务跟踪
 
-阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P9 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。
+阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P11 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。

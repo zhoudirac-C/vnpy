@@ -39,6 +39,8 @@
 - [x] 生产级 PostgreSQL migration runner、schema CLI 和 readiness checker。
 - [x] 真实 TradingAgents runner 边界、结构化输出校验、checkpoint 隔离和 runner smoke。
 - [x] 生产 provider 能力矩阵、TuShare/QMT/XT 边界和社媒事件源生产规则。
+- [x] vn.py 回测适配、PaperAccount 反馈、UI 手工接管和 paper smoke。
+- [x] 运维 heartbeat、metrics、密钥治理、备份恢复和小资金上线 runbook。
 
 ## 阶段文档
 
@@ -58,5 +60,6 @@
 
 ## 下一步推荐
 
-1. 先做 P10，进入 PaperAccount/回测联调，观察 `replay_run_status`、`decision_audit` 和 feedback 表。
-2. 最后做 P11，补运维观测、备份、密钥治理和小资金上线流程。
+1. 在真实 PostgreSQL 和本机 paper 环境跑 `schema init`、`readiness`、runner smoke 和 paper smoke。
+2. 开通 QMT/XT 后，把 `QmtProvider` / `XtProvider` 的历史数据查询从边界适配补成真实实现。
+3. 进入小资金前按 `docs/community/ops/live_gray_runbook.md` 做人工检查和回滚演练。
