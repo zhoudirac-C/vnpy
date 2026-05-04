@@ -1,10 +1,10 @@
 # 自定义 A 股量化架构方案：可切换数据源 + TradingAgents + VeighNa
 
-版本：v0.3
+版本：v0.4
 
 日期：2026-05-04
 
-状态：阶段任务 P1-P8 已实现，下一步进入真实数据源和 PaperAccount 联调
+状态：阶段任务 P1-P9 已实现，下一步进入 PaperAccount/回测联调
 
 > 本文档用于本 fork 的二次开发规划，不构成任何投资建议。任何数据源和 TradingAgents 都只能作为投研与信号辅助；实盘前必须经过回测、人工确认、风控、OMS 和账户对账。
 
@@ -55,6 +55,14 @@ vn.py 目前支持在主界面菜单栏的 **配置 -> 全局配置** 中配置�
 - 保留 vn.py 原生 `datafeed.name` 配置能力。
 - 增加一个自定义 datafeed，例如 `datafeed.name=router`。
 - `vnpy_router.Datafeed` 内部再根据 provider 配置、数据可用性、成本和质量分数选择 AKShare、TuShare、QMT、XT 或本地缓存。
+
+当前 P9 已落地：
+
+- `ProviderCapability` 声明 provider 支持的 K 线频率、字段、复权、tick、实时能力、历史能力和成本等级。
+- `DataProviderRouter` 查询 provider 前先按 capability 过滤，不再只按名字顺序盲试。
+- `TuShareProvider` 支持 token 配置、日线/周线 `pro_bar` 查询、复权参数和 provider metadata；无 token 或缺依赖时明确 degraded。
+- `QmtProvider`、`XtProvider` 先作为历史数据接入边界，缺少 `xtquant.xtdata` 时可诊断降级；实时行情和交易仍由 vn.py Gateway 负责。
+- `SocialProvider` 支持本地 CSV/JSON 社媒导入、人工标签和 sentiment 聚合；文件缺失只降级，不阻塞 market/fundamental context。
 
 ### 2.3 TradingAgents 更适合做投研 Worker
 
@@ -1206,6 +1214,7 @@ component "Phase 4\n策略融合 + 风控" as P4
 component "Phase 5\n回测/仿真/灰度" as P5
 component "Phase 7\nPostgreSQL生产就绪" as P7
 component "Phase 8\n真实Runner边界" as P8
+component "Phase 9\n生产数据源" as P9
 
 P1 --> P2
 P2 --> P3A
@@ -1215,6 +1224,7 @@ P3B --> P4
 P4 --> P5
 P5 --> P7
 P7 --> P8
+P8 --> P9
 
 @enduml
 ```
@@ -1231,6 +1241,7 @@ P7 --> P8
 | Phase 5 | 已完成 | 回测桥接、PaperAccount 仿真桥接、灰度状态、审计导出、live gate |
 | Phase 7 | 已完成 | `MigrationRunner`、schema CLI、`ProductionReadinessChecker` |
 | Phase 8 | 已完成 | `TradingAgentsRunnerAdapter`、`output_validation`、checkpoint 隔离、runner smoke |
+| Phase 9 | 已完成 | `ProviderCapability`、`TuShareProvider`、`QmtProvider`、`XtProvider`、`SocialProvider`、事件源生产规则 |
 
 ### Phase 1：公共数据底座
 
@@ -1426,6 +1437,32 @@ P7 --> P8
 - 上游 tuple 决策、Pydantic 风格结构化输出和非法输出都能被归一化。
 - smoke 成功只写 AI 信号和报告，不生成订单；失败返回诊断信息。
 
+### Phase 9：生产数据源和事件源
+
+目标：
+
+- 把 local_file/AKShare 起步能力扩展为可切换、可诊断的生产 provider 链路。
+- 为 TuShare、QMT、XT 补明确接入边界，避免未开通或未安装依赖时影响其他 provider。
+- 补新闻、公告、社媒情绪进入 TradingAgents context 前的来源可信度和人工审核规则。
+
+交付：
+
+- `ProviderCapability`：声明每个 provider 的频率、字段、复权、tick、实时、历史和成本等级。
+- `DataProviderRouter`：查询前按 capability 过滤 provider，跳过不支持当前请求的 provider 并输出诊断。
+- `TuShareProvider`：支持 token、日线/周线 `pro_bar`、复权参数和 provider metadata；不把 token 写入 bar metadata。
+- `QmtProvider` / `XtProvider`：提供历史数据适配接口，缺少 `xtquant.xtdata` 时 degraded；实时行情和交易仍走 Gateway。
+- `SocialProvider`：支持本地 CSV/JSON 导入、人工标签、情绪聚合和文件缺失降级。
+- `event_storage` 生产规则：增加 `source_quality`、`trust_score`、`spam_score`、`dedup_window_seconds`、`review_status` 和 `event_quality_report`。
+- P9 migration：`0002_event_source_quality` 对已有 PostgreSQL 表执行 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`，并把 schema version 更新到 `p9`。
+
+验收：
+
+- router 不会请求不支持当前 K 线频率的 provider。
+- TuShare 无 token 时明确 degraded；有 token 时返回带 provider metadata 的 BarData。
+- QMT/XT 未安装依赖时可诊断，不影响 local_file、AKShare、TuShare 等其他 provider。
+- 新闻和社媒事件没有 `source` 或 `provider_name` 时不能进入 TradingAgents context。
+- 社媒源缺失只让 news/sentiment 降级，不阻塞 market/fundamentals context。
+
 ## 10. 风险控制
 
 | 风险 | 控制措施 |
@@ -1444,9 +1481,9 @@ P7 --> P8
 1. 在真实 PostgreSQL 上运行 `vnpy-tradingagents-schema schema init --dsn ...`，确认 `schema_migration` 和业务表创建成功。
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
 3. 在独立 Worker 环境安装 TradingAgents，并用替换后的 A 股 context-only native runner 跑 `TradingAgentsRunnerSmoke`。
-4. 用本地 CSV/JSON 和 AKShare provider 跑通 `vnpy_router` 快照写入，再按需接 TuShare、QMT、XT 或 RQData。
-5. 进入 P9，补新闻、社媒、QMT/XT、TuShare 等生产数据源能力矩阵和降级诊断。
-6. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
+4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；开通 QMT/XT 后补真实历史接口实现。
+5. 用 PaperAccount/回测环境联调 `BacktestingBridge`、`PaperAccountBridge`、`decision_audit`、`replay_run_status` 和 feedback 表。
+6. 进入 P10，把桥接层挂到真实 vn.py 回测、PaperAccount 和 UI 控制面。
 7. 模拟盘连续稳定后，再通过 `LiveGate` 做小资金实盘准入检查。
 
 ## 12. 资料来源
@@ -1465,4 +1502,4 @@ P7 --> P8
 
 ## 13. 后续任务跟踪
 
-阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P8 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。
+阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P9 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。
