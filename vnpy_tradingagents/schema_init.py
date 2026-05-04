@@ -5,6 +5,7 @@ from vnpy_router.storage import SNAPSHOT_SCHEMA
 
 from .monitoring import REPLAY_RUN_STATUS_SCHEMA
 from .migrations import Migration, MigrationApplyResult, MigrationRunner
+from .ops_storage import OPS_SCHEMA
 from .performance_feedback import FEEDBACK_SCHEMA
 from .risk import DECISION_AUDIT_SCHEMA
 from .storage import TRADINGAGENTS_SCHEMA
@@ -75,6 +76,11 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
         version="0002_event_source_quality",
         description="Add production event source quality columns",
         sql=EVENT_SOURCE_QUALITY_MIGRATION_SQL,
+    ),
+    Migration(
+        version="0003_ops_heartbeat",
+        description="Create operational heartbeat tables",
+        sql=OPS_SCHEMA,
     ),
 )
 

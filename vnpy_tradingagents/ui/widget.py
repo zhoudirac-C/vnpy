@@ -56,6 +56,31 @@ def build_status_panel_text(status: ReplayRunStatus) -> str:
     )
 
 
+def apply_manual_takeover(
+    engine: TradingAgentsEngine,
+    reason: str = "manual_takeover",
+) -> TradingAgentsRuntimeState:
+    """
+    Pause TradingAgents immediately for manual operator takeover.
+    """
+    runtime = getattr(engine, "runtime", None)
+    if runtime is not None:
+        runtime.pause_manual_takeover(reason)
+    else:
+        engine.disable(reason)
+    return engine.get_state()
+
+
+def load_replay_status_panel_text(storage, run_id: str) -> str:
+    """
+    Load replay/gray-run status from storage and render the UI text.
+    """
+    status = storage.load_latest_status(run_id)
+    if status is None:
+        return f"run={run_id} status=missing"
+    return build_status_panel_text(status)
+
+
 class TradingAgentsWidget(QtWidgets.QWidget):
     """
     Minimal TradingAgents runtime control widget.
@@ -77,6 +102,8 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.replay_status_text.setReadOnly(True)
         self.apply_button = QtWidgets.QPushButton("应用")
         self.apply_button.clicked.connect(self.apply_settings)
+        self.manual_takeover_button = QtWidgets.QPushButton("手工接管")
+        self.manual_takeover_button.clicked.connect(self.manual_takeover)
 
         form = QtWidgets.QFormLayout()
         form.addRow("TradingAgents", self.enable_checkbox)
@@ -85,6 +112,7 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         form.addRow("状态", self.status_label)
         form.addRow("Replay/Gray", self.replay_status_text)
         form.addRow(self.apply_button)
+        form.addRow(self.manual_takeover_button)
         self.setLayout(form)
 
         self.refresh_state()
@@ -128,3 +156,18 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         Display latest replay or gray-run status.
         """
         self.replay_status_text.setPlainText(build_status_panel_text(status))
+
+    def manual_takeover(self) -> None:
+        """
+        Pause AI signal usage from the UI.
+        """
+        state = apply_manual_takeover(self.engine)
+        self.set_status_text(state)
+
+    def load_replay_status(self, storage, run_id: str) -> None:
+        """
+        Load and display latest replay status by run id.
+        """
+        self.replay_status_text.setPlainText(
+            load_replay_status_panel_text(storage, run_id)
+        )

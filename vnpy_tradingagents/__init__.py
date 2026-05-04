@@ -54,10 +54,14 @@ from .performance_feedback import (
     build_feedback_context,
 )
 from .backtesting_bridge import BacktestingBridge, BacktestingDecisionResult, BacktestingSignalBundle
-from .paper_bridge import PaperAccountBridge, SimulatedTrade
+from .backtesting_app_bridge import BacktestingAppBridge, BacktestingDecisionPoint
+from .paper_bridge import PaperAccountBridge, PaperAccountSnapshot, SimulatedTrade
+from .paper_smoke import PaperSmokeConfig, PaperSmokeResult, TradingAgentsPaperSmoke
 from .audit_export import AuditExportRecord, export_audit_csv, export_audit_jsonl
 from .live_gate import LiveGate, LiveGateConfig, LiveGateMetrics, LiveGateResult
+from .metrics import MetricsCollector, MetricsSnapshot
 from .migrations import Migration, MigrationApplyResult, MigrationRunner
+from .ops_storage import OpsHeartbeat, PostgresOpsStorage
 from .output_validation import validate_worker_response
 from .readiness import (
     ProductionReadinessChecker,
@@ -68,6 +72,12 @@ from .readiness import (
 from .real_runner import TradingAgentsRunnerAdapter
 from .runner_smoke import RunnerSmokeConfig, RunnerSmokeResult, TradingAgentsRunnerSmoke
 from .schema_init import initialize_postgres_schema
+from .secrets_policy import (
+    SecretLeakError,
+    assert_context_has_no_secrets,
+    mask_secret,
+    sanitize_mapping,
+)
 from .fusion import FusedSignal, RuleSignal, SignalFusionService
 from .gateway_policy import GatewayAccountMode, GatewayAiPolicy, GatewayProfile
 from .replay import (
@@ -99,8 +109,10 @@ __all__ = [
     "AiSignalPolicy",
     "ASHARE_RULES_PROMPT",
     "AuditExportRecord",
+    "BacktestingAppBridge",
     "BacktestingBridge",
     "BacktestingDecisionResult",
+    "BacktestingDecisionPoint",
     "BacktestingSignalBundle",
     "BatchLongHorizonAgentJob",
     "BatchRunSummary",
@@ -126,13 +138,19 @@ __all__ = [
     "LiveGateResult",
     "MarketDataToolkit",
     "Migration",
+    "MetricsCollector",
+    "MetricsSnapshot",
     "MigrationApplyResult",
     "MigrationRunner",
     "OrderBridge",
     "OrderBridgeResult",
     "OrderIntent",
+    "OpsHeartbeat",
     "PreOrderDecisionResult",
     "PreOrderDecisionService",
+    "PaperAccountSnapshot",
+    "PaperSmokeConfig",
+    "PaperSmokeResult",
     "PortfolioIntent",
     "PortfolioConstraintConfig",
     "PortfolioConstraintEngine",
@@ -147,6 +165,7 @@ __all__ = [
     "PostgresDecisionAuditStorage",
     "PostgresFeedbackStorage",
     "PostgresIntradaySnapshotStorage",
+    "PostgresOpsStorage",
     "PostgresSignalReader",
     "PerformanceFeedback",
     "PortfolioState",
@@ -174,6 +193,7 @@ __all__ = [
     "SimulatedTrade",
     "RunnerSmokeConfig",
     "RunnerSmokeResult",
+    "SecretLeakError",
     "SnapshotQuery",
     "SnapshotSourcePolicy",
     "SnapshotSourcePolicyResult",
@@ -190,17 +210,21 @@ __all__ = [
     "TradingAgentsRuntimeState",
     "TradingAgentsRunnerAdapter",
     "TradingAgentsRunnerSmoke",
+    "TradingAgentsPaperSmoke",
     "TradingAgentsService",
     "TradingAgentsWorkerRequest",
     "TradingAgentsWorkerResponse",
     "TradeFeedback",
     "WorkerConfigError",
     "WorkerConfigValidation",
+    "assert_context_has_no_secrets",
     "build_feedback_context",
     "build_reflection_context",
     "build_worker_system_prompt",
     "export_audit_csv",
     "export_audit_jsonl",
     "initialize_postgres_schema",
+    "mask_secret",
+    "sanitize_mapping",
     "validate_worker_response",
 ]

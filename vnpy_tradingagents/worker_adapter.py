@@ -5,6 +5,7 @@ from typing import Protocol, Any
 
 from .config import TradingAgentsWorkerConfig
 from .output_validation import validate_worker_response
+from .secrets_policy import SecretLeakError, assert_context_has_no_secrets
 from .source_policy import SnapshotSourcePolicy
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 
@@ -85,6 +86,11 @@ class TradingAgentsWorkerAdapter:
                 "forbidden_context",
                 f"Forbidden provider or trading handle in context: {forbidden_key}",
             )
+
+        try:
+            assert_context_has_no_secrets(request.context)
+        except SecretLeakError as exc:
+            return _failure_response(request, "secret_context", str(exc))
 
         source_result = self.source_policy.evaluate(request.context)
         if not source_result.allowed:
