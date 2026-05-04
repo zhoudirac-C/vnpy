@@ -1,6 +1,6 @@
 from typing import Any
 
-from .event_storage import NewsEvent, SentimentSnapshot
+from .event_storage import NewsEvent, SentimentSnapshot, validate_event_for_context
 
 
 class EventNormalizer:
@@ -42,6 +42,7 @@ def _event_to_context(event: NewsEvent) -> dict[str, Any]:
     """
     Convert one news event into a TradingAgents-readable context row.
     """
+    validate_event_for_context(event)
     context: dict[str, Any] = {
         "event_id": event.event_id,
         "vt_symbol": event.vt_symbol,
@@ -54,6 +55,11 @@ def _event_to_context(event: NewsEvent) -> dict[str, Any]:
         "provider_name": event.provider_name,
         "provider_version": event.provider_version,
         "raw_hash": event.raw_hash,
+        "source_quality": event.source_quality,
+        "trust_score": event.trust_score,
+        "spam_score": event.spam_score,
+        "dedup_window_seconds": event.dedup_window_seconds,
+        "review_status": event.review_status,
     }
     if event.sentiment_score is not None:
         context["sentiment_score"] = event.sentiment_score

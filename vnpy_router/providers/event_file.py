@@ -47,4 +47,18 @@ def _row_to_event(
         url=str(row.get("url") or f"file://{file_path}#{index}"),
         provider_version=str(row.get("provider_version") or ""),
         sentiment_score=sentiment_score,
+        source_quality=str(row.get("source_quality") or "manual"),
+        trust_score=_optional_float(row.get("trust_score"), default=0.5),
+        spam_score=_optional_float(row.get("spam_score"), default=0),
+        dedup_window_seconds=int(row.get("dedup_window_seconds") or 86400),
+        review_status=str(row.get("review_status") or "pending"),
     )
+
+
+def _optional_float(value: Any, default: float) -> float:
+    """
+    Parse optional float values from local event files.
+    """
+    if value in {"", None}:
+        return default
+    return float(value)

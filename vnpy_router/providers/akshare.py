@@ -9,6 +9,7 @@ from vnpy.trader.constant import Interval
 from vnpy.trader.object import BarData, HistoryRequest
 
 from .base import BaseProvider
+from .capability import ProviderCapability, ProviderCostLevel
 
 
 class AkshareProvider(BaseProvider):
@@ -17,6 +18,16 @@ class AkshareProvider(BaseProvider):
     """
 
     name: str = "akshare"
+    capability: ProviderCapability = ProviderCapability(
+        name=name,
+        intervals=frozenset({Interval.DAILY, Interval.WEEKLY}),
+        fields=frozenset({"open", "high", "low", "close", "volume", "turnover"}),
+        adjustments=frozenset({"none", "qfq", "hfq"}),
+        supports_tick=False,
+        realtime=False,
+        history=True,
+        cost_level=ProviderCostLevel.FREE,
+    )
 
     def __init__(self) -> None:
         """"""

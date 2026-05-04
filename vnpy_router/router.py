@@ -6,6 +6,7 @@ from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, HistoryRequest
 
 from .providers.base import BaseProvider
+from .providers.capability import ProviderCapability, unsupported_reason
 
 
 class SnapshotReader(Protocol):
@@ -71,6 +72,11 @@ class DataProviderRouter:
             return cached_bars
 
         for provider in self.providers:
+            capability: ProviderCapability | None = getattr(provider, "capability", None)
+            if capability and not capability.supports_history_request(req):
+                output(unsupported_reason(capability, req))
+                continue
+
             try:
                 bars: list[BarData] = provider.query_bar_history(req, output)
             except Exception as exc:

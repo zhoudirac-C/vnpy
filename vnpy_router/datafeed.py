@@ -10,6 +10,9 @@ from vnpy.trader.setting import SETTINGS
 from .providers.akshare import AkshareProvider
 from .providers.base import BaseProvider
 from .providers.local_file import LocalFileProvider
+from .providers.qmt import QmtProvider
+from .providers.tushare import TuShareProvider
+from .providers.xt import XtProvider
 from .router import DataProviderRouter, SnapshotReader, SnapshotStorage
 from .storage import PostgresSnapshotReader, PostgresSnapshotStorage
 
@@ -161,7 +164,29 @@ def _build_provider(config: Mapping[str, Any]) -> BaseProvider | None:
     if name == "akshare":
         return AkshareProvider()
 
+    if name == "tushare":
+        return TuShareProvider(
+            token=_optional_str(config.get("token")),
+            adjustment=str(config.get("adjustment") or ""),
+            provider_version=str(config.get("provider_version") or ""),
+        )
+
+    if name == "qmt":
+        return QmtProvider()
+
+    if name == "xt":
+        return XtProvider()
+
     return None
+
+
+def _optional_str(value: Any) -> str | None:
+    """
+    Return an optional string without converting missing values into "None".
+    """
+    if value is None:
+        return None
+    return str(value)
 
 
 def _connect_postgres() -> Any | None:

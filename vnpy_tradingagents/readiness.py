@@ -137,6 +137,35 @@ class ProductionReadinessChecker:
                     items.append(_ready("akshare_provider", "akshare dependency is available"))
                 else:
                     items.append(_warning("akshare_provider", "akshare dependency is not installed"))
+            elif name == "tushare":
+                token = (
+                    value
+                    or str(self.settings.get("router.tushare.token", ""))
+                    or self.environ.get("TUSHARE_TOKEN", "")
+                )
+                if not token.strip():
+                    items.append(_warning("tushare_provider", "TuShare token is not configured"))
+                elif not self.module_available("tushare"):
+                    items.append(_warning("tushare_provider", "tushare dependency is not installed"))
+                else:
+                    items.append(_ready("tushare_provider", "TuShare token and dependency are configured"))
+            elif name == "qmt":
+                if self.module_available("xtquant.xtdata"):
+                    items.append(_ready("qmt_provider", "xtquant.xtdata dependency is available for QMT history"))
+                else:
+                    items.append(_warning("qmt_provider", "xtquant.xtdata dependency is not installed; QMT history is degraded"))
+            elif name == "xt":
+                if self.module_available("xtquant.xtdata"):
+                    items.append(_ready("xt_provider", "xtquant.xtdata dependency is available for XT history"))
+                else:
+                    items.append(_warning("xt_provider", "xtquant.xtdata dependency is not installed; XT history is degraded"))
+            elif name == "social":
+                if not value:
+                    items.append(_warning("social_provider", "social provider has no local/manual source path configured"))
+                elif not self.path_exists(value):
+                    items.append(_warning("social_provider", f"social source path does not exist: {value}"))
+                else:
+                    items.append(_ready("social_provider", f"social source path exists: {value}"))
             else:
                 items.append(_warning(f"{name}_provider", f"provider has no production readiness checker: {name}"))
 
@@ -182,7 +211,13 @@ def _parse_provider_specs(raw: Any) -> list[tuple[str, str]]:
                 specs.append((text, ""))
         return specs
     if isinstance(raw, list):
-        return [(str(item), "") for item in raw]
+        specs = []
+        for item in raw:
+            if isinstance(item, Mapping):
+                specs.append((str(item.get("name", "")), str(item.get("token") or item.get("path") or "")))
+            else:
+                specs.append((str(item), ""))
+        return [(name, value) for name, value in specs if name]
     return []
 
 

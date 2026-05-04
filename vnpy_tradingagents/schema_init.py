@@ -1,6 +1,6 @@
 from typing import Any, Protocol
 
-from vnpy_router.event_storage import EVENT_SCHEMA
+from vnpy_router.event_storage import EVENT_SCHEMA, EVENT_SOURCE_QUALITY_MIGRATION_SQL
 from vnpy_router.storage import SNAPSHOT_SCHEMA
 
 from .monitoring import REPLAY_RUN_STATUS_SCHEMA
@@ -70,6 +70,11 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
                 REPLAY_RUN_STATUS_SCHEMA,
             ]
         ),
+    ),
+    Migration(
+        version="0002_event_source_quality",
+        description="Add production event source quality columns",
+        sql=EVENT_SOURCE_QUALITY_MIGRATION_SQL,
     ),
 )
 

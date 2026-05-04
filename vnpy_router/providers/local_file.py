@@ -8,6 +8,7 @@ from vnpy.trader.constant import Interval
 from vnpy.trader.object import BarData, HistoryRequest
 
 from .base import BaseProvider
+from .capability import ProviderCapability, ProviderCostLevel
 
 
 class LocalFileProvider(BaseProvider):
@@ -18,6 +19,32 @@ class LocalFileProvider(BaseProvider):
     """
 
     name: str = "local_file"
+    capability: ProviderCapability = ProviderCapability(
+        name=name,
+        intervals=frozenset(
+            {
+                Interval.MINUTE,
+                Interval.HOUR,
+                Interval.DAILY,
+                Interval.WEEKLY,
+            }
+        ),
+        fields=frozenset(
+            {
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "turnover",
+                "open_interest",
+            }
+        ),
+        adjustments=frozenset({"none", "qfq", "hfq"}),
+        supports_tick=False,
+        realtime=False,
+        cost_level=ProviderCostLevel.MANUAL,
+    )
 
     def __init__(self, base_path: str | Path) -> None:
         """"""
