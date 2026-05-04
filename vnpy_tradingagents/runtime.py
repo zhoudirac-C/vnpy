@@ -37,6 +37,7 @@ class TradingAgentsRuntimeState:
     last_heartbeat_at: datetime | None = None
     last_successful_run_id: str = ""
     signal_status: SignalStatus = SignalStatus.DISABLED
+    manual_takeover: bool = False
 
 
 class TradingAgentsRuntimeController:
@@ -59,6 +60,7 @@ class TradingAgentsRuntimeController:
         self.state.enabled = True
         self.state.mode = mode
         self.state.live_enabled = bool(live_enabled and mode == TradingAgentsMode.LIVE_ALLOWED)
+        self.state.manual_takeover = False
         self.state.disabled_reason = ""
         self.state.signal_status = SignalStatus.ACTIVE
 
@@ -68,6 +70,7 @@ class TradingAgentsRuntimeController:
         """
         self.state.enabled = False
         self.state.live_enabled = False
+        self.state.manual_takeover = reason == "manual_takeover"
         self.state.disabled_reason = reason
         self.state.signal_status = SignalStatus.DISABLED
 
@@ -76,6 +79,7 @@ class TradingAgentsRuntimeController:
         Immediately pause AI signal use for manual operator takeover.
         """
         self.disable(reason)
+        self.state.manual_takeover = True
 
     def heartbeat(self, at: datetime | None = None) -> None:
         """

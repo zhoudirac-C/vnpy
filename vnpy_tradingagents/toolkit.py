@@ -36,6 +36,21 @@ class SnapshotReader(Protocol):
     ) -> dict[str, Any] | None:
         pass
 
+    def load_news_events(
+        self,
+        vt_symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> Sequence[Any]:
+        pass
+
+    def load_sentiment_snapshot(
+        self,
+        vt_symbol: str,
+        as_of: datetime,
+    ) -> Any | None:
+        pass
+
 
 class MarketDataToolkit:
     """
@@ -44,8 +59,8 @@ class MarketDataToolkit:
 
     snapshot_types: tuple[str, ...] = (
         "fundamentals",
-        "news",
-        "sentiment",
+        "valuation",
+        "industry",
         "benchmark",
         "portfolio",
     )
@@ -64,6 +79,7 @@ class MarketDataToolkit:
             query.start,
             query.end,
         )
+        bar_list: list[dict[str, Any]] = list(bars)
         context: dict[str, Any] = {
             "vt_symbol": query.vt_symbol,
             "window": {
@@ -71,7 +87,8 @@ class MarketDataToolkit:
                 "end": query.end.isoformat(),
             },
             "market": {
-                "bars": list(bars),
+                "bars": bar_list,
+                "indicators": _market_indicators(bar_list),
             },
         }
 
@@ -88,5 +105,127 @@ class MarketDataToolkit:
             if snapshot is None:
                 degraded_sources.append(snapshot_type)
 
+        news = _load_news(self.reader, query)
+        context["news"] = news
+        if not news.get("events"):
+            degraded_sources.append("news")
+
+        sentiment = _load_sentiment(self.reader, query)
+        context["sentiment"] = sentiment
+        if not sentiment:
+            degraded_sources.append("sentiment")
+
+        context["data_quality"] = _data_quality_summary(context, degraded_sources)
         context["degraded_sources"] = degraded_sources
         return context
+
+
+def _load_news(reader: SnapshotReader, query: SnapshotQuery) -> dict[str, Any]:
+    """
+    Load normalized event window when the reader supports it.
+    """
+    load_news_events = getattr(reader, "load_news_events", None)
+    if callable(load_news_events):
+        events = load_news_events(query.vt_symbol, query.start, query.end)
+        return {"events": [_event_to_context(event) for event in events]}
+
+    snapshot = reader.load_latest_snapshot("news", query.vt_symbol, query.end)
+    return dict(snapshot or {})
+
+
+def _load_sentiment(reader: SnapshotReader, query: SnapshotQuery) -> dict[str, Any]:
+    """
+    Load sentiment snapshot when the reader supports it.
+    """
+    load_sentiment_snapshot = getattr(reader, "load_sentiment_snapshot", None)
+    if callable(load_sentiment_snapshot):
+        snapshot = load_sentiment_snapshot(query.vt_symbol, query.end)
+        if snapshot is None:
+            return {}
+        payload = getattr(snapshot, "payload", None)
+        if isinstance(payload, dict):
+            result = dict(payload)
+        else:
+            result = {"payload": payload}
+        result["_provider_name"] = getattr(snapshot, "provider_name", "")
+        result["_provider_version"] = getattr(snapshot, "provider_version", "")
+        result["_as_of"] = _iso(getattr(snapshot, "as_of", ""))
+        return result
+
+    snapshot = reader.load_latest_snapshot("sentiment", query.vt_symbol, query.end)
+    return dict(snapshot or {})
+
+
+def _market_indicators(bars: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Build compact market indicators for TradingAgents context.
+    """
+    if not bars:
+        return {}
+
+    closes: list[float] = [
+        float(bar["close"] if "close" in bar else bar.get("close_price", 0))
+        for bar in bars
+        if ("close" in bar or "close_price" in bar)
+    ]
+    if not closes:
+        return {}
+
+    latest_close = closes[-1]
+    indicators: dict[str, Any] = {
+        "latest_close": latest_close,
+        "bar_count": len(bars),
+    }
+    if len(closes) >= 2 and closes[0]:
+        indicators["window_return"] = latest_close / closes[0] - 1
+    if len(closes) >= 5:
+        indicators["ma5"] = sum(closes[-5:]) / 5
+    if len(closes) >= 20:
+        indicators["ma20"] = sum(closes[-20:]) / 20
+    return indicators
+
+
+def _event_to_context(event: Any) -> dict[str, Any]:
+    """
+    Convert dataclass-like events into context rows.
+    """
+    if isinstance(event, dict):
+        return dict(event)
+    return {
+        "event_id": getattr(event, "event_id", ""),
+        "vt_symbol": getattr(event, "vt_symbol", ""),
+        "title": getattr(event, "title", ""),
+        "summary": getattr(event, "summary", ""),
+        "event_type": getattr(event, "event_type", ""),
+        "occurred_at": _iso(getattr(event, "occurred_at", "")),
+        "source": getattr(event, "source", ""),
+        "provider_name": getattr(event, "provider_name", ""),
+        "source_quality": getattr(event, "source_quality", ""),
+        "trust_score": getattr(event, "trust_score", 0),
+        "review_status": getattr(event, "review_status", ""),
+    }
+
+
+def _data_quality_summary(
+    context: dict[str, Any],
+    degraded_sources: Sequence[str],
+) -> dict[str, Any]:
+    """
+    Summarize data availability for worker prompts and audits.
+    """
+    return {
+        "degraded_sources": list(degraded_sources),
+        "market_bar_count": len(context.get("market", {}).get("bars", [])),
+        "news_event_count": len(context.get("news", {}).get("events", [])),
+        "has_sentiment": bool(context.get("sentiment")),
+    }
+
+
+def _iso(value: Any) -> Any:
+    """
+    Return ISO text for datetime-like values.
+    """
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return isoformat()
+    return value

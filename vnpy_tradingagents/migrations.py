@@ -151,4 +151,10 @@ def _fetch_versions(cursor: Cursor) -> set[str]:
     fetchall = getattr(cursor, "fetchall", None)
     if fetchall is None:
         return set()
-    return {str(row["version"]) for row in fetchall()}
+    versions: set[str] = set()
+    for row in fetchall():
+        if isinstance(row, dict):
+            versions.add(str(row["version"]))
+        else:
+            versions.add(str(row[0]))
+    return versions

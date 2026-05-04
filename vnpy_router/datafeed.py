@@ -12,6 +12,7 @@ from .providers.base import BaseProvider
 from .providers.local_file import LocalFileProvider
 from .providers.qmt import QmtProvider
 from .providers.tushare import TuShareProvider
+from .providers.vnpy_datafeed import VnpyDatafeedProvider
 from .providers.xt import XtProvider
 from .router import DataProviderRouter, SnapshotReader, SnapshotStorage
 from .storage import PostgresSnapshotReader, PostgresSnapshotStorage
@@ -171,6 +172,15 @@ def _build_provider(config: Mapping[str, Any]) -> BaseProvider | None:
             provider_version=str(config.get("provider_version") or ""),
         )
 
+    if name in {"vnpy", "vnpy_datafeed"}:
+        datafeed_name: str = str(config.get("datafeed") or config.get("module") or "").strip()
+        if not datafeed_name:
+            return None
+        return VnpyDatafeedProvider(
+            datafeed_name=datafeed_name,
+            provider_name=_optional_str(config.get("provider_name")) or f"vnpy_{datafeed_name}",
+        )
+
     if name == "qmt":
         return QmtProvider()
 
@@ -195,12 +205,13 @@ def _connect_postgres() -> Any | None:
     """
     try:
         psycopg = __import__("psycopg")
+        rows = __import__("psycopg.rows", fromlist=["dict_row"])
     except ModuleNotFoundError:
         return None
 
     dsn: str = str(SETTINGS.get("router.postgres.dsn", "")).strip()
     if dsn:
-        return psycopg.connect(dsn)
+        return psycopg.connect(dsn, row_factory=rows.dict_row)
 
     database_name: str = str(SETTINGS.get("database.name", "")).strip().lower()
     if database_name not in {"postgres", "postgresql"}:
@@ -219,7 +230,7 @@ def _connect_postgres() -> Any | None:
     if not clean_params.get("dbname"):
         return None
 
-    return psycopg.connect(**clean_params)
+    return psycopg.connect(**clean_params, row_factory=rows.dict_row)
 
 
 def _to_bool(value: Any) -> bool:

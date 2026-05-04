@@ -19,14 +19,19 @@ def test_market_data_toolkit_builds_context_from_snapshot_reader_only():
     assert reader.calls == [
         ("bars", "600519.SSE"),
         ("snapshot", "fundamentals", "600519.SSE"),
-        ("snapshot", "news", "600519.SSE"),
-        ("snapshot", "sentiment", "600519.SSE"),
+        ("snapshot", "valuation", "600519.SSE"),
+        ("snapshot", "industry", "600519.SSE"),
         ("snapshot", "benchmark", "600519.SSE"),
         ("snapshot", "portfolio", "600519.SSE"),
+        ("snapshot", "news", "600519.SSE"),
+        ("snapshot", "sentiment", "600519.SSE"),
     ]
     assert context["vt_symbol"] == "600519.SSE"
     assert context["market"]["bars"][0]["close"] == 1688
+    assert context["market"]["indicators"]["latest_close"] == 1688
     assert context["fundamentals"]["pe"] == 25.2
+    assert context["valuation"]["pb"] == 8.1
+    assert context["industry"]["name"] == "白酒"
     assert context["benchmark"]["name"] == "沪深300"
     assert "news" in context["degraded_sources"]
 
@@ -70,6 +75,8 @@ class FakeSnapshotReader:
         self.calls.append(("snapshot", snapshot_type, vt_symbol))
         snapshots = {
             "fundamentals": {"pe": 25.2},
+            "valuation": {"pb": 8.1},
+            "industry": {"name": "白酒"},
             "news": None,
             "sentiment": {"score": 0.1},
             "benchmark": {"name": "沪深300"},

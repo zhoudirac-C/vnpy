@@ -144,6 +144,81 @@ def test_toolkit_degrades_when_news_and_sentiment_missing():
     assert "sentiment" in context["degraded_sources"]
 
 
+def test_postgres_event_storage_saves_and_loads_normalized_context_rows():
+    """Event storage should expose normalized events and sentiment to Toolkit."""
+    from vnpy_router.event_storage import (
+        NewsEvent,
+        PostgresEventStorage,
+        SentimentSnapshot,
+    )
+
+    connection = EventConnection(
+        fetchall_result=[
+            {
+                "event_id": "event-1",
+                "vt_symbol": "600519.SSE",
+                "title": "公告",
+                "summary": "业绩增长",
+                "event_type": "announcement",
+                "occurred_at": datetime(2024, 1, 3),
+                "source": "sse",
+                "provider_name": "manual",
+                "url": "",
+                "provider_version": "",
+                "raw_hash": "hash-1",
+                "source_quality": "reviewed",
+                "trust_score": 0.9,
+                "spam_score": 0,
+                "dedup_window_seconds": 86400,
+                "review_status": "reviewed",
+            }
+        ],
+        fetchone_result={
+            "vt_symbol": "600519.SSE",
+            "as_of": datetime(2024, 1, 3),
+            "provider_name": "manual",
+            "provider_version": "v1",
+            "payload": {"score": 0.2},
+        },
+    )
+    storage = PostgresEventStorage(connection)
+    storage.save_news_event(
+        NewsEvent(
+            event_id="event-1",
+            vt_symbol="600519.SSE",
+            title="公告",
+            summary="业绩增长",
+            event_type="announcement",
+            occurred_at=datetime(2024, 1, 3),
+            source="sse",
+            provider_name="manual",
+        )
+    )
+    storage.save_sentiment_snapshot(
+        SentimentSnapshot(
+            vt_symbol="600519.SSE",
+            as_of=datetime(2024, 1, 3),
+            provider_name="manual",
+            provider_version="v1",
+            payload={"score": 0.2},
+        )
+    )
+
+    events = storage.load_news_events(
+        "600519.SSE",
+        datetime(2024, 1, 1),
+        datetime(2024, 1, 4),
+    )
+    sentiment = storage.load_sentiment_snapshot("600519.SSE", datetime(2024, 1, 4))
+
+    executed_sql = "\n".join(sql for sql, _ in connection.cursor_obj.executed)
+    assert "INSERT INTO news_event" in executed_sql
+    assert "INSERT INTO sentiment_snapshot" in executed_sql
+    assert events[0].title == "公告"
+    assert sentiment is not None
+    assert sentiment.payload["score"] == 0.2
+
+
 class FakeCursor:
     """Tiny DB-API cursor fake."""
 
@@ -162,6 +237,41 @@ class FakeConnection:
 
     def __init__(self) -> None:
         self.cursor_obj = FakeCursor()
+        self.committed = False
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def commit(self) -> None:
+        self.committed = True
+
+
+class EventCursor:
+    """Tiny DB-API cursor fake with read support."""
+
+    def __init__(self, fetchall_result=None, fetchone_result=None) -> None:
+        self.executed = []
+        self.fetchall_result = fetchall_result or []
+        self.fetchone_result = fetchone_result
+
+    def execute(self, sql, params=None) -> None:
+        self.executed.append((sql, params or {}))
+
+    def fetchall(self):
+        return self.fetchall_result
+
+    def fetchone(self):
+        return self.fetchone_result
+
+    def close(self) -> None:
+        return
+
+
+class EventConnection:
+    """Tiny DB-API connection fake for event read/write tests."""
+
+    def __init__(self, fetchall_result=None, fetchone_result=None) -> None:
+        self.cursor_obj = EventCursor(fetchall_result, fetchone_result)
         self.committed = False
 
     def cursor(self):

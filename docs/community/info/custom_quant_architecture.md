@@ -1,12 +1,14 @@
 # 自定义 A 股量化架构方案：可切换数据源 + TradingAgents + VeighNa
 
-版本：v0.5
+版本：v0.6
 
 日期：2026-05-04
 
-状态：阶段任务 P1-P11 已实现，下一步进入真实 PostgreSQL、paper 环境和小资金前演练
+状态：阶段任务 P1-P11 为骨架实现，生产化路线已调整为优先复用 vn.py 原生能力；纠偏方案见 `vnpy_reuse_extension_route.md`
 
 > 本文档用于本 fork 的二次开发规划，不构成任何投资建议。任何数据源和 TradingAgents 都只能作为投研与信号辅助；实盘前必须经过回测、人工确认、风控、OMS 和账户对账。
+
+> 重要路线调整：后续实现不再围绕 AKShare、QMT、XT 或 TradingAgents 自建旁路框架，而是优先复用 vn.py 的 Datafeed、Database、Gateway、App、EventEngine、OmsEngine、Backtesting 和 Risk 体系。本 fork 只补 provider 路由、AI 上下文、TradingAgents Worker、信号审计和运维能力。
 
 ## 1. 目标
 
@@ -54,14 +56,14 @@ vn.py 目前支持在主界面菜单栏的 **配置 -> 全局配置** 中配置�
 
 - 保留 vn.py 原生 `datafeed.name` 配置能力。
 - 增加一个自定义 datafeed，例如 `datafeed.name=router`。
-- `vnpy_router.Datafeed` 内部再根据 provider 配置、数据可用性、成本和质量分数选择 AKShare、TuShare、QMT、XT 或本地缓存。
+- `vnpy_router.Datafeed` 内部再根据 provider 配置、数据可用性、成本和质量分数选择 AKShare、TuShare、vn.py 既有 datafeed 插件或本地缓存。
 
-当前 P9 已落地：
+当前 P9 骨架已落地，生产化路线按 `vnpy_reuse_extension_route.md` 纠偏：
 
 - `ProviderCapability` 声明 provider 支持的 K 线频率、字段、复权、tick、实时能力、历史能力和成本等级。
 - `DataProviderRouter` 查询 provider 前先按 capability 过滤，不再只按名字顺序盲试。
 - `TuShareProvider` 支持 token 配置、日线/周线 `pro_bar` 查询、复权参数和 provider metadata；无 token 或缺依赖时明确 degraded。
-- `QmtProvider`、`XtProvider` 先作为历史数据接入边界，缺少 `xtquant.xtdata` 时可诊断降级；实时行情和交易仍由 vn.py Gateway 负责。
+- QMT/XT 不再按 direct provider 路线继续补实现，后续优先包装 vn.py 既有 datafeed/gateway 插件；实时行情和交易仍由 vn.py Gateway 负责。
 - `SocialProvider` 支持本地 CSV/JSON 社媒导入、人工标签和 sentiment 聚合；文件缺失只降级，不阻塞 market/fundamental context。
 
 ### 2.3 TradingAgents 更适合做投研 Worker
@@ -74,7 +76,7 @@ TradingAgents v0.2.4 已支持结构化输出、checkpoint、持久化决策日�
 - 替换其数据工具，让 market、fundamentals、news、sentiment 都从本地 A 股数据快照读取。
 - 将最终输出的 Buy / Overweight / Hold / Underweight / Sell 映射为 VeighNa 内部可消费的研究信号。
 - TradingAgents 不持有交易接口，不直接调用 `MainEngine.send_order()`。
-- 当前 P8 已实现 `TradingAgentsRunnerAdapter`，支持注入真实 native runner、兼容 `TradingAgentsGraph.propagate(symbol, date)` 形态和 Pydantic 风格结构化输出，但生产环境仍要用替换后的 A 股数据工具或外部包装器，不能让上游默认 yfinance/Alpha Vantage 工具直接进入实盘链路。
+- 当前 P8/P13 已实现 `TradingAgentsRunnerAdapter` 和 A 股 context-only runner 边界，支持注入真实 native runner 和 Pydantic 风格结构化输出；生产环境默认拒绝裸 `TradingAgentsGraph.propagate(symbol, date)`，避免上游默认 yfinance/Alpha Vantage 工具绕过本地快照。
 
 ## 3. 先把 vn.py 架构看简单
 
@@ -1185,7 +1187,7 @@ vn.py main process
 - API key 只通过环境变量进入 Worker，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
 - `tradingagents.llm_provider`、`tradingagents.model`、`tradingagents.timeout_seconds`、`tradingagents.max_retries`、`tradingagents.checkpoint_dir` 从 vn.py 全局配置或部署配置读取。
 - native runner 必须被包装成 context-only runner。它只能使用 `native_input["context"]` 中的 PostgreSQL 快照，不允许直接访问 yfinance、Alpha Vantage、AKShare、TuShare、QMT 或 Gateway。
-- 上游 `TradingAgentsGraph.propagate(symbol, date)` 可以被 adapter 识别，但生产 A 股路径要替换其默认数据工具后再启用。
+- 上游 `TradingAgentsGraph.propagate(symbol, date)` 只能在 legacy/test 模式显式启用；生产 A 股路径必须使用 context-only wrapper。
 - Worker 超时、依赖缺失、LLM 失败或输出结构异常时，统一返回 `hold/Unavailable`，并在 `raw_state.validation_errors` 或 `raw_state.error_type` 中记录原因。
 - `TradingAgentsRunnerSmoke` 用真实 PostgreSQL 快照构造一次 request，成功时写入 `agent_run`、`agent_report`、`rating_signal`、`trade_intent`；失败时返回可诊断结果且不写订单。
 
@@ -1237,17 +1239,17 @@ P10 --> P11
 
 | 阶段 | 状态 | 主要落地模块 |
 | --- | --- | --- |
-| Phase 1 | 已完成 | `vnpy_router`、PostgreSQL 快照、provider router、质量检查 |
-| Phase 2 | 已完成 | `TradingAgentsWorkerAdapter`、worker 进程边界、prompt、source policy |
-| Phase 3A | 已完成 | `IntradaySnapshot`、EventEngine scheduler、日内 collector、策略 mixin |
-| Phase 3B | 已完成 | `ResearchSnapshot`、批量长期任务、长期调度、组合意图 |
-| Phase 4 | 已完成 | `SignalFusionService`、`AiSignalPolicy`、`PreOrderDecisionService`、审计 |
-| Phase 5 | 已完成 | 回测桥接、PaperAccount 仿真桥接、灰度状态、审计导出、live gate |
-| Phase 7 | 已完成 | `MigrationRunner`、schema CLI、`ProductionReadinessChecker` |
-| Phase 8 | 已完成 | `TradingAgentsRunnerAdapter`、`output_validation`、checkpoint 隔离、runner smoke |
-| Phase 9 | 已完成 | `ProviderCapability`、`TuShareProvider`、`QmtProvider`、`XtProvider`、`SocialProvider`、事件源生产规则 |
-| Phase 10 | 已完成 | `BacktestingAppBridge`、`PaperAccountSnapshot`、UI 手工接管、状态查询、`TradingAgentsPaperSmoke` |
-| Phase 11 | 已完成 | `PostgresOpsStorage`、`MetricsCollector`、`secrets_policy`、备份恢复文档、小资金上线 Runbook |
+| Phase 1 | 骨架完成 | `vnpy_router`、PostgreSQL 快照、provider router、质量检查 |
+| Phase 2 | 骨架完成 | `TradingAgentsWorkerAdapter`、worker 进程边界、prompt、source policy |
+| Phase 3A | 骨架完成 | `IntradaySnapshot`、EventEngine scheduler、日内 collector、策略 mixin |
+| Phase 3B | 骨架完成 | `ResearchSnapshot`、批量长期任务、长期调度、组合意图 |
+| Phase 4 | 骨架完成 | `SignalFusionService`、`AiSignalPolicy`、`PreOrderDecisionService`、审计 |
+| Phase 5 | 骨架完成 | 回测桥接、PaperAccount 仿真桥接、灰度状态、审计导出、live gate |
+| Phase 7 | 骨架完成 | `MigrationRunner`、schema CLI、`ProductionReadinessChecker` |
+| Phase 8 | 骨架完成 | `TradingAgentsRunnerAdapter`、`output_validation`、checkpoint 隔离、runner smoke |
+| Phase 9 | 骨架完成 | `ProviderCapability`、`TuShareProvider`、QMT/XT 边界、`SocialProvider`、事件源生产规则 |
+| Phase 10 | 骨架完成 | `BacktestingAppBridge`、`PaperAccountSnapshot`、UI 手工接管、状态查询、`TradingAgentsPaperSmoke` |
+| Phase 11 | 骨架完成 | `PostgresOpsStorage`、`MetricsCollector`、`secrets_policy`、备份恢复文档、小资金上线 Runbook |
 
 ### Phase 1：公共数据底座
 
@@ -1430,7 +1432,7 @@ P10 --> P11
 
 交付：
 
-- `TradingAgentsRunnerAdapter`：兼容 `run()`、`invoke()`、callable 和 `TradingAgentsGraph.propagate(symbol, date)`。
+- `TradingAgentsRunnerAdapter`：兼容 `run()`、`invoke()`、callable；裸 `TradingAgentsGraph.propagate(symbol, date)` 默认返回 `unsupported_runner_shape`。
 - `output_validation`：校验 rating、action、confidence，异常输出统一降级。
 - checkpoint 隔离：按 `trade_date/vt_symbol/run_id` 生成目录。
 - `TradingAgentsRunnerSmoke`：从 PostgreSQL 快照构造 request，调用 Worker，成功后写入报告、评级和交易意图。
@@ -1456,7 +1458,7 @@ P10 --> P11
 - `ProviderCapability`：声明每个 provider 的频率、字段、复权、tick、实时、历史和成本等级。
 - `DataProviderRouter`：查询前按 capability 过滤 provider，跳过不支持当前请求的 provider 并输出诊断。
 - `TuShareProvider`：支持 token、日线/周线 `pro_bar`、复权参数和 provider metadata；不把 token 写入 bar metadata。
-- `QmtProvider` / `XtProvider`：提供历史数据适配接口，缺少 `xtquant.xtdata` 时 degraded；实时行情和交易仍走 Gateway。
+- QMT/XT：不再直接依赖 `xtquant.xtdata` 实现 provider，改为包装 vn.py 既有 datafeed/gateway 插件；实时行情和交易仍走 Gateway。
 - `SocialProvider`：支持本地 CSV/JSON 导入、人工标签、情绪聚合和文件缺失降级。
 - `event_storage` 生产规则：增加 `source_quality`、`trust_score`、`spam_score`、`dedup_window_seconds`、`review_status` 和 `event_quality_report`。
 - P9 migration：`0002_event_source_quality` 对已有 PostgreSQL 表执行 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`，并把 schema version 更新到 `p9`。
@@ -1536,9 +1538,9 @@ P10 --> P11
 1. 在真实 PostgreSQL 上运行 `vnpy-tradingagents-schema schema init --dsn ...`，确认 `schema_migration` 和业务表创建成功。
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
 3. 在独立 Worker 环境安装 TradingAgents，并用替换后的 A 股 context-only native runner 跑 `TradingAgentsRunnerSmoke`。
-4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；开通 QMT/XT 后补真实历史接口实现。
+4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；QMT/XT 优先通过 vn.py 既有 datafeed/gateway 插件接入。
 5. 用真实 PostgreSQL 跑 `TradingAgentsRunnerSmoke` 和 `TradingAgentsPaperSmoke`，检查 `decision_audit`、`replay_run_status`、feedback 和 `ops_heartbeat`。
-6. 开通 QMT/XT 后，把历史数据 provider 边界补成真实查询实现。
+6. 开通 QMT/XT 后，验证 vn.py 插件包装层、Gateway 行情订阅和本 fork provider trace 的协同关系。
 7. 模拟盘连续稳定后，严格按 `docs/community/ops/live_gray_runbook.md` 和 `LiveGate` 做小资金实盘准入检查。
 
 ## 12. 资料来源
@@ -1557,4 +1559,4 @@ P10 --> P11
 
 ## 13. 后续任务跟踪
 
-阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P11 已完成，后续新增任务继续在该目录拆分、勾选并记录提交号和验证命令。
+阶段任务和完成记录位于 `docs/community/tasks/tradingagents_next_steps/`。P1-P11 是骨架阶段，P12-P15 是按 vn.py 优先复用路线进行的生产化纠偏阶段；每个任务完成后必须同步勾选、记录提交号和验证命令。

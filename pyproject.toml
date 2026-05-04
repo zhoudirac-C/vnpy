@@ -43,6 +43,20 @@ keywords = ["quant", "quantitative", "investment", "trading", "algotrading"]
 vnpy-tradingagents-schema = "vnpy_tradingagents.cli:main"
 
 [project.optional-dependencies]
+router-postgres = [
+    "psycopg[binary]>=3.2.0",
+]
+akshare = [
+    "akshare>=1.16.0",
+]
+tushare = [
+    "tushare>=1.4.0",
+]
+prod = [
+    "psycopg[binary]>=3.2.0",
+    "akshare>=1.16.0",
+    "tushare>=1.4.0",
+]
 alpha = [
     "polars>=1.26.0",
     "scipy>=1.15.2",

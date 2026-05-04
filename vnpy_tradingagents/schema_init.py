@@ -8,7 +8,7 @@ from .migrations import Migration, MigrationApplyResult, MigrationRunner
 from .ops_storage import OPS_SCHEMA
 from .performance_feedback import FEEDBACK_SCHEMA
 from .risk import DECISION_AUDIT_SCHEMA
-from .storage import TRADINGAGENTS_SCHEMA
+from .storage import AI_RUNTIME_STATE_MIGRATION_SQL, TRADINGAGENTS_SCHEMA
 
 
 SCHEMA_VERSION_SQL: str = """
@@ -81,6 +81,11 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
         version="0003_ops_heartbeat",
         description="Create operational heartbeat tables",
         sql=OPS_SCHEMA,
+    ),
+    Migration(
+        version="0004_ai_runtime_state",
+        description="Create TradingAgents runtime state table",
+        sql=AI_RUNTIME_STATE_MIGRATION_SQL,
     ),
 )
 

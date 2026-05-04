@@ -54,7 +54,7 @@ def test_backtesting_app_bridge_evaluates_decision_without_gateway_and_writes_au
 
 def test_paper_bridge_records_account_snapshot_only_for_simulation():
     """PaperAccountBridge should convert simulation account returns into feedback."""
-    from vnpy_tradingagents.paper_bridge import PaperAccountBridge, PaperAccountSnapshot
+    from vnpy_tradingagents.paper_bridge import PaperAccountBridge, PaperAccountSnapshot, SimulatedTrade
 
     runtime = TradingAgentsRuntimeController()
     feedback_storage = FakeFeedbackStorage()
@@ -103,6 +103,20 @@ def test_paper_bridge_records_account_snapshot_only_for_simulation():
                 benchmark_return=0,
                 turnover_rate=0,
                 max_drawdown=0,
+            )
+        )
+
+    with pytest.raises(ValueError, match="non-executable"):
+        bridge.record_fill(
+            SimulatedTrade(
+                source_run_id="run-hold",
+                vt_symbol="600519.SSE",
+                trade_date="2024-01-03",
+                action="hold",
+                volume=100,
+                price=1688,
+                slippage=0,
+                pnl=0,
             )
         )
 
@@ -178,6 +192,40 @@ def test_paper_smoke_runs_snapshot_worker_signal_fill_feedback_without_live_gate
     assert feedback_storage.trade_feedback[0].run_id == result.response.run_id
 
 
+def test_paper_smoke_does_not_record_fill_for_hold_advice():
+    """Paper smoke should not convert non-executable hold advice into a simulated fill."""
+    from vnpy_tradingagents.paper_bridge import PaperAccountBridge
+    from vnpy_tradingagents.paper_smoke import PaperSmokeConfig, TradingAgentsPaperSmoke
+
+    runtime = TradingAgentsRuntimeController()
+    feedback_storage = FakeFeedbackStorage()
+    paper_bridge = PaperAccountBridge(
+        runtime=runtime,
+        gateway_policy=GatewayAiPolicy(),
+        feedback_storage=feedback_storage,
+    )
+    smoke = TradingAgentsPaperSmoke(
+        reader=SnapshotReaderFake(),
+        worker=HoldWorker(),
+        agent_storage=RecordingAgentStorage(),
+        paper_bridge=paper_bridge,
+    )
+
+    result = smoke.run(
+        PaperSmokeConfig(
+            vt_symbol="600519.SSE",
+            start=datetime(2024, 1, 1),
+            end=datetime(2024, 1, 3),
+            fill_price=1688,
+            fill_volume=100,
+        )
+    )
+
+    assert result.success
+    assert paper_bridge.positions == {}
+    assert feedback_storage.trade_feedback == []
+
+
 def test_ops_storage_records_heartbeat_and_metrics_export_json_line():
     """Ops storage and metrics should expose machine-readable production health."""
     from vnpy_tradingagents.metrics import MetricsCollector
@@ -222,10 +270,22 @@ def test_secrets_policy_masks_and_blocks_secret_context():
     assert masked.endswith("90")
     assert "2345678" not in masked
     sanitized = sanitize_mapping({"api_key": "sk-1234567890", "model": "gpt"})
+    sanitized_text = sanitize_mapping(
+        {"news": [{"headline": "leaked OPENAI_API_KEY=sk-1234567890 in text"}]}
+    )
 
     assert sanitized["api_key"] == masked
+    assert "sk-1234567890" not in sanitized_text["news"][0]["headline"]
     with pytest.raises(SecretLeakError):
         assert_context_has_no_secrets({"market": {}, "OPENAI_API_KEY": "sk-123"})
+    with pytest.raises(SecretLeakError):
+        assert_context_has_no_secrets(
+            {
+                "market": {},
+                "news": [{"headline": "leaked OPENAI_API_KEY=sk-1234567890 in text"}],
+            }
+        )
+    assert_context_has_no_secrets({"news": [{"headline": "OpenAI earnings report without credentials"}]})
 
 
 def test_worker_adapter_blocks_secret_context_before_runner():
@@ -357,6 +417,22 @@ class SmokeWorker:
             raw_state={"status": "ok"},
             action="buy",
             risk_notes="risk checked",
+        )
+
+
+class HoldWorker:
+    """Worker fake returning hold advice for paper smoke."""
+
+    def run(self, request):
+        return TradingAgentsWorkerResponse(
+            run_id=request.run_id,
+            vt_symbol=request.vt_symbol,
+            rating="Neutral",
+            confidence=0.6,
+            report="paper smoke hold",
+            raw_state={"status": "ok"},
+            action="hold",
+            risk_notes="wait",
         )
 
 

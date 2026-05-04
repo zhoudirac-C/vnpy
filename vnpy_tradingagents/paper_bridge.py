@@ -6,6 +6,9 @@ from .gateway_policy import GatewayAccountMode, GatewayAiPolicy, GatewayProfile
 from .performance_feedback import PerformanceFeedback, TradeFeedback
 from .runtime import TradingAgentsRuntimeController
 
+BUY_ACTIONS: frozenset[str] = frozenset({"buy", "add", "increase", "open_long", "cover", "close_short"})
+SELL_ACTIONS: frozenset[str] = frozenset({"sell", "reduce", "decrease", "open_short", "close_long"})
+
 
 @dataclass(frozen=True)
 class SimulatedTrade:
@@ -82,7 +85,7 @@ class PaperAccountBridge:
         if self.profile is None or self.profile.account_mode != GatewayAccountMode.SIMULATION:
             raise RuntimeError("paper bridge requires a simulation gateway profile")
 
-        signed_volume: float = trade.volume if _is_buy_action(trade.action) else -trade.volume
+        signed_volume = _signed_volume(trade.action, trade.volume)
         self.positions[trade.vt_symbol] = self.positions.get(trade.vt_symbol, 0) + signed_volume
         self.feedback_storage.save_trade_feedback(
             TradeFeedback(
@@ -131,9 +134,30 @@ class PaperAccountBridge:
         )
 
 
+def is_executable_trade_action(action: str) -> bool:
+    """"""
+    normalized = _normalize_action(action)
+    return normalized in BUY_ACTIONS or normalized in SELL_ACTIONS
+
+
 def _is_buy_action(action: str) -> bool:
     """"""
-    return action.strip().lower() in {"buy", "add", "increase", "open_long"}
+    return _normalize_action(action) in BUY_ACTIONS
+
+
+def _signed_volume(action: str, volume: float) -> float:
+    """"""
+    normalized = _normalize_action(action)
+    if normalized in BUY_ACTIONS:
+        return volume
+    if normalized in SELL_ACTIONS:
+        return -volume
+    raise ValueError(f"non-executable paper trade action: {action}")
+
+
+def _normalize_action(action: str) -> str:
+    """"""
+    return action.strip().lower()
 
 
 def _portfolio_return(portfolio_value: float, previous_value: float) -> float:

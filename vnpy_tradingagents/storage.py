@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from typing import Any, Protocol
 
 from .output_validation import validate_worker_response
+from .runtime import SignalStatus, TradingAgentsMode, TradingAgentsRuntimeState
 from .signals import IntradayAdvice, PortfolioIntent, RatingSignal
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 
@@ -58,6 +59,47 @@ CREATE TABLE IF NOT EXISTS intraday_advice (
     valid_until TIMESTAMPTZ NOT NULL,
     generated_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS ai_runtime_state (
+    state_id TEXT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL,
+    mode TEXT NOT NULL,
+    live_enabled BOOLEAN NOT NULL,
+    manual_takeover BOOLEAN NOT NULL,
+    signal_status TEXT NOT NULL,
+    disabled_reason TEXT,
+    last_heartbeat_at TIMESTAMPTZ,
+    last_successful_run_id TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+"""
+
+
+AI_RUNTIME_STATE_MIGRATION_SQL: str = """
+CREATE TABLE IF NOT EXISTS ai_runtime_state (
+    state_id TEXT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL,
+    mode TEXT NOT NULL,
+    live_enabled BOOLEAN NOT NULL,
+    manual_takeover BOOLEAN NOT NULL,
+    signal_status TEXT NOT NULL,
+    disabled_reason TEXT,
+    last_heartbeat_at TIMESTAMPTZ,
+    last_successful_run_id TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+INSERT INTO schema_version (
+    namespace,
+    version
+) VALUES (
+    'tradingagents',
+    'p15'
+)
+ON CONFLICT (namespace)
+DO UPDATE SET
+    version = EXCLUDED.version,
+    applied_at = now();
 """
 
 
@@ -238,6 +280,65 @@ ORDER BY vt_symbol, created_at DESC;
 """
 
 
+UPSERT_AI_RUNTIME_STATE_SQL: str = """
+INSERT INTO ai_runtime_state (
+    state_id,
+    enabled,
+    mode,
+    live_enabled,
+    manual_takeover,
+    signal_status,
+    disabled_reason,
+    last_heartbeat_at,
+    last_successful_run_id
+) VALUES (
+    %(state_id)s,
+    %(enabled)s,
+    %(mode)s,
+    %(live_enabled)s,
+    %(manual_takeover)s,
+    %(signal_status)s,
+    %(disabled_reason)s,
+    %(last_heartbeat_at)s,
+    %(last_successful_run_id)s
+)
+ON CONFLICT (state_id)
+DO UPDATE SET
+    enabled = EXCLUDED.enabled,
+    mode = EXCLUDED.mode,
+    live_enabled = EXCLUDED.live_enabled,
+    manual_takeover = EXCLUDED.manual_takeover,
+    signal_status = EXCLUDED.signal_status,
+    disabled_reason = EXCLUDED.disabled_reason,
+    last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+    last_successful_run_id = EXCLUDED.last_successful_run_id,
+    updated_at = now();
+"""
+
+
+SELECT_AI_RUNTIME_STATE_SQL: str = """
+SELECT
+    enabled,
+    mode,
+    live_enabled,
+    manual_takeover,
+    signal_status,
+    disabled_reason,
+    last_heartbeat_at,
+    last_successful_run_id
+FROM ai_runtime_state
+WHERE state_id = %(state_id)s
+LIMIT 1;
+"""
+
+
+DISABLE_AI_SIGNALS_SQL: str = """
+UPDATE intraday_advice
+SET valid_until = LEAST(valid_until, %(disabled_at)s)
+WHERE valid_until > %(disabled_at)s;
+"""
+
+
 class Cursor(Protocol):
     """
     Minimal DB-API cursor protocol.
@@ -301,8 +402,9 @@ class PostgresAgentStorage:
         try:
             cursor.execute(INSERT_AGENT_RUN_SQL, _agent_run_params(request, response))
             cursor.execute(INSERT_AGENT_REPORT_SQL, _agent_report_params(response))
-            cursor.execute(INSERT_RATING_SIGNAL_SQL, _rating_signal_params(request, response))
-            cursor.execute(INSERT_TRADE_INTENT_SQL, _trade_intent_params(request, response))
+            if not _is_failed_response(response):
+                cursor.execute(INSERT_RATING_SIGNAL_SQL, _rating_signal_params(request, response))
+                cursor.execute(INSERT_TRADE_INTENT_SQL, _trade_intent_params(request, response))
             self.connection.commit()
         finally:
             cursor.close()
@@ -395,6 +497,53 @@ class PostgresSignalReader:
             cursor.close()
 
 
+class PostgresRuntimeStateStorage:
+    """
+    PostgreSQL persistence for TradingAgents runtime switches.
+    """
+
+    def __init__(self, connection: Connection, state_id: str = "default") -> None:
+        """"""
+        self.connection: Connection = connection
+        self.state_id: str = state_id
+
+    def save_state(self, state: TradingAgentsRuntimeState) -> None:
+        """
+        Persist the current runtime state.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(UPSERT_AI_RUNTIME_STATE_SQL, _runtime_state_params(self.state_id, state))
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+    def load_state(self) -> TradingAgentsRuntimeState | None:
+        """
+        Load the last persisted runtime state.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(SELECT_AI_RUNTIME_STATE_SQL, {"state_id": self.state_id})
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return _runtime_state_from_row(row)
+        finally:
+            cursor.close()
+
+    def disable_active_signals(self, disabled_at: Any) -> None:
+        """
+        Expire unexpired intraday advice when AI is paused.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(DISABLE_AI_SIGNALS_SQL, {"disabled_at": disabled_at})
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+
 def _json_dumps(data: Any) -> str:
     """
     Serialize JSON payloads in a stable, readable format.
@@ -450,6 +599,49 @@ def _worker_metadata(
         "prompt_version": raw_state.get("prompt_version"),
         "snapshot_ids": snapshot_ids,
     }
+
+
+def _is_failed_response(response: TradingAgentsWorkerResponse) -> bool:
+    """
+    Return True when worker output is diagnostic only and must not become a signal.
+    """
+    return str(response.raw_state.get("status", "")).lower() == "failed"
+
+
+def _runtime_state_params(
+    state_id: str,
+    state: TradingAgentsRuntimeState,
+) -> dict[str, Any]:
+    """
+    Convert runtime state into SQL params.
+    """
+    return {
+        "state_id": state_id,
+        "enabled": state.enabled,
+        "mode": state.mode.value,
+        "live_enabled": state.live_enabled,
+        "manual_takeover": state.manual_takeover,
+        "signal_status": state.signal_status.value,
+        "disabled_reason": state.disabled_reason,
+        "last_heartbeat_at": state.last_heartbeat_at,
+        "last_successful_run_id": state.last_successful_run_id,
+    }
+
+
+def _runtime_state_from_row(row: Mapping[str, Any]) -> TradingAgentsRuntimeState:
+    """
+    Convert a DB row into runtime state.
+    """
+    return TradingAgentsRuntimeState(
+        enabled=bool(row["enabled"]),
+        live_enabled=bool(row["live_enabled"]),
+        mode=TradingAgentsMode(str(row["mode"])),
+        disabled_reason=str(row.get("disabled_reason") or ""),
+        last_heartbeat_at=row.get("last_heartbeat_at"),
+        last_successful_run_id=str(row.get("last_successful_run_id") or ""),
+        signal_status=SignalStatus(str(row["signal_status"])),
+        manual_takeover=bool(row.get("manual_takeover")),
+    )
 
 
 def _rating_signal_params(

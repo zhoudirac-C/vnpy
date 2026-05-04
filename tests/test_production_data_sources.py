@@ -71,16 +71,16 @@ def test_tushare_provider_requires_token_and_sets_metadata(monkeypatch):
     assert "secret-token" not in str(bars[0].extra)
 
 
-def test_qmt_and_xt_providers_degrade_when_dependency_missing(monkeypatch):
-    """QMT/XT adapters should be diagnosable when xtquant is not installed."""
+def test_qmt_and_xt_providers_wrap_vnpy_datafeed_plugins(monkeypatch):
+    """QMT/XT adapters should route through vn.py datafeed plugins, not xtquant directly."""
     import importlib
 
-    def missing_xtquant(name: str, package: str | None = None):
-        if name == "xtquant.xtdata":
+    def missing_vnpy_xt(name: str, package: str | None = None):
+        if name == "vnpy_xt":
             raise ModuleNotFoundError(name)
         return ModuleType(name)
 
-    monkeypatch.setattr(importlib, "import_module", missing_xtquant)
+    monkeypatch.setattr(importlib, "import_module", missing_vnpy_xt)
 
     from vnpy_router.providers.qmt import QmtProvider
     from vnpy_router.providers.xt import XtProvider
@@ -96,7 +96,7 @@ def test_qmt_and_xt_providers_degrade_when_dependency_missing(monkeypatch):
     assert qmt.capability.history
     assert not qmt.capability.realtime
     assert "gateway" in qmt.capability.realtime_notes.lower()
-    assert any("xtquant.xtdata" in message for message in messages)
+    assert any("vnpy_xt" in message for message in messages)
 
 
 def test_event_storage_production_columns_and_rejects_source_less_news():

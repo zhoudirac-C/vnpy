@@ -80,6 +80,30 @@ def test_postgres_intraday_snapshot_storage_saves_snapshot():
     assert connection.committed
 
 
+def test_event_engine_intraday_collector_registers_tick_and_bar_events():
+    """Event wrapper should collect vn.py market events without running LLM inline."""
+    from vnpy.event import Event, EventEngine
+    from vnpy.trader.event import EVENT_TICK
+    from vnpy_tradingagents.intraday_collector import (
+        EventEngineIntradayCollector,
+        IntradaySnapshotCollector,
+    )
+
+    event_engine = EventEngine()
+    collector = IntradaySnapshotCollector()
+    wrapper = EventEngineIntradayCollector(event_engine, collector)
+    wrapper.start()
+
+    wrapper.process_tick_event(Event(EVENT_TICK, make_tick(10.5)))
+    wrapper.process_bar_event(Event("eBar.", make_bar(11)))
+    snapshot = collector.build_snapshot("600519.SSE")
+
+    assert wrapper.active
+    assert len(snapshot.bars) == 2
+    wrapper.stop()
+    assert not wrapper.active
+
+
 def make_bar(close: float, at: datetime | None = None) -> BarData:
     """Create minute bar fixture."""
     return BarData(

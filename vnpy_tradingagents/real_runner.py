@@ -8,6 +8,12 @@ from .worker_adapter import TradingAgentsContextPayload
 DependencyLoader = Callable[[], Any]
 
 
+class UnsupportedRunnerShapeError(RuntimeError):
+    """
+    Raised when a native runner would bypass context-only input.
+    """
+
+
 class TradingAgentsRunnerAdapter:
     """
     Context-only adapter around a native TradingAgents runner.
@@ -17,10 +23,12 @@ class TradingAgentsRunnerAdapter:
         self,
         native_runner: Any | None = None,
         dependency_loader: DependencyLoader | None = None,
+        allow_legacy_propagate: bool = False,
     ) -> None:
         """"""
         self.native_runner: Any | None = native_runner
         self.dependency_loader: DependencyLoader = dependency_loader or _default_dependency_loader
+        self.allow_legacy_propagate: bool = allow_legacy_propagate
 
     def run(self, payload: TradingAgentsContextPayload) -> Mapping[str, Any]:
         """
@@ -32,7 +40,14 @@ class TradingAgentsRunnerAdapter:
             return _dependency_failure(payload)
 
         native_input: dict[str, Any] = _native_input(payload)
-        result: Any = _call_native_runner(native_runner, native_input)
+        try:
+            result: Any = _call_native_runner(
+                native_runner,
+                native_input,
+                allow_legacy_propagate=self.allow_legacy_propagate,
+            )
+        except UnsupportedRunnerShapeError as exc:
+            return _unsupported_runner_failure(payload, str(exc))
         return _normalize_native_result(result)
 
 
@@ -40,6 +55,12 @@ def _native_input(payload: TradingAgentsContextPayload) -> dict[str, Any]:
     """
     Convert vn.py payload into native TradingAgents input without trading handles.
     """
+    checkpoint_dir = payload.config.checkpoint_path_for(
+        payload.run_id,
+        payload.vt_symbol,
+        payload.trade_date,
+    )
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     return {
         "run_id": payload.run_id,
         "symbol": payload.vt_symbol,
@@ -48,17 +69,16 @@ def _native_input(payload: TradingAgentsContextPayload) -> dict[str, Any]:
         "context": payload.context,
         "llm_provider": payload.config.llm_provider,
         "model": payload.config.model,
-        "checkpoint_dir": str(
-            payload.config.checkpoint_path_for(
-                payload.run_id,
-                payload.vt_symbol,
-                payload.trade_date,
-            )
-        ),
+        "checkpoint_dir": str(checkpoint_dir),
     }
 
 
-def _call_native_runner(native_runner: Any, native_input: dict[str, Any]) -> Any:
+def _call_native_runner(
+    native_runner: Any,
+    native_input: dict[str, Any],
+    *,
+    allow_legacy_propagate: bool = False,
+) -> Any:
     """
     Call a native runner object, supporting common run/invoke/call shapes.
     """
@@ -67,6 +87,11 @@ def _call_native_runner(native_runner: Any, native_input: dict[str, Any]) -> Any
     if hasattr(native_runner, "invoke"):
         return native_runner.invoke(native_input)
     if hasattr(native_runner, "propagate"):
+        if not allow_legacy_propagate:
+            raise UnsupportedRunnerShapeError(
+                "TradingAgentsGraph.propagate(symbol, date) bypasses context-only input; "
+                "wrap the graph with AShareContextOnlyRunner or enable legacy mode only for tests"
+            )
         return native_runner.propagate(
             native_input["symbol"],
             native_input["trade_date"],
@@ -277,6 +302,30 @@ def _dependency_failure(payload: TradingAgentsContextPayload) -> dict[str, Any]:
         "raw_state": {
             "status": "failed",
             "error_type": "dependency_error",
+            "error_message": message,
+            "run_id": payload.run_id,
+            "vt_symbol": payload.vt_symbol,
+            "trade_date": payload.trade_date,
+        },
+    }
+
+
+def _unsupported_runner_failure(
+    payload: TradingAgentsContextPayload,
+    message: str,
+) -> dict[str, Any]:
+    """
+    Return a structured failure when a native runner is not context-only safe.
+    """
+    return {
+        "rating": "Unavailable",
+        "confidence": 0,
+        "report": f"TradingAgents runner failed: {message}",
+        "action": "hold",
+        "risk_notes": message,
+        "raw_state": {
+            "status": "failed",
+            "error_type": "unsupported_runner_shape",
             "error_message": message,
             "run_id": payload.run_id,
             "vt_symbol": payload.vt_symbol,

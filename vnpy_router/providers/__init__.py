@@ -9,6 +9,7 @@ from .local_file import LocalFileProvider
 from .qmt import QmtProvider
 from .social import SocialProvider
 from .tushare import TuShareProvider
+from .vnpy_datafeed import VnpyDatafeedProvider
 from .xt import XtProvider
 
 
@@ -21,5 +22,6 @@ __all__ = [
     "QmtProvider",
     "SocialProvider",
     "TuShareProvider",
+    "VnpyDatafeedProvider",
     "XtProvider",
 ]

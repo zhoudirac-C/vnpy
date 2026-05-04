@@ -92,7 +92,12 @@ def _connect(dsn: str):
     except ModuleNotFoundError as exc:
         raise SystemExit("psycopg is required for schema commands") from exc
 
-    return psycopg.connect(dsn)
+    try:
+        rows = __import__("psycopg.rows", fromlist=["dict_row"])
+    except ModuleNotFoundError as exc:
+        raise SystemExit("psycopg.rows is required for schema commands") from exc
+
+    return psycopg.connect(dsn, row_factory=rows.dict_row)
 
 
 if __name__ == "__main__":

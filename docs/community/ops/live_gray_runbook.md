@@ -16,6 +16,14 @@ vnpy-tradingagents-schema schema init --dsn "$QUANT_DATABASE_URL"
 vnpy-tradingagents-schema readiness --json
 ```
 
+readiness 必须覆盖并通过以下关键项：
+
+- PostgreSQL DSN、`psycopg.rows.dict_row`、schema migration 状态。
+- `datafeed.name=router` 和 provider 配置。
+- TradingAgents context-only worker factory，不能使用裸 `propagate(symbol, date)`。
+- API key/token/password 不进入 context、日志或 DB payload。
+- event/news/sentiment snapshot 缺失时必须 degraded，不得阻塞手工交易。
+
 3. 检查最近状态：
 
 ```sql

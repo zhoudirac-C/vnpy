@@ -49,11 +49,14 @@ def test_real_runner_maps_payload_to_context_only_native_input():
 
 
 def test_real_runner_supports_tradingagents_graph_propagate_shape():
-    """Real runner adapter should support upstream TradingAgentsGraph.propagate output."""
+    """Legacy propagate support should be explicit because it bypasses context input."""
     from vnpy_tradingagents.real_runner import TradingAgentsRunnerAdapter
 
     native_runner = PropagateNativeRunner()
-    runner = TradingAgentsRunnerAdapter(native_runner=native_runner)
+    runner = TradingAgentsRunnerAdapter(
+        native_runner=native_runner,
+        allow_legacy_propagate=True,
+    )
 
     result = runner.run(make_payload())
 
@@ -62,6 +65,21 @@ def test_real_runner_supports_tradingagents_graph_propagate_shape():
     assert result["action"] == "buy"
     assert result["report"] == "BUY: portfolio manager approved a long entry"
     assert result["raw_state"]["native_state_type"] == "dict"
+
+
+def test_real_runner_rejects_propagate_shape_by_default():
+    """Production runner should not call propagate(symbol, date) without context."""
+    from vnpy_tradingagents.real_runner import TradingAgentsRunnerAdapter
+
+    native_runner = PropagateNativeRunner()
+    runner = TradingAgentsRunnerAdapter(native_runner=native_runner)
+
+    result = runner.run(make_payload())
+
+    assert native_runner.args is None
+    assert result["rating"] == "Unavailable"
+    assert result["action"] == "hold"
+    assert result["raw_state"]["error_type"] == "unsupported_runner_shape"
 
 
 def test_real_runner_supports_structured_model_dump_output():
@@ -153,6 +171,39 @@ def test_storage_validates_action_before_trade_intent_insert():
     _, trade_params = connection.cursor_obj.executed[3]
     assert trade_params["action"] == "hold"
     assert trade_params["risk_notes"] == "invalid output downgraded"
+
+
+def test_storage_does_not_create_signals_for_failed_worker_response():
+    """Failed worker responses should be diagnostic only."""
+    from vnpy_tradingagents.storage import PostgresAgentStorage
+
+    connection = FakeConnection()
+    storage = PostgresAgentStorage(connection)
+    request = TradingAgentsWorkerRequest(
+        run_id="run-failed",
+        vt_symbol="600519.SSE",
+        trade_date="2024-01-03",
+        mode="long_horizon",
+        context={"market": {"bars": [{"close": 10}]}},
+    )
+    response = TradingAgentsWorkerResponse(
+        run_id="run-failed",
+        vt_symbol="600519.SSE",
+        rating="Unavailable",
+        confidence=0,
+        report="dependency missing",
+        raw_state={"status": "failed", "error_type": "dependency_error"},
+        action="hold",
+        risk_notes="dependency missing",
+    )
+
+    storage.save_worker_result(request, response)
+
+    executed_sql = "\n".join(sql for sql, _ in connection.cursor_obj.executed)
+    assert "INSERT INTO agent_run" in executed_sql
+    assert "INSERT INTO agent_report" in executed_sql
+    assert "INSERT INTO rating_signal" not in executed_sql
+    assert "INSERT INTO trade_intent" not in executed_sql
 
 
 def test_worker_adapter_validates_native_mapping_output():

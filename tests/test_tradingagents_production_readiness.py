@@ -85,6 +85,7 @@ def test_readiness_checker_passes_with_required_runtime_inputs(tmp_path):
             "router.postgres.dsn": "postgresql://user:pass@localhost:5432/vnpy",
             "router.providers": f"local_file:{data_path}",
             "tradingagents.api_key_env_var": "TRADINGAGENTS_API_KEY",
+            "tradingagents.worker_factory": "worker_factory:build",
         },
         environ={"TRADINGAGENTS_API_KEY": "secret"},
         module_available=lambda name: True,

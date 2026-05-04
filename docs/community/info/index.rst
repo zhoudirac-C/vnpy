@@ -12,6 +12,7 @@
    database.md
    datafeed.md
    custom_quant_architecture.md
+   vnpy_reuse_extension_route.md
    pycharm.md
    contribution.md
    i18n.md

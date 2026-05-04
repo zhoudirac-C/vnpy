@@ -3,6 +3,8 @@ from collections.abc import Callable
 import json
 from typing import Any, Protocol
 
+from vnpy.event import Event, EventEngine
+from vnpy.trader.event import EVENT_TICK
 from vnpy.trader.object import BarData, TickData
 
 from .intraday import IntradaySnapshot, IntradaySnapshotBuilder
@@ -116,6 +118,60 @@ class IntradaySnapshotCollector:
             self.storage.save_snapshot(snapshot)
 
         return snapshot
+
+
+class EventEngineIntradayCollector:
+    """
+    Register IntradaySnapshotCollector on vn.py EventEngine market events.
+    """
+
+    def __init__(
+        self,
+        event_engine: EventEngine,
+        collector: IntradaySnapshotCollector,
+        bar_event_type: str = "eBar.",
+    ) -> None:
+        """"""
+        self.event_engine: EventEngine = event_engine
+        self.collector: IntradaySnapshotCollector = collector
+        self.bar_event_type: str = bar_event_type
+        self.active: bool = False
+
+    def start(self) -> None:
+        """
+        Register tick/bar handlers.
+        """
+        if self.active:
+            return
+        self.event_engine.register(EVENT_TICK, self.process_tick_event)
+        self.event_engine.register(self.bar_event_type, self.process_bar_event)
+        self.active = True
+
+    def stop(self) -> None:
+        """
+        Unregister tick/bar handlers.
+        """
+        if not self.active:
+            return
+        self.event_engine.unregister(EVENT_TICK, self.process_tick_event)
+        self.event_engine.unregister(self.bar_event_type, self.process_bar_event)
+        self.active = False
+
+    def process_tick_event(self, event: Event) -> None:
+        """
+        Collect tick events without blocking EventEngine.
+        """
+        tick = event.data
+        if isinstance(tick, TickData):
+            self.collector.update_tick(tick)
+
+    def process_bar_event(self, event: Event) -> None:
+        """
+        Collect bar events when a strategy/data recorder emits them.
+        """
+        bar = event.data
+        if isinstance(bar, BarData):
+            self.collector.update_bar(bar)
 
 
 class PostgresIntradaySnapshotStorage:

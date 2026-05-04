@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from .gateway_policy import GatewayAccountMode, GatewayProfile
-from .paper_bridge import PaperAccountBridge, SimulatedTrade
+from .paper_bridge import PaperAccountBridge, SimulatedTrade, is_executable_trade_action
 from .runner_smoke import RunnerSmokeConfig, TradingAgentsRunnerSmoke, Worker, Storage
 from .toolkit import SnapshotReader
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
@@ -40,8 +40,12 @@ class PaperSmokeResult:
 
 class TradingAgentsPaperSmoke:
     """
-    Run snapshot -> worker -> signal persistence -> paper fill -> feedback once.
+    Smoke-only snapshot -> worker -> signal persistence -> simulated paper fill flow.
+
+    This helper must not be used as the production vn.py paper/backtesting bridge.
     """
+
+    smoke_only: bool = True
 
     def __init__(
         self,
@@ -87,18 +91,19 @@ class TradingAgentsPaperSmoke:
             )
 
         response = smoke_result.response
-        self.paper_bridge.record_fill(
-            SimulatedTrade(
-                source_run_id=response.run_id,
-                vt_symbol=response.vt_symbol,
-                trade_date=smoke_result.request.trade_date if smoke_result.request else "",
-                action=response.action,
-                volume=config.fill_volume,
-                price=config.fill_price,
-                slippage=0,
-                pnl=0,
+        if is_executable_trade_action(response.action):
+            self.paper_bridge.record_fill(
+                SimulatedTrade(
+                    source_run_id=response.run_id,
+                    vt_symbol=response.vt_symbol,
+                    trade_date=smoke_result.request.trade_date if smoke_result.request else "",
+                    action=response.action,
+                    volume=config.fill_volume,
+                    price=config.fill_price,
+                    slippage=0,
+                    pnl=0,
+                )
             )
-        )
         return PaperSmokeResult(
             success=True,
             request=smoke_result.request,

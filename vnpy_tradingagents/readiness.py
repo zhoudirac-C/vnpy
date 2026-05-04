@@ -98,6 +98,8 @@ class ProductionReadinessChecker:
 
         if postgres_enabled and not self.module_available("psycopg"):
             items.append(_failed("psycopg", "psycopg is required for PostgreSQL connections"))
+        elif postgres_enabled and not self.module_available("psycopg.rows"):
+            items.append(_failed("psycopg", "psycopg.rows.dict_row is required for PostgreSQL row mapping"))
         else:
             items.append(_ready("psycopg", "psycopg dependency is available or PostgreSQL cache is disabled"))
 
@@ -109,8 +111,44 @@ class ProductionReadinessChecker:
         else:
             items.append(_ready("tradingagents_api_key", "TradingAgents API key environment variable is present"))
 
+        items.extend(self._worker_checks())
         items.extend(self._provider_checks())
         return ReadinessReport(items)
+
+    def _worker_checks(self) -> list[ReadinessItem]:
+        """
+        Check whether a context-only worker factory is configured.
+        """
+        factory_path = (
+            str(self.settings.get("tradingagents.worker_factory", "")).strip()
+            or self.environ.get("TRADINGAGENTS_WORKER_FACTORY", "").strip()
+        )
+        if not factory_path:
+            return [
+                _warning(
+                    "tradingagents_worker",
+                    "context-only TradingAgents worker factory is not configured",
+                )
+            ]
+
+        if ":" not in factory_path:
+            return [
+                _failed(
+                    "tradingagents_worker",
+                    "worker factory must use module:function format",
+                )
+            ]
+
+        module_name, _ = factory_path.split(":", 1)
+        if not self.module_available(module_name):
+            return [
+                _failed(
+                    "tradingagents_worker",
+                    f"worker factory module is not importable: {module_name}",
+                )
+            ]
+
+        return [_ready("tradingagents_worker", "context-only worker factory is configured")]
 
     def _provider_checks(self) -> list[ReadinessItem]:
         """
@@ -150,15 +188,15 @@ class ProductionReadinessChecker:
                 else:
                     items.append(_ready("tushare_provider", "TuShare token and dependency are configured"))
             elif name == "qmt":
-                if self.module_available("xtquant.xtdata"):
-                    items.append(_ready("qmt_provider", "xtquant.xtdata dependency is available for QMT history"))
+                if self.module_available("vnpy_xt"):
+                    items.append(_ready("qmt_provider", "vnpy_xt datafeed/Gateway plugin is available"))
                 else:
-                    items.append(_warning("qmt_provider", "xtquant.xtdata dependency is not installed; QMT history is degraded"))
+                    items.append(_warning("qmt_provider", "QMT should be routed through a vn.py datafeed/Gateway plugin such as vnpy_xt"))
             elif name == "xt":
-                if self.module_available("xtquant.xtdata"):
-                    items.append(_ready("xt_provider", "xtquant.xtdata dependency is available for XT history"))
+                if self.module_available("vnpy_xt"):
+                    items.append(_ready("xt_provider", "vnpy_xt datafeed/Gateway plugin is available"))
                 else:
-                    items.append(_warning("xt_provider", "xtquant.xtdata dependency is not installed; XT history is degraded"))
+                    items.append(_warning("xt_provider", "XT should be routed through the vn.py vnpy_xt datafeed/Gateway plugin"))
             elif name == "social":
                 if not value:
                     items.append(_warning("social_provider", "social provider has no local/manual source path configured"))

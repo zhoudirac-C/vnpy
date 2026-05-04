@@ -1,12 +1,15 @@
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Protocol, Any
 
+from .config import TradingAgentsWorkerConfig
+from .real_runner import TradingAgentsRunnerAdapter
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
-from .worker_adapter import failed_worker_response
+from .worker_adapter import TradingAgentsWorkerAdapter, failed_worker_response
 
 
 class Worker(Protocol):
@@ -134,6 +137,9 @@ def main(worker: Worker | None = None) -> int:
     CLI entry point for JSON stdin/stdout worker processes.
     """
     if worker is None:
+        worker = load_configured_worker()
+
+    if worker is None:
         input_text = sys.stdin.read()
         request = request_from_json(input_text)
         response = failed_worker_response(
@@ -146,6 +152,31 @@ def main(worker: Worker | None = None) -> int:
 
     sys.stdout.write(run_worker_process_json(sys.stdin.read(), worker))
     return 0
+
+
+def load_configured_worker() -> Worker | None:
+    """
+    Load a context-only worker from TRADINGAGENTS_WORKER_FACTORY.
+
+    The factory value must be ``module:function`` and return a runner object
+    that accepts context input through run/invoke/callable.
+    """
+    factory_path: str = os.environ.get("TRADINGAGENTS_WORKER_FACTORY", "").strip()
+    if not factory_path:
+        return None
+
+    try:
+        module_name, function_name = factory_path.split(":", 1)
+        module = __import__(module_name, fromlist=[function_name])
+        factory = getattr(module, function_name)
+        native_runner = factory()
+    except Exception:
+        return None
+
+    return TradingAgentsWorkerAdapter(
+        config=TradingAgentsWorkerConfig.from_settings(),
+        runner=TradingAgentsRunnerAdapter(native_runner=native_runner),
+    )
 
 
 if __name__ == "__main__":
