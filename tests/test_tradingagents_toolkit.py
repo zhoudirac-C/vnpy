@@ -23,6 +23,7 @@ def test_market_data_toolkit_builds_context_from_snapshot_reader_only():
         ("snapshot", "industry", "600519.SSE"),
         ("snapshot", "benchmark", "600519.SSE"),
         ("snapshot", "portfolio", "600519.SSE"),
+        ("snapshot", "alpha_factor", "600519.SSE"),
         ("snapshot", "news", "600519.SSE"),
         ("snapshot", "sentiment", "600519.SSE"),
     ]
@@ -33,6 +34,7 @@ def test_market_data_toolkit_builds_context_from_snapshot_reader_only():
     assert context["valuation"]["pb"] == 8.1
     assert context["industry"]["name"] == "白酒"
     assert context["benchmark"]["name"] == "沪深300"
+    assert context["alpha_factors"]["alpha101_001"] == 0.32
     assert "news" in context["degraded_sources"]
 
 
@@ -81,5 +83,6 @@ class FakeSnapshotReader:
             "sentiment": {"score": 0.1},
             "benchmark": {"name": "沪深300"},
             "portfolio": {"position": 0},
+            "alpha_factor": {"alpha101_001": 0.32},
         }
         return snapshots[snapshot_type]

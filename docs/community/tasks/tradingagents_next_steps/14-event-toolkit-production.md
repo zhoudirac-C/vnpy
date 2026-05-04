@@ -1,6 +1,6 @@
 # P14 事件管线和 MarketDataToolkit 生产化任务
 
-目标：把新闻、公告、社媒、情绪、行业、benchmark、持仓和质量信息真正接入 TradingAgents 上下文。外部事件先入库、归一化、打来源标记，再由 `MarketDataToolkit` 按窗口读取，不能由 TradingAgents 临时抓取。
+目标：把新闻、公告、社媒、情绪、行业、benchmark、持仓、Alpha 因子和质量信息真正接入 TradingAgents 上下文。外部事件先入库、归一化、打来源标记，再由 `MarketDataToolkit` 按窗口读取，不能由 TradingAgents 临时抓取。
 
 ## 任务清单
 
@@ -23,8 +23,14 @@
 - [x] **P14-T04: MarketDataToolkit 上下文补齐**
   - 修改：`vnpy_tradingagents/toolkit.py`
   - 测试：`tests/test_tradingagents_toolkit.py`
-  - 目标：补行情指标、估值、行业、benchmark、portfolio、新闻窗口、情绪窗口和数据质量摘要。
-  - 验收：`build_context()` 输出能区分 `market/fundamentals/valuation/industry/news/sentiment/benchmark/portfolio` 的可用和 degraded 状态。
+  - 目标：补行情指标、估值、行业、benchmark、portfolio、alpha_factors、新闻窗口、情绪窗口和数据质量摘要。
+  - 验收：`build_context()` 输出能区分 `market/fundamentals/valuation/industry/news/sentiment/benchmark/portfolio/alpha_factors` 的可用和 degraded 状态。
+
+- [x] **P14-T04A: Alpha 因子快照接入**
+  - 修改：`vnpy_router/storage.py`、`vnpy_tradingagents/toolkit.py`、`vnpy/alpha/__init__.py`、`vnpy/alpha/dataset/__init__.py`
+  - 测试：`tests/test_alpha_optional_imports.py`、`tests/test_data_router.py`、`tests/test_tradingagents_toolkit.py`
+  - 目标：`vnpy.alpha` 改为懒加载；Alpha101/Alpha158 等研究结果通过 `PayloadSnapshot(snapshot_type="alpha_factor")` 落 PostgreSQL，再由 Toolkit 输出 `context["alpha_factors"]`。
+  - 验收：不安装 `alpha` extra 时 `import vnpy.alpha` 不影响主程序；只装 `polars` 时可导入 `vnpy.alpha.dataset.utility`；缺少 `alphalens-reloaded` 时只在 tear sheet 分析方法里给出明确安装提示。
 
 - [x] **P14-T05: A 股交易规则和日内压缩上下文**
   - 修改：`vnpy_tradingagents/intraday.py`、`vnpy_tradingagents/intraday_collector.py`
@@ -44,5 +50,6 @@
 | P14-T02 | 2026-05-04 | 未提交 | `uv run --with pytest pytest tests/test_event_pipeline.py tests/test_production_data_sources.py -q` |
 | P14-T03 | 2026-05-04 | 未提交 | `uv run --with pytest pytest tests/test_event_pipeline.py tests/test_production_data_sources.py -q` |
 | P14-T04 | 2026-05-04 | 未提交 | `uv run --with pytest pytest tests/test_tradingagents_toolkit.py tests/test_event_pipeline.py -q` |
+| P14-T04A | 2026-05-04 | 未提交 | `uv run --with pytest pytest tests/test_alpha_optional_imports.py tests/test_tradingagents_toolkit.py tests/test_data_router.py -q`；`uv run --with polars --with pytest pytest tests/test_alpha_optional_imports.py -q` |
 | P14-T05 | 2026-05-04 | 未提交 | `uv run --with pytest pytest tests/test_tradingagents_intraday_collector.py tests/test_tradingagents_intraday.py -q` |
 | P14-T06 | 2026-05-04 | 未提交 | `uv run --with ruff ruff check vnpy_router/event_storage.py vnpy_tradingagents/toolkit.py` |

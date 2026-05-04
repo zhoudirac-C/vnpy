@@ -1,5 +1,7 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
+import json
 from typing import Protocol, Any
 
 from vnpy.trader.object import BarData
@@ -86,6 +88,17 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshot (
     payload JSONB NOT NULL,
     PRIMARY KEY (vt_symbol, as_of, provider_name)
 );
+
+CREATE TABLE IF NOT EXISTS alpha_factor_snapshot (
+    vt_symbol TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    pulled_at TIMESTAMPTZ DEFAULT now(),
+    quality_status TEXT,
+    payload JSONB NOT NULL,
+    PRIMARY KEY (vt_symbol, as_of, provider_name)
+);
 """
 
 
@@ -156,6 +169,7 @@ PAYLOAD_SNAPSHOT_TABLES: dict[str, str] = {
     "industry": "industry_snapshot",
     "benchmark": "benchmark_snapshot",
     "portfolio": "portfolio_snapshot",
+    "alpha_factor": "alpha_factor_snapshot",
 }
 
 DEFERRED_SNAPSHOT_TYPES: frozenset[str] = frozenset({"news", "sentiment"})
@@ -173,6 +187,31 @@ WHERE vt_symbol = %(vt_symbol)s
   AND as_of <= %(as_of)s
 ORDER BY as_of DESC, pulled_at DESC
 LIMIT 1;
+"""
+
+
+UPSERT_PAYLOAD_SNAPSHOT_SQL: str = """
+INSERT INTO {table_name} (
+    vt_symbol,
+    as_of,
+    provider_name,
+    provider_version,
+    quality_status,
+    payload
+) VALUES (
+    %(vt_symbol)s,
+    %(as_of)s,
+    %(provider_name)s,
+    %(provider_version)s,
+    %(quality_status)s,
+    %(payload)s
+)
+ON CONFLICT (vt_symbol, as_of, provider_name)
+DO UPDATE SET
+    provider_version = EXCLUDED.provider_version,
+    pulled_at = now(),
+    quality_status = EXCLUDED.quality_status,
+    payload = EXCLUDED.payload;
 """
 
 
@@ -206,6 +245,21 @@ class Connection(Protocol):
         pass
 
 
+@dataclass(frozen=True)
+class PayloadSnapshot:
+    """
+    Provider-traced research snapshot persisted as JSON payload.
+    """
+
+    snapshot_type: str
+    vt_symbol: str
+    as_of: datetime
+    provider_name: str
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    provider_version: str = ""
+    quality_status: str = ""
+
+
 class PostgresSnapshotStorage:
     """
     PostgreSQL snapshot storage using a DB-API compatible connection.
@@ -234,6 +288,24 @@ class PostgresSnapshotStorage:
         try:
             for bar in bars:
                 cursor.execute(UPSERT_MARKET_BAR_SNAPSHOT_SQL, _bar_to_params(bar))
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+    def save_payload_snapshot(self, snapshot: PayloadSnapshot) -> None:
+        """
+        Save a provider-traced research payload snapshot.
+        """
+        table_name: str | None = PAYLOAD_SNAPSHOT_TABLES.get(snapshot.snapshot_type)
+        if table_name is None:
+            raise ValueError(f"Unsupported payload snapshot type: {snapshot.snapshot_type}")
+
+        cursor: Cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                UPSERT_PAYLOAD_SNAPSHOT_SQL.format(table_name=table_name),
+                _payload_snapshot_params(snapshot),
+            )
             self.connection.commit()
         finally:
             cursor.close()
@@ -387,6 +459,12 @@ def _payload_row_to_dict(snapshot_type: str, row: Mapping[str, Any]) -> dict[str
     Convert a JSONB payload snapshot row into toolkit context.
     """
     payload: Any = row.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            pass
+
     if isinstance(payload, Mapping):
         data: dict[str, Any] = dict(payload)
     else:
@@ -399,3 +477,18 @@ def _payload_row_to_dict(snapshot_type: str, row: Mapping[str, Any]) -> dict[str
     data["_provider_version"] = row.get("provider_version")
     data["_quality_status"] = row.get("quality_status")
     return data
+
+
+def _payload_snapshot_params(snapshot: PayloadSnapshot) -> dict[str, Any]:
+    """
+    Convert payload snapshots into SQL params.
+    """
+    return {
+        "snapshot_type": snapshot.snapshot_type,
+        "vt_symbol": snapshot.vt_symbol,
+        "as_of": snapshot.as_of,
+        "provider_name": snapshot.provider_name,
+        "provider_version": snapshot.provider_version,
+        "quality_status": snapshot.quality_status,
+        "payload": json.dumps(snapshot.payload, ensure_ascii=False, sort_keys=True),
+    }

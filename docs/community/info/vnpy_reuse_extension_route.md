@@ -120,7 +120,7 @@ end note
 PostgreSQL 不再承担所有职责：
 
 - vn.py 标准数据库：K 线、Tick、成交、持仓、回测需要的标准交易数据。
-- 扩展快照表：provider trace、quality report、fundamental/valuation/industry/benchmark/portfolio snapshot。
+- 扩展快照表：provider trace、quality report、fundamental/valuation/industry/benchmark/portfolio/alpha_factor snapshot。
 - 事件表：新闻、公告、社媒、情绪、实体链接、质量报告。
 - AI 表：agent run、report、rating signal、intraday advice、trade intent、decision audit、runtime state。
 
@@ -133,7 +133,10 @@ PostgreSQL 不再承担所有职责：
 | `router-postgres` | 安装 `psycopg`，用于 PostgreSQL snapshot、AI 表和 readiness |
 | `akshare` | 安装 AKShare，适合无账号阶段拉公开数据 |
 | `tushare` | 安装 TuShare，适合有 token 后补齐行情和基础数据 |
+| `alpha` | 安装 `vnpy.alpha` 因子研究依赖，用于 Alpha101/Alpha158、因子分析和模型研究；Polars 使用 `rtcompat` 运行时以避开部分 macOS/Python 组合的 CPU 指令兼容问题 |
 | `prod` | vn.py 主进程的 PostgreSQL、AKShare、TuShare 生产候选组合，不包含 TradingAgents |
+
+`alpha` 是可选研究增强模块，不随 vn.py 主进程启动自动安装。`vnpy.alpha` 入口采用懒加载，未安装 `alpha` extra 时，主交易、数据路由、TradingAgents 基础上下文不受影响；只有实际使用 AlphaDataset、Alpha101、因子模型或 tear sheet 分析时才需要安装。
 
 TradingAgents 不放入本仓库 extras，建议安装在独立 Worker 环境，避免和 vn.py 主进程、alpha 回测依赖产生 pandas 版本冲突。QMT/XT/RQData 这类 vn.py 插件不放入本 fork 的默认依赖，由使用者按券商和账号情况单独安装对应 vn.py datafeed/gateway 包。
 
@@ -215,7 +218,8 @@ Strategy -> Risk : 转换为交易计划前先风控
 | P0 | `vnpy_tradingagents.worker_process` | 增加可配置真实 runner 加载入口，而不是默认 `runner_not_configured` |
 | P1 | `vnpy_tradingagents.engine/ui` | 状态持久化到 PostgreSQL，UI 真正控制 worker/scheduler/signal status |
 | P1 | `vnpy_router.event_storage` | 补 normalized event、sentiment snapshot、entity link 的 save/read 接口 |
-| P1 | `vnpy_tradingagents.toolkit` | 补技术指标、估值、行业、新闻、情绪、benchmark、持仓窗口 |
+| P1 | `vnpy_router.storage` | 补通用 payload snapshot 保存入口，Alpha 因子落 `alpha_factor_snapshot` |
+| P1 | `vnpy_tradingagents.toolkit` | 补技术指标、估值、行业、新闻、情绪、benchmark、持仓、alpha_factors 窗口 |
 | P1 | 回测/Paper | 优先接 vn.py Backtesting/Paper/Gateway，现有 bridge 保留为 smoke |
 | P2 | readiness/ops | 检查真实 DB、schema、runner、datafeed smoke、worker smoke、paper smoke |
 | P2 | 文档任务 | 把 P1-P11 改为“骨架完成”，新增生产化阶段任务 |

@@ -63,7 +63,12 @@ class MarketDataToolkit:
         "industry",
         "benchmark",
         "portfolio",
+        "alpha_factor",
     )
+
+    snapshot_context_keys: dict[str, str] = {
+        "alpha_factor": "alpha_factors",
+    }
 
     def __init__(self, reader: SnapshotReader) -> None:
         """"""
@@ -101,7 +106,8 @@ class MarketDataToolkit:
                 query.vt_symbol,
                 query.end,
             )
-            context[snapshot_type] = snapshot or {}
+            context_key = self.snapshot_context_keys.get(snapshot_type, snapshot_type)
+            context[context_key] = snapshot or {}
             if snapshot is None:
                 degraded_sources.append(snapshot_type)
 
@@ -218,6 +224,7 @@ def _data_quality_summary(
         "market_bar_count": len(context.get("market", {}).get("bars", [])),
         "news_event_count": len(context.get("news", {}).get("events", [])),
         "has_sentiment": bool(context.get("sentiment")),
+        "has_alpha_factors": bool(context.get("alpha_factors")),
     }
 
 

@@ -981,6 +981,7 @@ TA -[#red,dashed]-> Router : 禁止绕过快照补拉
 | news | `NewsEvent` / `AnnouncementEvent` / `IndustryEvent` | 第一版优先公告、财报、板块事件和人工整理事件，不追求全网新闻覆盖 |
 | sentiment/social | `SentimentSnapshot` | 第一版可以为空、人工标签或由新闻事件打分，暂不把社媒作为强依赖 |
 | benchmark | `BenchmarkSnapshot` | 默认沪深 300/中证 500/中证 1000，而不是 SPY |
+| alpha_factors | `AlphaFactorSnapshot` | 可选安装 `alpha` extra 后由 `vnpy.alpha` 计算，落 `alpha_factor_snapshot`，TradingAgents 只读因子快照 |
 | portfolio/risk context | `OmsSnapshot` / `PortfolioSnapshot` / `RiskRuleSnapshot` | 持仓、现金、活动委托、当日成交、风控规则，只读 |
 | memory/reflection | `AgentDecisionLog` + 回测/仿真/实盘结果 | 用 A 股 benchmark alpha、真实成交和组合绩效做反思，不用 SPY alpha |
 

@@ -1,8 +1,17 @@
-from datetime import datetime
-from enum import Enum
 from typing import Union
 
 import polars as pl
+
+from .types import Segment, to_datetime
+
+
+__all__ = [
+    "DataProxy",
+    "Segment",
+    "calculate_by_expression",
+    "calculate_by_polars",
+    "to_datetime",
+]
 
 
 class DataProxy:
@@ -169,24 +178,3 @@ def calculate_by_polars(df: pl.DataFrame, expression: pl.expr.expr.Expr) -> pl.D
         "vt_symbol",
         expression.alias("data")
     ])
-
-
-def to_datetime(arg: datetime | str) -> datetime:
-    """Convert time data type"""
-    if isinstance(arg, str):
-        if "-" in arg:
-            fmt: str = "%Y-%m-%d"
-        else:
-            fmt = "%Y%m%d"
-
-        return datetime.strptime(arg, fmt)
-    else:
-        return arg
-
-
-class Segment(Enum):
-    """Data segment enumeration values"""
-
-    TRAIN = 1
-    VALID = 2
-    TEST = 3

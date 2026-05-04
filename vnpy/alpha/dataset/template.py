@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 from collections.abc import Callable
 from multiprocessing import get_context
 from multiprocessing.context import BaseContext
@@ -8,16 +8,30 @@ from multiprocessing.context import BaseContext
 import polars as pl
 import pandas as pd
 from tqdm import tqdm
-from alphalens.utils import get_clean_factor_and_forward_returns    # type: ignore
-from alphalens.tears import create_full_tear_sheet                  # type: ignore
 
 from ..logger import logger
+from .types import Segment, to_datetime
 from .utility import (
-    to_datetime,
-    Segment,
     calculate_by_expression,
     calculate_by_polars
 )
+
+
+def _load_alphalens() -> tuple[Callable[..., pd.DataFrame], Callable[..., Any]]:
+    """
+    Load optional alphalens dependency only for tear-sheet analysis.
+    """
+    try:
+        from alphalens.utils import get_clean_factor_and_forward_returns    # type: ignore
+        from alphalens.tears import create_full_tear_sheet                  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "Alpha tear-sheet analysis requires optional dependency "
+            "'alphalens-reloaded'. Install it with `uv sync --extra alpha` "
+            "or `pip install -e \".[alpha]\"`."
+        ) from exc
+
+    return get_clean_factor_and_forward_returns, create_full_tear_sheet
 
 
 class AlphaDataset:
@@ -196,6 +210,8 @@ class AlphaDataset:
         """
         Perform performance analysis for a feature
         """
+        get_clean_factor_and_forward_returns, create_full_tear_sheet = _load_alphalens()
+
         starts: list[datetime] = []
         ends: list[datetime] = []
 
@@ -243,6 +259,8 @@ class AlphaDataset:
         """
         Perform performance analysis for prediction signals
         """
+        get_clean_factor_and_forward_returns, create_full_tear_sheet = _load_alphalens()
+
         # Get signal start and end times
         start: datetime = cast(datetime, signal["datetime"].min())
         end: datetime = cast(datetime, signal["datetime"].max())

@@ -275,14 +275,15 @@ def test_postgres_snapshot_schema_contains_provider_columns():
         "industry_snapshot",
         "benchmark_snapshot",
         "portfolio_snapshot",
+        "alpha_factor_snapshot",
     ]:
         assert f"CREATE TABLE IF NOT EXISTS {table_name}" in RESEARCH_SNAPSHOT_SCHEMA
 
-    assert RESEARCH_SNAPSHOT_SCHEMA.count("provider_name TEXT NOT NULL") == 5
-    assert RESEARCH_SNAPSHOT_SCHEMA.count("provider_version TEXT") == 5
-    assert RESEARCH_SNAPSHOT_SCHEMA.count("pulled_at TIMESTAMPTZ DEFAULT now()") == 5
-    assert RESEARCH_SNAPSHOT_SCHEMA.count("quality_status TEXT") == 5
-    assert RESEARCH_SNAPSHOT_SCHEMA.count("payload JSONB NOT NULL") == 5
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("provider_name TEXT NOT NULL") == 6
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("provider_version TEXT") == 6
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("pulled_at TIMESTAMPTZ DEFAULT now()") == 6
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("quality_status TEXT") == 6
+    assert RESEARCH_SNAPSHOT_SCHEMA.count("payload JSONB NOT NULL") == 6
 
 
 def test_postgres_snapshot_storage_create_schema_includes_research_snapshots():
@@ -299,6 +300,38 @@ def test_postgres_snapshot_storage_create_schema_includes_research_snapshots():
     assert "CREATE TABLE IF NOT EXISTS market_bar_snapshot" in sql
     assert "CREATE TABLE IF NOT EXISTS fundamental_snapshot" in sql
     assert "CREATE TABLE IF NOT EXISTS portfolio_snapshot" in sql
+    assert "CREATE TABLE IF NOT EXISTS alpha_factor_snapshot" in sql
+
+
+def test_postgres_snapshot_storage_saves_alpha_factor_payload_snapshot():
+    """PostgresSnapshotStorage should persist alpha factors through the generic payload path."""
+    from vnpy_router.storage import PayloadSnapshot, PostgresSnapshotStorage
+
+    connection = FakeConnection()
+    storage = PostgresSnapshotStorage(connection)
+    storage.save_payload_snapshot(
+        PayloadSnapshot(
+            snapshot_type="alpha_factor",
+            vt_symbol="600519.SSE",
+            as_of=datetime(2024, 1, 3),
+            provider_name="vnpy_alpha",
+            provider_version="alpha101",
+            quality_status="passed",
+            payload={
+                "alpha101_001": 0.32,
+                "alpha101_002": -0.11,
+            },
+        )
+    )
+
+    sql, params = connection.cursor_obj.executed[0]
+    assert "INSERT INTO alpha_factor_snapshot" in sql
+    assert "ON CONFLICT (vt_symbol, as_of, provider_name)" in sql
+    assert params["snapshot_type"] == "alpha_factor"
+    assert params["vt_symbol"] == "600519.SSE"
+    assert params["provider_name"] == "vnpy_alpha"
+    assert '"alpha101_001": 0.32' in params["payload"]
+    assert connection.committed
 
 
 def test_postgres_snapshot_reader_loads_bar_snapshots_with_filters():
@@ -405,6 +438,44 @@ def test_postgres_snapshot_reader_loads_latest_payload_snapshot():
         "_as_of": "2024-01-03T00:00:00",
         "_provider_name": "akshare",
         "_provider_version": "2024-01-03",
+        "_quality_status": "passed",
+    }
+
+
+def test_postgres_snapshot_reader_loads_latest_alpha_factor_snapshot():
+    """PostgresSnapshotReader should expose alpha factor payloads for TradingAgents."""
+    from vnpy_router.storage import PostgresSnapshotReader
+
+    connection = FakeConnection(
+        fetchone_result={
+            "as_of": datetime(2024, 1, 3),
+            "provider_name": "vnpy_alpha",
+            "provider_version": "alpha101",
+            "quality_status": "passed",
+            "payload": {
+                "alpha101_001": 0.32,
+                "alpha101_002": -0.11,
+            },
+        }
+    )
+    reader = PostgresSnapshotReader(connection)
+
+    snapshot = reader.load_latest_snapshot(
+        snapshot_type="alpha_factor",
+        vt_symbol="600519.SSE",
+        as_of=datetime(2024, 1, 4),
+    )
+
+    sql, params = connection.cursor_obj.executed[0]
+    assert "FROM alpha_factor_snapshot" in sql
+    assert params["vt_symbol"] == "600519.SSE"
+    assert snapshot == {
+        "alpha101_001": 0.32,
+        "alpha101_002": -0.11,
+        "_snapshot_type": "alpha_factor",
+        "_as_of": "2024-01-03T00:00:00",
+        "_provider_name": "vnpy_alpha",
+        "_provider_version": "alpha101",
         "_quality_status": "passed",
     }
 
