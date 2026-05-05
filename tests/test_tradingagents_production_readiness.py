@@ -34,9 +34,20 @@ def test_schema_status_reports_extension_table_presence():
     assert status.tables["rating_signal"] == "missing"
 
 
-def test_cli_reports_missing_vnpy_postgres_config_without_silent_success(capsys):
+def test_cli_reports_missing_vnpy_postgres_config_without_silent_success(monkeypatch, capsys):
     """CLI should fail clearly when vn.py PostgreSQL settings are missing."""
     from vnpy_tradingagents.cli import main
+    from vnpy.trader.setting import SETTINGS
+
+    for key, value in {
+        "database.name": "sqlite",
+        "database.database": "",
+        "database.host": "",
+        "database.port": 0,
+        "database.user": "",
+        "database.password": "",
+    }.items():
+        monkeypatch.setitem(SETTINGS, key, value)
 
     exit_code = main(["schema", "status"])
 
