@@ -240,6 +240,7 @@ def test_readiness_checker_reports_production_provider_diagnostics(tmp_path):
         settings={
             "router.providers": f"tushare,qmt,xt,social:{tmp_path / 'missing.csv'}",
             "tradingagents.api_key_env_var": "OPENAI_API_KEY",
+            "tradingagents.intraday.enabled": True,
         },
         environ={
             "OPENAI_API_KEY": "llm-key",
@@ -253,6 +254,19 @@ def test_readiness_checker_reports_production_provider_diagnostics(tmp_path):
     assert report.by_name("qmt_provider").status == ReadinessStatus.WARNING
     assert report.by_name("xt_provider").status == ReadinessStatus.WARNING
     assert report.by_name("social_provider").status == ReadinessStatus.WARNING
+    assert report.by_name("intraday_minute_source").status == ReadinessStatus.WARNING
+
+    ready_report = ProductionReadinessChecker(
+        settings={
+            "router.providers": "qmt",
+            "tradingagents.api_key_env_var": "OPENAI_API_KEY",
+            "tradingagents.intraday.enabled": True,
+        },
+        environ={"OPENAI_API_KEY": "llm-key"},
+        module_available=lambda name: name in {"vnpy_xt", "peewee"},
+    ).check()
+
+    assert ready_report.by_name("intraday_minute_source").status == ReadinessStatus.READY
 
 
 def test_p9_event_source_quality_models_are_registered():

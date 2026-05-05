@@ -180,6 +180,41 @@ def test_quality_checker_reports_negative_volume_and_missing_adjustment_version(
     assert "missing_adjustment_version" in codes
 
 
+def test_provider_cross_check_reports_ohlcv_differences():
+    """Provider cross-check should record field-level OHLCV differences."""
+    from vnpy_router.quality import QualityStatus, compare_bar_provider_outputs
+
+    akshare_bar = _bar()
+    akshare_bar.gateway_name = "akshare"
+    akshare_bar.close_price = 1695
+    akshare_bar.volume = 1200
+    local_bar = _bar()
+    local_bar.gateway_name = "local_file"
+    local_bar.close_price = 1695.8
+    local_bar.volume = 1250
+
+    report = compare_bar_provider_outputs(
+        "akshare",
+        [akshare_bar],
+        "local_file",
+        [local_bar],
+        price_tolerance=0.1,
+        volume_tolerance=10,
+    )
+
+    assert report.provider_name == "akshare"
+    assert report.compared_provider_name == "local_file"
+    assert report.status == QualityStatus.WARNING
+    assert report.compared_bar_count == 1
+    assert [issue.code for issue in report.issues] == [
+        "provider_field_mismatch",
+        "provider_field_mismatch",
+    ]
+    assert report.issues[0].field == "close_price"
+    assert report.issues[0].provider_value == 1695
+    assert report.issues[0].compared_value == 1695.8
+
+
 def test_data_provider_router_reads_snapshot_cache_before_provider():
     """DataProviderRouter should return cached bars without querying providers."""
     from vnpy_router.router import DataProviderRouter
@@ -506,16 +541,14 @@ def test_postgres_snapshot_reader_returns_none_for_missing_or_deferred_snapshot(
 
 def test_akshare_provider_missing_dependency_degrades(monkeypatch):
     """AkshareProvider should degrade to empty data when akshare is missing."""
-    import importlib
+    from vnpy_router.providers import akshare as akshare_module
 
-    real_import_module = importlib.import_module
-
-    def fake_import_module(name: str, package: str | None = None):
+    def fake_import_module(name: str):
         if name == "akshare":
             raise ModuleNotFoundError(name)
-        return real_import_module(name, package)
+        raise AssertionError(f"unexpected import: {name}")
 
-    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+    monkeypatch.setattr(akshare_module, "import_module", fake_import_module)
 
     from vnpy_router.providers.akshare import AkshareProvider
 

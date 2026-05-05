@@ -236,7 +236,39 @@ class ProductionReadinessChecker:
             else:
                 items.append(_warning(f"{name}_provider", f"provider has no production readiness checker: {name}"))
 
+        items.append(self._intraday_minute_source_check(providers))
         return items
+
+    def _intraday_minute_source_check(
+        self,
+        providers: list[tuple[str, str]],
+    ) -> ReadinessItem:
+        """
+        Check whether intraday TradingAgents can rely on a production minute source.
+        """
+        if not _to_bool(self.settings.get("tradingagents.intraday.enabled", False)):
+            return _ready(
+                "intraday_minute_source",
+                "intraday TradingAgents is disabled; minute source is not required",
+            )
+
+        provider_names: set[str] = {name for name, _ in providers}
+        if provider_names.intersection({"qmt", "xt"}) and self.module_available("vnpy_xt"):
+            return _ready(
+                "intraday_minute_source",
+                "QMT/XT vn.py plugin is available for production intraday minute data",
+            )
+
+        if provider_names.intersection({"qmt", "xt"}):
+            return _warning(
+                "intraday_minute_source",
+                "QMT/XT is configured but vnpy_xt is not available; intraday AI should stay degraded",
+            )
+
+        return _warning(
+            "intraday_minute_source",
+            "no production minute source is configured; AKShare/local_file/TuShare daily data is not enough for intraday AI",
+        )
 
 
 def _parse_provider_specs(raw: Any) -> list[tuple[str, str]]:
