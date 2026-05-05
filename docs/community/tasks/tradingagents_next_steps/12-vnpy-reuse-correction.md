@@ -12,8 +12,9 @@
 - [x] **P12-T02: PostgreSQL 真实连接修复**
   - 修改：`vnpy_router/datafeed.py`、`vnpy_tradingagents/cli.py`、`vnpy_tradingagents/migrations.py`
   - 测试：新增或修改 `tests/test_tradingagents_production_readiness.py`、`tests/test_data_router.py`
-  - 目标：所有 psycopg 连接统一使用 `psycopg.rows.dict_row`，修复真实 PostgreSQL 默认返回 tuple 导致 row 字典访问失败的问题。
+  - 目标：早期先修复 PostgreSQL raw cursor 默认返回 tuple 导致 row 字典访问失败的问题。
   - 验收：真实 PostgreSQL 或容器化 PostgreSQL 下，schema init/status、bar snapshot 读写、migration status 都可运行。
+  - P17 纠错：该任务只解决了当时的 dict row 问题，但技术路线仍偏离 `vnpy_postgresql`。P17 将把扩展表初始化从自建 SQL migration runner 改为 Peewee Model + `create_tables(..., safe=True)`，并删除独立 DSN 入口。
 
 - [x] **P12-T03: QMT/XT provider 路线纠偏**
   - 修改：`vnpy_router/datafeed.py`、`vnpy_router/providers/qmt.py`、`vnpy_router/providers/xt.py`、`vnpy_router/providers/__init__.py`
@@ -32,7 +33,7 @@
 
 - [x] **P12-T06: 依赖分组和安装说明**
   - 修改：`pyproject.toml`、`docs/community/info/vnpy_reuse_extension_route.md`
-  - 目标：把 `psycopg`、`akshare`、`tushare` 等主进程依赖拆成可选 extras；TradingAgents 只在独立 Worker 环境安装，避免污染 vn.py 主环境。
+  - 目标：把 Peewee PostgreSQL 扩展、`akshare`、`tushare` 等主进程依赖拆成可选 extras；TradingAgents 只在独立 Worker 环境安装，避免污染 vn.py 主环境。
   - 验收：文档说明 `router-postgres`、`akshare`、`tushare`、`prod` 等安装组合，并明确 TradingAgents 独立安装；无对应 extra 时 readiness 能给出明确诊断。
 
 ## 完成记录

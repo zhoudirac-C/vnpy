@@ -1,0 +1,144 @@
+{
+  "generated_at": "2026-05-04T23:45:38+08:00",
+  "profile": "local",
+  "repo_root": "/Users/cong.zhou/Documents/quantitative/vnpy",
+  "branch": "feature/akshare-tradingagents-architecture",
+  "commit": "b2cc4cc7",
+  "worktree_clean": false,
+  "dirty_files": [
+    " M docs/community/ops/live_gray_runbook.md",
+    " M docs/community/tasks/tradingagents_next_steps/README.md",
+    "?? docs/community/ops/production_closed_loop_validation.md",
+    "?? docs/community/ops/validation_results/",
+    "?? docs/community/tasks/tradingagents_next_steps/16-production-closed-loop-validation.md",
+    "?? tests/test_production_closed_loop_validation.py",
+    "?? tools/production/"
+  ],
+  "production_ready": false,
+  "checks": [
+    {
+      "name": "ruff_core",
+      "status": "passed",
+      "command": "uv run --with ruff ruff check vnpy/alpha vnpy_router vnpy_tradingagents tests/test_alpha_optional_imports.py tests/test_data_router.py tests/test_tradingagents_toolkit.py",
+      "exit_code": 0,
+      "duration_seconds": 0.168,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "All checks passed!",
+      "stderr_tail": ""
+    },
+    {
+      "name": "pytest_non_alpha",
+      "status": "passed",
+      "command": "uv run --with pytest pytest tests -q --ignore=tests/test_alpha101.py",
+      "exit_code": 0,
+      "duration_seconds": 1.883,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": ".sss.................................................................... [ 39%]\n........................................................................ [ 79%]\n.....................................                                    [100%]\n178 passed, 3 skipped in 1.07s",
+      "stderr_tail": ""
+    },
+    {
+      "name": "alpha_optional_imports",
+      "status": "passed",
+      "command": "uv run --with polars[rtcompat] --with pytest pytest tests/test_alpha_optional_imports.py -q",
+      "exit_code": 0,
+      "duration_seconds": 1.274,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "....                                                                     [100%]\n4 passed in 0.55s",
+      "stderr_tail": ""
+    },
+    {
+      "name": "alpha101_smoke",
+      "status": "passed",
+      "command": "uv run --with polars[rtcompat] --with scipy --with pytest pytest tests/test_alpha101.py::TestAlpha101::test_alpha1 -q",
+      "exit_code": 0,
+      "duration_seconds": 2.553,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": ".                                                                        [100%]\n1 passed in 1.80s",
+      "stderr_tail": ""
+    },
+    {
+      "name": "compileall_core",
+      "status": "passed",
+      "command": "uv run python -m compileall vnpy/alpha vnpy_router vnpy_tradingagents -q",
+      "exit_code": 0,
+      "duration_seconds": 0.169,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "name": "diff_check",
+      "status": "passed",
+      "command": "git diff --check",
+      "exit_code": 0,
+      "duration_seconds": 0.055,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "name": "readiness_cli",
+      "status": "blocked",
+      "command": "uv run vnpy-tradingagents-schema readiness --json",
+      "exit_code": 1,
+      "duration_seconds": 0.562,
+      "required_local": false,
+      "required_production": true,
+      "message": "command failed in local validation; treated as production gate not satisfied",
+      "stdout_tail": "{\"items\": [{\"message\": \"PostgreSQL cache is disabled; production snapshots will not persist through router cache\", \"name\": \"postgres_dsn\", \"status\": \"warning\"}, {\"message\": \"psycopg dependency is available or PostgreSQL cache is disabled\", \"name\": \"psycopg\", \"status\": \"ready\"}, {\"message\": \"missing API key environment variable: OPENAI_API_KEY\", \"name\": \"tradingagents_api_key\", \"status\": \"failed\"}, {\"message\": \"context-only TradingAgents worker factory is not configured\", \"name\": \"tradingagents_worker\", \"status\": \"warning\"}, {\"message\": \"local_file provider has no path configured\", \"name\": \"local_file_provider\", \"status\": \"warning\"}, {\"message\": \"akshare dependency is not installed\", \"name\": \"akshare_provider\", \"status\": \"warning\"}], \"status\": \"failed\"}",
+      "stderr_tail": ""
+    },
+    {
+      "name": "postgres_dsn_env",
+      "status": "blocked",
+      "command": "env:QUANT_DATABASE_URL",
+      "exit_code": null,
+      "duration_seconds": 0,
+      "required_local": false,
+      "required_production": true,
+      "message": "QUANT_DATABASE_URL is not configured in this validation environment",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "name": "tradingagents_worker_factory_env",
+      "status": "blocked",
+      "command": "env:TRADINGAGENTS_WORKER_FACTORY",
+      "exit_code": null,
+      "duration_seconds": 0,
+      "required_local": false,
+      "required_production": true,
+      "message": "TRADINGAGENTS_WORKER_FACTORY is not configured in this validation environment",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "name": "llm_api_key_env",
+      "status": "blocked",
+      "command": "env:OPENAI_API_KEY",
+      "exit_code": null,
+      "duration_seconds": 0,
+      "required_local": false,
+      "required_production": true,
+      "message": "OPENAI_API_KEY is not configured in this validation environment",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    }
+  ],
+  "status_counts": {
+    "passed": 6,
+    "blocked": 4
+  }
+}

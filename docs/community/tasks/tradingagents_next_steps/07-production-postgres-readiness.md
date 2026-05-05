@@ -1,18 +1,20 @@
-# P7 生产级 PostgreSQL 迁移和健康检查任务
+# P7 生产级 PostgreSQL 初始化和健康检查任务
 
-目标：把 P6 的“一次性建表函数”升级为可追踪、可重复、可诊断的生产初始化能力，确保真实 PostgreSQL 联调前可以明确知道数据库、依赖和关键配置是否就绪。
+目标：把 P6 的“一次性建表函数”升级为可重复、可诊断的生产初始化能力，确保真实 PostgreSQL 联调前可以明确知道数据库、依赖和关键配置是否就绪。P17 已进一步纠正本阶段的早期自建 migration runner 路线：扩展表初始化应复用 `vnpy_postgresql` 的 Peewee Model + `create_tables(..., safe=True)`。
 
 ## 任务清单
 
-- [x] **P7-T01: SchemaMigrationRunner**
+- [x] **P7-T01: 旧 SQL 迁移骨架**
   - 创建：`vnpy_tradingagents/migrations.py`
   - 目标：用迁移编号记录已应用 SQL，支持 pending/applied 状态查询。
   - 验收：重复执行不会重复应用已记录 migration。
+  - P17 纠错：该路线已废弃，生产路径改为 Peewee `create_tables()`。
 
 - [x] **P7-T02: 初始化命令改用 migration runner**
   - 修改：`vnpy_tradingagents/schema_init.py`
   - 目标：`initialize_postgres_schema()` 不再只执行一段 SQL 字符串，而是走迁移列表并记录版本。
   - 验收：新环境一条命令创建全部表，重复执行幂等。
+  - P17 纠错：`initialize_postgres_schema()` 改为绑定 Peewee Model 并调用 `create_tables(..., safe=True)`。
 
 - [x] **P7-T03: CLI 初始化入口**
   - 创建：`vnpy_tradingagents/cli.py`
@@ -22,7 +24,7 @@
 
 - [x] **P7-T04: ProductionReadinessChecker**
   - 创建：`vnpy_tradingagents/readiness.py`
-  - 目标：检查 PostgreSQL DSN、`psycopg`、TradingAgents API key、provider 配置和本地文件路径。
+  - 目标：检查 vn.py PostgreSQL `database.*`、Peewee、TradingAgents API key 环境变量、provider 配置和本地文件路径。
   - 验收：返回结构化检查结果，能区分 `ready/warning/failed`。
 
 - [x] **P7-T05: 生产联调文档同步**
@@ -38,4 +40,4 @@
 | P7-T02 | 2026-05-03 | `2507825c` | `uv run --with pytest pytest tests/test_tradingagents_production_readiness.py tests/test_tradingagents_gray_release.py tests/test_data_router.py tests/test_event_pipeline.py -v` |
 | P7-T03 | 2026-05-03 | `2507825c` | `uv run --with pytest pytest tests/test_tradingagents_production_readiness.py tests/test_tradingagents_gray_release.py tests/test_data_router.py tests/test_event_pipeline.py -v` |
 | P7-T04 | 2026-05-03 | `2507825c` | `uv run --with pytest pytest tests/test_tradingagents_production_readiness.py tests/test_tradingagents_gray_release.py tests/test_data_router.py tests/test_event_pipeline.py -v` |
-| P7-T05 | 2026-05-03 | `2507825c` | `uv run --with ruff ruff check vnpy_tradingagents/migrations.py vnpy_tradingagents/schema_init.py vnpy_tradingagents/readiness.py vnpy_tradingagents/cli.py vnpy_tradingagents/__init__.py tests/test_tradingagents_production_readiness.py pyproject.toml` |
+| P7-T05 | 2026-05-03 | `2507825c` | `uv run --with ruff ruff check vnpy_tradingagents/schema_init.py vnpy_tradingagents/readiness.py vnpy_tradingagents/cli.py vnpy_tradingagents/__init__.py tests/test_tradingagents_production_readiness.py pyproject.toml` |

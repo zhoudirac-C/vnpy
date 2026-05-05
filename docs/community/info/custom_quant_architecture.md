@@ -1185,10 +1185,11 @@ vn.py main process
 部署要点：
 
 - 独立 Python 环境安装 TradingAgents、LangGraph、LLM provider SDK、pandas/stockstats 等依赖，避免污染 vn.py 主环境。
-- API key 只通过环境变量进入 Worker，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
+- API key 可以在 vn.py 全局配置界面的 `tradingagents.api_key <secret>` 安全输入框中填写；该字段不会保存到 `vt_setting.json`。运行期会写入当前进程环境变量，安装可选 `keyring` 时可保存到系统钥匙串。生产部署仍建议通过环境变量或 Secret Manager 注入，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
 - `tradingagents.llm_provider`、`tradingagents.model`、`tradingagents.timeout_seconds`、`tradingagents.max_retries`、`tradingagents.checkpoint_dir` 从 vn.py 全局配置或部署配置读取。
+- 默认 factory 是 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`。它返回 `AShareContextOnlyRunner`，内部用 `TradingAgentsContextOnlyGraphRunner` 创建上游 `TradingAgentsGraph`，并把 market/news/fundamental/social 工具替换为只读 `native_input["context"]` 的工具。
 - native runner 必须被包装成 context-only runner。它只能使用 `native_input["context"]` 中的 PostgreSQL 快照，不允许直接访问 yfinance、Alpha Vantage、AKShare、TuShare、QMT 或 Gateway。
-- 上游 `TradingAgentsGraph.propagate(symbol, date)` 只能在 legacy/test 模式显式启用；生产 A 股路径必须使用 context-only wrapper。
+- 裸的上游 `TradingAgentsGraph.propagate(symbol, date)` 只能在 legacy/test 模式显式启用；生产 A 股路径使用默认 context-only factory 或等价 wrapper。
 - Worker 超时、依赖缺失、LLM 失败或输出结构异常时，统一返回 `hold/Unavailable`，并在 `raw_state.validation_errors` 或 `raw_state.error_type` 中记录原因。
 - `TradingAgentsRunnerSmoke` 用真实 PostgreSQL 快照构造一次 request，成功时写入 `agent_run`、`agent_report`、`rating_signal`、`trade_intent`；失败时返回可诊断结果且不写订单。
 
@@ -1246,7 +1247,7 @@ P10 --> P11
 | Phase 3B | 骨架完成 | `ResearchSnapshot`、批量长期任务、长期调度、组合意图 |
 | Phase 4 | 骨架完成 | `SignalFusionService`、`AiSignalPolicy`、`PreOrderDecisionService`、审计 |
 | Phase 5 | 骨架完成 | 回测桥接、PaperAccount 仿真桥接、灰度状态、审计导出、live gate |
-| Phase 7 | 骨架完成 | `MigrationRunner`、schema CLI、`ProductionReadinessChecker` |
+| Phase 7 | 骨架完成，P17 纠错 | Peewee 扩展表 models、schema CLI、`ProductionReadinessChecker` |
 | Phase 8 | 骨架完成 | `TradingAgentsRunnerAdapter`、`output_validation`、checkpoint 隔离、runner smoke |
 | Phase 9 | 骨架完成 | `ProviderCapability`、`TuShareProvider`、QMT/XT 边界、`SocialProvider`、事件源生产规则 |
 | Phase 10 | 骨架完成 | `BacktestingAppBridge`、`PaperAccountSnapshot`、UI 手工接管、状态查询、`TradingAgentsPaperSmoke` |
@@ -1393,7 +1394,7 @@ P10 --> P11
 - 回测桥接：`BacktestingBridge` 在回测时间点读取 `RatingSignal`、`PortfolioIntent`、`IntradayAdvice`，复用融合和风控，不访问真实 Gateway。
 - 仿真 Gateway 配置：`PaperAccountBridge` 只在 `GatewayAccountMode.SIMULATION` 下启用 AI，并把模拟成交写入 feedback。
 - 灰度运行面板或日志：`ReplayRunStatusBuilder` 汇总日内/长期回放结果，`PostgresReplayRunStatusStorage` 持久化 `replay_run_status`，`ReplayRunStatusLog` 输出稳定 JSON line。
-- 审计和迁移：`audit_export` 支持 JSONL/CSV 导出，`initialize_postgres_schema()` 已改为 migration runner，可一键初始化 TradingAgents/router 全部 PostgreSQL 表并记录 `schema_migration`。
+- 审计和扩展表初始化：`audit_export` 支持 JSONL/CSV 导出。P17 纠错后，`initialize_postgres_schema()` 应复用 `vnpy_postgresql` 的 Peewee Model + `create_tables(..., safe=True)` 路线初始化 TradingAgents/router 扩展表，不再把自建 SQL migration runner 作为生产目标。
 - 实盘准入：`LiveGate` 检查模拟盘稳定天数、最大回撤、审计完整率和 live AI 显式开启；`pause_manual_takeover()` 可一键暂停所有 AI signal 使用。
 
 验收：
@@ -1407,19 +1408,19 @@ P10 --> P11
 
 目标：
 
-- 用 migration runner 管理 TradingAgents 和 router schema，不再只依赖一次性建表字符串。
-- 提供 CLI 初始化、状态查询和 readiness 检查，方便生产环境上线前验证。
+- 复用 `vnpy_postgresql` 的 Peewee Model + `create_tables()` 表初始化模式，管理 TradingAgents 和 router 扩展表。
+- 提供 CLI 初始化、表存在状态查询和 readiness 检查，方便生产环境上线前验证。
 
 交付：
 
-- `MigrationRunner`：记录 `schema_migration`，只执行未应用迁移。
-- `initialize_postgres_schema()`：改为统一 migration runner。
+- `TradingAgents/router Peewee Models`：定义扩展表模型，表名保持现有快照、事件和 AI 表命名。
+- `initialize_postgres_schema()`：连接 vn.py `database.*` 指向的 PostgreSQL 后调用 `create_tables(..., safe=True)`。
 - `vnpy-tradingagents-schema`：支持 `schema init`、`schema status` 和 `readiness`。
-- `ProductionReadinessChecker`：检查 PostgreSQL DSN、`psycopg`、API key、provider 配置和本地文件路径。
+- `ProductionReadinessChecker`：检查 vn.py PostgreSQL 配置、Peewee/PostgreSQL 依赖、API key 环境变量名、provider 配置和本地文件路径。
 
 验收：
 
-- 重复执行 schema init 不会重复建表或静默失败。
+- 重复执行 schema init 依赖 Peewee `safe=True`，不会重复建表或静默失败。
 - 无 DSN、缺 API key、缺 provider 依赖时给出结构化错误。
 - readiness 可输出 JSON，方便部署脚本和监控系统消费。
 
@@ -1434,6 +1435,7 @@ P10 --> P11
 交付：
 
 - `TradingAgentsRunnerAdapter`：兼容 `run()`、`invoke()`、callable；裸 `TradingAgentsGraph.propagate(symbol, date)` 默认返回 `unsupported_runner_shape`。
+- `vnpy_tradingagents.tradingagents_factory:build`：默认 context-only factory，替换上游 TradingAgents 工具为本地 context 工具。
 - `output_validation`：校验 rating、action、confidence，异常输出统一降级。
 - checkpoint 隔离：按 `trade_date/vt_symbol/run_id` 生成目录。
 - `TradingAgentsRunnerSmoke`：从 PostgreSQL 快照构造 request，调用 Worker，成功后写入报告、评级和交易意图。
@@ -1536,9 +1538,9 @@ P10 --> P11
 
 ## 11. 推荐近期行动
 
-1. 在真实 PostgreSQL 上运行 `vnpy-tradingagents-schema schema init --dsn ...`，确认 `schema_migration` 和业务表创建成功。
+1. 在 vn.py 全局配置中设置 `database.name=postgresql` 和对应 `database.*` 字段后，运行 `vnpy-tradingagents-schema schema init`，确认扩展表通过 Peewee `create_tables()` 创建成功。
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
-3. 在独立 Worker 环境安装 TradingAgents，并用替换后的 A 股 context-only native runner 跑 `TradingAgentsRunnerSmoke`。
+3. 在独立 Worker 环境安装 TradingAgents，并设置 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build` 后跑 `TradingAgentsRunnerSmoke`。
 4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；QMT/XT 优先通过 vn.py 既有 datafeed/gateway 插件接入。
 5. 用真实 PostgreSQL 跑 `TradingAgentsRunnerSmoke` 和 `TradingAgentsPaperSmoke`，检查 `decision_audit`、`replay_run_status`、feedback 和 `ops_heartbeat`。
 6. 开通 QMT/XT 后，验证 vn.py 插件包装层、Gateway 行情订阅和本 fork provider trace 的协同关系。

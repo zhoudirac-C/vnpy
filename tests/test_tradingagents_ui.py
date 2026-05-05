@@ -1,4 +1,6 @@
+import ast
 from importlib import import_module
+from pathlib import Path
 
 from vnpy.event import EventEngine
 from vnpy_tradingagents.engine import TradingAgentsEngine
@@ -14,6 +16,30 @@ def test_tradingagents_app_metadata_imports_ui_widget():
     ui_module = import_module(TradingAgentsApp.app_module + ".ui")
 
     assert hasattr(ui_module, TradingAgentsApp.widget_name)
+
+
+def test_veighna_trader_example_registers_tradingagents_app():
+    """The source startup example should expose TradingAgents in the vn.py UI."""
+    tree = ast.parse(Path("examples/veighna_trader/run.py").read_text(encoding="utf-8"))
+
+    imports_app = any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "vnpy_tradingagents"
+        and any(alias.name == "TradingAgentsApp" for alias in node.names)
+        for node in ast.walk(tree)
+    )
+    registers_app = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add_app"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "TradingAgentsApp"
+        for node in ast.walk(tree)
+    )
+
+    assert imports_app
+    assert registers_app
 
 
 def test_ui_control_state_disables_runtime():

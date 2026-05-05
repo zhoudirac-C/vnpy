@@ -14,6 +14,7 @@ from .providers.qmt import QmtProvider
 from .providers.tushare import TuShareProvider
 from .providers.vnpy_datafeed import VnpyDatafeedProvider
 from .providers.xt import XtProvider
+from .peewee import connect_vnpy_postgres_adapter
 from .router import DataProviderRouter, SnapshotReader, SnapshotStorage
 from .storage import PostgresSnapshotReader, PostgresSnapshotStorage
 
@@ -82,11 +83,8 @@ def _build_providers() -> list[BaseProvider]:
 
 def _build_snapshot_cache() -> tuple[SnapshotReader | None, SnapshotStorage | None]:
     """
-    Build PostgreSQL snapshot cache when explicitly enabled.
+    Build PostgreSQL snapshot cache when vn.py database.* selects PostgreSQL.
     """
-    if not _to_bool(SETTINGS.get("router.postgres_cache.enabled", False)):
-        return None, None
-
     connection: Any | None = _connect_postgres()
     if connection is None:
         return None, None
@@ -201,44 +199,9 @@ def _optional_str(value: Any) -> str | None:
 
 def _connect_postgres() -> Any | None:
     """
-    Create a psycopg connection from router.postgres.dsn or vn.py database settings.
+    Create a Peewee-backed connection adapter from vn.py database settings.
     """
     try:
-        psycopg = __import__("psycopg")
-        rows = __import__("psycopg.rows", fromlist=["dict_row"])
-    except ModuleNotFoundError:
+        return connect_vnpy_postgres_adapter(SETTINGS)
+    except RuntimeError:
         return None
-
-    dsn: str = str(SETTINGS.get("router.postgres.dsn", "")).strip()
-    if dsn:
-        return psycopg.connect(dsn, row_factory=rows.dict_row)
-
-    database_name: str = str(SETTINGS.get("database.name", "")).strip().lower()
-    if database_name not in {"postgres", "postgresql"}:
-        return None
-
-    params: dict[str, Any] = {
-        "dbname": SETTINGS.get("database.database"),
-        "host": SETTINGS.get("database.host"),
-        "port": SETTINGS.get("database.port"),
-        "user": SETTINGS.get("database.user"),
-        "password": SETTINGS.get("database.password"),
-    }
-    clean_params: dict[str, Any] = {
-        key: value for key, value in params.items() if value not in {"", 0, None}
-    }
-    if not clean_params.get("dbname"):
-        return None
-
-    return psycopg.connect(**clean_params, row_factory=rows.dict_row)
-
-
-def _to_bool(value: Any) -> bool:
-    """
-    Parse bool settings edited through vn.py global configuration.
-    """
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)

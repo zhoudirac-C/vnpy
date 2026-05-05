@@ -130,7 +130,7 @@ PostgreSQL 不再承担所有职责：
 
 | extra | 用途 |
 | --- | --- |
-| `router-postgres` | 安装 `psycopg`，用于 PostgreSQL snapshot、AI 表和 readiness |
+| `router-postgres` | 安装 PostgreSQL 扩展依赖，扩展表初始化复用 Peewee Model + `create_tables()` |
 | `akshare` | 安装 AKShare，适合无账号阶段拉公开数据 |
 | `tushare` | 安装 TuShare，适合有 token 后补齐行情和基础数据 |
 | `alpha` | 安装 `vnpy.alpha` 因子研究依赖，用于 Alpha101/Alpha158、因子分析和模型研究；Polars 使用 `rtcompat` 运行时以避开部分 macOS/Python 组合的 CPU 指令兼容问题 |
@@ -212,7 +212,7 @@ Strategy -> Risk : 转换为交易计划前先风控
 
 | 优先级 | 模块 | 调整 |
 | --- | --- | --- |
-| P0 | `vnpy_router.datafeed` | PostgreSQL 连接使用 `psycopg.rows.dict_row`；真实 Postgres 集成测试必须通过 |
+| P0 | `vnpy_router.datafeed` | PostgreSQL 配置只读取 vn.py `database.*`；扩展表初始化复用 Peewee Model + `create_tables()`；真实 Postgres 集成测试必须通过 |
 | P0 | `vnpy_router.providers.qmt/xt` | 废弃直接 provider，替换为 vn.py datafeed wrapper 或标为 blocked |
 | P0 | `vnpy_tradingagents.real_runner` | 移除生产路径中的裸 `propagate(symbol, date)`；只允许 context-only runner |
 | P0 | `vnpy_tradingagents.worker_process` | 增加可配置真实 runner 加载入口，而不是默认 `runner_not_configured` |
@@ -265,7 +265,7 @@ Strategy -> Risk : 转换为交易计划前先风控
 完成路线调整后，至少要满足：
 
 1. `datafeed.name=router` 可通过 vn.py `get_datafeed()` 查询历史 K 线。
-2. PostgreSQL 使用真实 psycopg 连接和 dict row，schema init/status/read/write 全部通过。
+2. PostgreSQL 复用 vn.py `database.*`，扩展表通过 Peewee Model + `create_tables()` 初始化，schema status/read/write 全部通过。
 3. 关闭 TradingAgents 后，vn.py 数据、策略、风控、下单、手工交易不受影响。
 4. TradingAgents Worker 无法拿到 Gateway、MainEngine、账号、密钥或外部 provider handle。
 5. AKShare 不再写死；切换 provider 不需要改策略或 TradingAgents prompt。

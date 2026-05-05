@@ -230,19 +230,21 @@ def test_readiness_checker_reports_production_provider_diagnostics(tmp_path):
     assert report.by_name("social_provider").status == ReadinessStatus.WARNING
 
 
-def test_p9_event_source_quality_migration_is_registered():
-    """Default migrations should upgrade existing event tables with P9 source-quality columns."""
-    from vnpy_tradingagents.schema_init import DEFAULT_MIGRATIONS
+def test_p9_event_source_quality_models_are_registered():
+    """Peewee extension models should include P9 event source quality fields."""
+    from peewee import SqliteDatabase
 
-    migrations = {migration.version: migration.sql for migration in DEFAULT_MIGRATIONS}
+    from vnpy_router.extension_models import build_router_extension_models
 
-    assert "0002_event_source_quality" in migrations
-    assert "ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS source_quality TEXT" in migrations[
-        "0002_event_source_quality"
-    ]
-    assert "CREATE TABLE IF NOT EXISTS event_quality_report" in migrations[
-        "0002_event_source_quality"
-    ]
+    models = {
+        model._meta.table_name: model
+        for model in build_router_extension_models(SqliteDatabase(":memory:"))
+    }
+
+    assert "event_quality_report" in models
+    assert "source_quality" in models["news_raw"]._meta.fields
+    assert "trust_score" in models["news_event"]._meta.fields
+    assert "review_status" in models["social_post_raw"]._meta.fields
 
 
 def _history_request() -> HistoryRequest:

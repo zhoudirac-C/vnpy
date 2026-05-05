@@ -61,7 +61,6 @@ from .paper_smoke import PaperSmokeConfig, PaperSmokeResult, TradingAgentsPaperS
 from .audit_export import AuditExportRecord, export_audit_csv, export_audit_jsonl
 from .live_gate import LiveGate, LiveGateConfig, LiveGateMetrics, LiveGateResult
 from .metrics import MetricsCollector, MetricsSnapshot
-from .migrations import Migration, MigrationApplyResult, MigrationRunner
 from .ops_storage import OpsHeartbeat, PostgresOpsStorage
 from .output_validation import validate_worker_response
 from .readiness import (
@@ -73,7 +72,7 @@ from .readiness import (
 from .native_context_runner import AShareContextOnlyRunner, ContextRunnerError
 from .real_runner import TradingAgentsRunnerAdapter
 from .runner_smoke import RunnerSmokeConfig, RunnerSmokeResult, TradingAgentsRunnerSmoke
-from .schema_init import initialize_postgres_schema
+from .schema_init import SchemaInitResult, SchemaStatus, initialize_postgres_schema, schema_status
 from .secrets_policy import (
     SecretLeakError,
     assert_context_has_no_secrets,
@@ -141,11 +140,8 @@ __all__ = [
     "LiveGateMetrics",
     "LiveGateResult",
     "MarketDataToolkit",
-    "Migration",
     "MetricsCollector",
     "MetricsSnapshot",
-    "MigrationApplyResult",
-    "MigrationRunner",
     "OrderBridge",
     "OrderBridgeResult",
     "OrderIntent",
@@ -199,6 +195,8 @@ __all__ = [
     "RunnerSmokeConfig",
     "RunnerSmokeResult",
     "SecretLeakError",
+    "SchemaInitResult",
+    "SchemaStatus",
     "SnapshotQuery",
     "SnapshotSourcePolicy",
     "SnapshotSourcePolicyResult",
@@ -232,5 +230,6 @@ __all__ = [
     "initialize_postgres_schema",
     "mask_secret",
     "sanitize_mapping",
+    "schema_status",
     "validate_worker_response",
 ]

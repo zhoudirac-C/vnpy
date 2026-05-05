@@ -11,7 +11,7 @@
 | `Blocked` | 需要账号、数据源、外部权限或产品决策 |
 | `Deferred` | 明确推迟，不影响当前阶段验收 |
 
-P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 smoke 能力完成。P12-P15 是按 vn.py 优先复用路线进行的生产化纠偏阶段，完成后才允许把对应能力描述为生产候选。
+P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 smoke 能力完成。P12-P15 是按 vn.py 优先复用路线进行的生产化纠偏阶段，完成后才允许把对应能力描述为生产候选。P16 开始进入生产闭环验证，必须用落档结果区分“代码级闭环通过”和“真实生产环境已就绪”。P17 专门清理本 fork 中绕开 vn.py 原生配置体系的重复 PostgreSQL 配置入口，并把扩展表初始化纠正为复用 `vnpy_postgresql` 的 Peewee Model + `create_tables()` 模式。
 
 完成任务时需要同步更新：
 
@@ -38,7 +38,7 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 - [x] 事件/新闻/公告/情绪快照管线与降级策略。
 - [x] 股票池批量长期任务、长期调度器、组合约束和绩效反馈。
 - [x] 回测桥接、PaperAccount 仿真桥接、灰度状态持久化、审计导出、schema 初始化和 live gate。
-- [x] 生产级 PostgreSQL migration runner、schema CLI 和 readiness checker。
+- [x] 早期 PostgreSQL schema CLI 和 readiness checker 骨架；P17 将把自建 migration runner 纠正为 Peewee Model + `create_tables()`。
 - [x] 真实 TradingAgents runner 边界、结构化输出校验、checkpoint 隔离和 runner smoke。
 - [x] 生产 provider 能力矩阵、TuShare/QMT/XT 边界和社媒事件源生产规则。
 - [x] vn.py 回测适配、PaperAccount 反馈、UI 手工接管和 paper smoke。
@@ -46,7 +46,7 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 
 ## 生产化缺口
 
-- [x] 真实 PostgreSQL 连接需要统一使用 dict row，并用真实 PostgreSQL 验证 schema、migration 和 snapshot 读写。
+- [x] PostgreSQL 扩展表初始化需要复用 vn.py `database.*` 和 Peewee `create_tables()`，删除独立 DSN 和自建 migration runner 生产路径。
 - [x] QMT/XT 不再直接实现 provider，需优先复用 vn.py datafeed/gateway 插件。
 - [x] TradingAgents 需要真实 context-only runner，不能裸调默认美股数据工具。
 - [x] 新闻、公告、社媒、情绪需要完整 normalized storage、reader 和 Toolkit 窗口上下文。
@@ -73,10 +73,13 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 | P13 | [13-tradingagents-context-worker.md](13-tradingagents-context-worker.md) | 接入真实 context-only TradingAgents Worker，禁止默认外部数据工具 |
 | P14 | [14-event-toolkit-production.md](14-event-toolkit-production.md) | 补事件管线、情绪快照和 MarketDataToolkit 生产上下文 |
 | P15 | [15-vnpy-runtime-production.md](15-vnpy-runtime-production.md) | 接入 vn.py 真实运行链路、回测/Paper、状态持久化和完整 readiness |
+| P16 | [16-production-closed-loop-validation.md](16-production-closed-loop-validation.md) | 生成生产闭环验证脚本、流程文档和当前验证结果落档 |
+| P17 | [17-vnpy-native-config-cleanup.md](17-vnpy-native-config-cleanup.md) | 删除重复 PostgreSQL 配置入口，统一复用 vn.py `database.*` 和 Peewee `create_tables()`，补 LLM 环境变量说明 |
+| P18 | [18-context-worker-ui-key.md](18-context-worker-ui-key.md) | 内置 context-only TradingAgents factory，并在 UI 中支持真实 LLM key 安全输入 |
 
 ## 下一步推荐
 
-1. 先完成 P12：修真实 PostgreSQL dict row、移除 QMT/XT direct provider 路线、把多余占位代码清理或标记为 smoke-only。
-2. 再完成 P13：TradingAgents 只能走 context-only runner，不能让默认外部数据工具进入生产路径。
-3. 然后完成 P14：把新闻、公告、社媒、情绪和数据质量真正接到 `MarketDataToolkit`。
-4. 最后完成 P15：接 vn.py 真实 EventEngine、Backtesting、Paper、UI 状态持久化和完整 readiness，再考虑小资金演练。
+1. 配置 vn.py 原生 PostgreSQL 后，运行 `vnpy-tradingagents-schema schema init/status` 验证扩展表。
+2. 独立 Worker 环境安装上游 TradingAgents 后，设置 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`。
+3. 在 vn.py UI 中填写 LLM key 或通过系统 Secret 注入，然后运行 schema init/status 和 P16 production profile。
+4. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。

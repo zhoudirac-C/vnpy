@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Protocol, Any
 
+from vnpy.trader.setting import SETTINGS
+
 from .config import TradingAgentsWorkerConfig
 from .real_runner import TradingAgentsRunnerAdapter
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
@@ -161,7 +163,10 @@ def load_configured_worker() -> Worker | None:
     The factory value must be ``module:function`` and return a runner object
     that accepts context input through run/invoke/callable.
     """
-    factory_path: str = os.environ.get("TRADINGAGENTS_WORKER_FACTORY", "").strip()
+    factory_path: str = (
+        os.environ.get("TRADINGAGENTS_WORKER_FACTORY", "").strip()
+        or str(SETTINGS.get("tradingagents.worker_factory", "")).strip()
+    )
     if not factory_path:
         return None
 

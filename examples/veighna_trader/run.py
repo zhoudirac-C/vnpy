@@ -34,6 +34,7 @@ from vnpy_datamanager import DataManagerApp
 # from vnpy_riskmanager import RiskManagerApp
 # from vnpy_webtrader import WebTraderApp
 # from vnpy_portfoliomanager import PortfolioManagerApp
+from vnpy_tradingagents import TradingAgentsApp
 
 
 def main():
@@ -76,6 +77,7 @@ def main():
     # main_engine.add_app(RiskManagerApp)
     # main_engine.add_app(WebTraderApp)
     # main_engine.add_app(PortfolioManagerApp)
+    main_engine.add_app(TradingAgentsApp)
 
     main_window = MainWindow(main_engine, event_engine)
     main_window.showMaximized()

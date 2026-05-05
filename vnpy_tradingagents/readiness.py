@@ -1,3 +1,4 @@
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -6,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from vnpy.trader.setting import SETTINGS
+from vnpy_router.peewee import missing_vnpy_postgres_fields
+
+from .llm_secret import resolve_llm_api_key
 
 
 class ReadinessStatus(Enum):
@@ -77,7 +81,8 @@ class ProductionReadinessChecker:
     ) -> None:
         """"""
         self.settings: Mapping[str, Any] = settings or SETTINGS
-        self.environ: Mapping[str, str] = environ or {}
+        self._environ_supplied: bool = environ is not None
+        self.environ: Mapping[str, str] = environ if environ is not None else os.environ
         self.module_available: ModuleAvailable = module_available or _module_available
         self.path_exists: PathExists = path_exists or _path_exists
 
@@ -86,27 +91,37 @@ class ProductionReadinessChecker:
         Run all production readiness checks.
         """
         items: list[ReadinessItem] = []
-        postgres_enabled: bool = _to_bool(self.settings.get("router.postgres_cache.enabled", False))
-        dsn: str = _postgres_dsn(self.settings)
+        missing_postgres_fields: list[str] = missing_vnpy_postgres_fields(self.settings)
 
-        if postgres_enabled and not dsn:
-            items.append(_failed("postgres_dsn", "router.postgres_cache.enabled is true but no PostgreSQL DSN is configured"))
-        elif postgres_enabled:
-            items.append(_ready("postgres_dsn", "PostgreSQL DSN is configured"))
+        if missing_postgres_fields:
+            items.append(
+                _failed(
+                    "vnpy_postgres_config",
+                    "vn.py PostgreSQL settings are incomplete: "
+                    + ", ".join(missing_postgres_fields),
+                )
+            )
         else:
-            items.append(_warning("postgres_dsn", "PostgreSQL cache is disabled; production snapshots will not persist through router cache"))
+            items.append(
+                _ready(
+                    "vnpy_postgres_config",
+                    "vn.py database.* selects the shared PostgreSQL database",
+                )
+            )
 
-        if postgres_enabled and not self.module_available("psycopg"):
-            items.append(_failed("psycopg", "psycopg is required for PostgreSQL connections"))
-        elif postgres_enabled and not self.module_available("psycopg.rows"):
-            items.append(_failed("psycopg", "psycopg.rows.dict_row is required for PostgreSQL row mapping"))
+        if not self.module_available("peewee"):
+            items.append(_failed("peewee", "peewee is required for PostgreSQL extension tables"))
         else:
-            items.append(_ready("psycopg", "psycopg dependency is available or PostgreSQL cache is disabled"))
+            items.append(_ready("peewee", "peewee dependency is available"))
 
         api_key_env_var: str = str(
             self.settings.get("tradingagents.api_key_env_var", "OPENAI_API_KEY")
         )
-        if not self.environ.get(api_key_env_var, "").strip():
+        api_key = resolve_llm_api_key(
+            api_key_env_var,
+            environ=self.environ if self._environ_supplied else None,
+        )
+        if not api_key:
             items.append(_failed("tradingagents_api_key", f"missing API key environment variable: {api_key_env_var}"))
         else:
             items.append(_ready("tradingagents_api_key", "TradingAgents API key environment variable is present"))
@@ -208,26 +223,6 @@ class ProductionReadinessChecker:
                 items.append(_warning(f"{name}_provider", f"provider has no production readiness checker: {name}"))
 
         return items
-
-
-def _postgres_dsn(settings: Mapping[str, Any]) -> str:
-    """
-    Resolve PostgreSQL DSN from router or vn.py database settings.
-    """
-    dsn: str = str(settings.get("router.postgres.dsn", "")).strip()
-    if dsn:
-        return dsn
-
-    database_name: str = str(settings.get("database.name", "")).strip().lower()
-    if database_name not in {"postgres", "postgresql"}:
-        return ""
-
-    database: str = str(settings.get("database.database", "")).strip()
-    host: str = str(settings.get("database.host", "")).strip()
-    user: str = str(settings.get("database.user", "")).strip()
-    if database and host and user:
-        return f"postgresql://{user}@{host}/{database}"
-    return ""
 
 
 def _parse_provider_specs(raw: Any) -> list[tuple[str, str]]:

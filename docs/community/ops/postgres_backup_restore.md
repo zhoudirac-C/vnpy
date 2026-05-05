@@ -10,7 +10,7 @@
 - `news_raw`、`news_event`、`social_post_raw`、`sentiment_snapshot`、`event_quality_report`。
 - `agent_run`、`agent_report`、`rating_signal`、`trade_intent`、`intraday_advice`。
 - `decision_audit`、`agent_trade_feedback`、`agent_performance_feedback`。
-- `replay_run_status`、`ops_heartbeat`、`schema_migration`。
+- `replay_run_status`、`ops_heartbeat`。
 
 ## 备份命令
 
@@ -49,7 +49,7 @@ pg_restore \
 ## 恢复验收
 
 ```bash
-psql quant_restore_check -c "select count(*) from schema_migration;"
+vnpy-tradingagents-schema schema status
 psql quant_restore_check -c "select count(*) from decision_audit;"
 psql quant_restore_check -c "select count(*) from replay_run_status;"
 psql quant_restore_check -c "select count(*) from ops_heartbeat;"
@@ -57,7 +57,7 @@ psql quant_restore_check -c "select count(*) from ops_heartbeat;"
 
 验收标准：
 
-- `schema_migration` 至少包含当前发布要求的 migration。
+- `vnpy-tradingagents-schema schema status` 显示当前发布要求的扩展表均为 ready。
 - 最近一个回测或 paper smoke 的 `decision_audit` 可查。
 - 最近一个 `replay_run_status` 可查并能被 UI 状态面板读取。
 - `ops_heartbeat` 能显示 worker、provider 或 scheduler 的最近状态。

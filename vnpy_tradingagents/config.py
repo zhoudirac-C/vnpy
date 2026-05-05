@@ -1,4 +1,3 @@
-import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -6,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from vnpy.trader.setting import SETTINGS
+
+from .llm_secret import LlmApiKeyStore, resolve_llm_api_key
 
 
 class WorkerConfigError(RuntimeError):
@@ -59,12 +60,19 @@ class TradingAgentsWorkerConfig:
             ),
         )
 
-    def resolve_api_key(self, environ: Mapping[str, str] | None = None) -> str:
+    def resolve_api_key(
+        self,
+        environ: Mapping[str, str] | None = None,
+        secret_store: LlmApiKeyStore | None = None,
+    ) -> str:
         """
         Resolve the API key from the configured environment variable.
         """
-        source: Mapping[str, str] = environ or os.environ
-        api_key: str = source.get(self.api_key_env_var, "").strip()
+        api_key: str = resolve_llm_api_key(
+            self.api_key_env_var,
+            environ=environ,
+            secret_store=secret_store,
+        )
         if not api_key:
             raise WorkerConfigError(
                 f"Missing API key environment variable: {self.api_key_env_var}"

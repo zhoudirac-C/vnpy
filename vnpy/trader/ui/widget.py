@@ -44,6 +44,16 @@ COLOR_BID = QtGui.QColor(255, 174, 201)
 COLOR_ASK = QtGui.QColor(160, 255, 160)
 COLOR_BLACK = QtGui.QColor("black")
 
+SETTING_HELP_TEXT: dict[str, str] = {
+    "tradingagents.api_key_env_var": "环境变量名，例如 OPENAI_API_KEY；真实 API key 请填下面的安全输入框。",
+    "tradingagents.worker_factory": "TradingAgents Worker 工厂，默认等同于环境变量 TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build。",
+    "tradingagents.llm_provider": "LLM provider，例如 openai、anthropic、dashscope、deepseek。",
+    "tradingagents.model": "TradingAgents Worker 使用的模型名；未配置 API key 时不会调用大模型。",
+}
+
+TRADINGAGENTS_API_KEY_FIELD: str = "tradingagents.api_key"
+SECRET_GLOBAL_SETTING_FIELDS: frozenset[str] = frozenset({TRADINGAGENTS_API_KEY_FIELD})
+
 
 class BaseCell(QtWidgets.QTableWidgetItem):
     """
@@ -1226,6 +1236,8 @@ class GlobalDialog(QtWidgets.QDialog):
         super().__init__()
 
         self.widgets: dict[str, tuple[QtWidgets.QLineEdit, type]] = {}
+        self.secret_widgets: dict[str, QtWidgets.QLineEdit] = {}
+        self.persist_api_key_checkbox: QtWidgets.QCheckBox | None = None
 
         self.init_ui()
 
@@ -1245,7 +1257,32 @@ class GlobalDialog(QtWidgets.QDialog):
             widget: QtWidgets.QLineEdit = QtWidgets.QLineEdit(str(field_value))
 
             form.addRow(f"{field_name} <{field_type.__name__}>", widget)
+            help_text: str = SETTING_HELP_TEXT.get(field_name, "")
+            if help_text:
+                help_label: QtWidgets.QLabel = QtWidgets.QLabel(help_text)
+                help_label.setWordWrap(True)
+                help_label.setStyleSheet("color: gray;")
+                form.addRow("", help_label)
             self.widgets[field_name] = (widget, field_type)
+
+            if field_name == "tradingagents.api_key_env_var":
+                secret_widget: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
+                secret_widget.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+                secret_widget.setPlaceholderText("可选：填写真实 LLM API key，不会保存到 vt_setting.json")
+                form.addRow(f"{TRADINGAGENTS_API_KEY_FIELD} <secret>", secret_widget)
+
+                secret_help = QtWidgets.QLabel(
+                    "真实 key 只写入当前进程环境变量；勾选下方选项且安装 keyring 时，会保存到系统钥匙串。"
+                )
+                secret_help.setWordWrap(True)
+                secret_help.setStyleSheet("color: gray;")
+                form.addRow("", secret_help)
+
+                self.persist_api_key_checkbox = QtWidgets.QCheckBox(
+                    "保存到系统钥匙串（可选 keyring）"
+                )
+                form.addRow("", self.persist_api_key_checkbox)
+                self.secret_widgets[TRADINGAGENTS_API_KEY_FIELD] = secret_widget
 
         button: QtWidgets.QPushButton = QtWidgets.QPushButton(_("确定"))
         button.clicked.connect(self.update_setting)
@@ -1266,27 +1303,85 @@ class GlobalDialog(QtWidgets.QDialog):
         """
         Get setting value from line edits and update global setting file.
         """
-        settings: dict = {}
+        raw_values: dict[str, str] = {}
+        field_types: dict[str, type] = {}
         for field_name, tp in self.widgets.items():
             widget, field_type = tp
-            value_text: str = widget.text()
+            raw_values[field_name] = widget.text()
+            field_types[field_name] = field_type
 
-            if field_type is bool:
-                if value_text == "True":
-                    field_value: bool = True
-                else:
-                    field_value = False
-            else:
-                field_value = field_type(value_text)
+        for field_name, widget in self.secret_widgets.items():
+            raw_values[field_name] = widget.text()
+            field_types[field_name] = str
 
-            settings[field_name] = field_value
+        settings, secrets = coerce_global_setting_values(raw_values, field_types)
+        persist_secret = (
+            self.persist_api_key_checkbox.isChecked()
+            if self.persist_api_key_checkbox is not None
+            else False
+        )
+        secret_result = save_tradingagents_api_key_from_ui(
+            settings,
+            secrets,
+            persist=persist_secret,
+        )
+
+        message = _("全局配置的修改需要重启后才会生效！")
+        if secret_result is not None:
+            message = f"{message}\n{secret_result.message}"
 
         QtWidgets.QMessageBox.information(
             self,
             _("注意"),
-            _("全局配置的修改需要重启后才会生效！"),
+            message,
             QtWidgets.QMessageBox.StandardButton.Ok
         )
 
         save_json(SETTING_FILENAME, settings)
         self.accept()
+
+
+def coerce_global_setting_values(
+    raw_values: dict[str, str],
+    field_types: dict[str, type],
+) -> tuple[dict, dict[str, str]]:
+    """
+    Convert GlobalDialog text values while excluding plaintext secret fields.
+    """
+    settings: dict = {}
+    secrets: dict[str, str] = {}
+
+    for field_name, value_text in raw_values.items():
+        field_type = field_types[field_name]
+        if field_name in SECRET_GLOBAL_SETTING_FIELDS:
+            if value_text.strip():
+                secrets[field_name] = value_text
+            continue
+
+        if field_type is bool:
+            field_value = value_text == "True"
+        else:
+            field_value = field_type(value_text)
+
+        settings[field_name] = field_value
+
+    return settings, secrets
+
+
+def save_tradingagents_api_key_from_ui(
+    settings: dict,
+    secrets: dict[str, str],
+    *,
+    persist: bool,
+):
+    """
+    Save UI-entered TradingAgents API key outside vt_setting.json.
+    """
+    api_key = secrets.get(TRADINGAGENTS_API_KEY_FIELD, "").strip()
+    if not api_key:
+        return None
+
+    from vnpy_tradingagents.llm_secret import LlmApiKeyStore
+
+    env_var = str(settings.get("tradingagents.api_key_env_var", "OPENAI_API_KEY"))
+    return LlmApiKeyStore().set_api_key(env_var, api_key, persist=persist)

@@ -4,10 +4,22 @@
 
 ## 上线前检查
 
-1. 运行 schema migration：
+0. 运行生产闭环验证，结果必须落档：
 
 ```bash
-vnpy-tradingagents-schema schema init --dsn "$QUANT_DATABASE_URL"
+uv run python -m tools.production.closed_loop_validation \
+  --profile production \
+  --repo-root . \
+  --output docs/community/ops/validation_results/$(date +%F)-production-closed-loop-production.md \
+  --json-output docs/community/ops/validation_results/$(date +%F)-production-closed-loop-production.json
+```
+
+`production_ready` 必须为 `true`，否则不能进入小资金实盘灰度。
+
+1. 初始化扩展表：
+
+```bash
+vnpy-tradingagents-schema schema init
 ```
 
 2. 运行 readiness：
@@ -18,9 +30,10 @@ vnpy-tradingagents-schema readiness --json
 
 readiness 必须覆盖并通过以下关键项：
 
-- PostgreSQL DSN、`psycopg.rows.dict_row`、schema migration 状态。
+- vn.py `database.*` PostgreSQL 配置、Peewee 扩展表存在状态。
 - `datafeed.name=router` 和 provider 配置。
-- TradingAgents context-only worker factory，不能使用裸 `propagate(symbol, date)`。
+- TradingAgents context-only worker factory，推荐 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`，不能使用裸 `propagate(symbol, date)`。
+- LLM API key 通过 vn.py UI 安全输入框、系统环境变量或 Secret Manager 注入，不能保存到 `vt_setting.json`。
 - API key/token/password 不进入 context、日志或 DB payload。
 - event/news/sentiment snapshot 缺失时必须 degraded，不得阻塞手工交易。
 

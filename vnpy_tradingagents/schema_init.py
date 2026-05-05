@@ -1,97 +1,97 @@
-from typing import Any, Protocol
-
-from vnpy_router.event_storage import EVENT_SCHEMA, EVENT_SOURCE_QUALITY_MIGRATION_SQL
-from vnpy_router.storage import SNAPSHOT_SCHEMA
-
-from .monitoring import REPLAY_RUN_STATUS_SCHEMA
-from .migrations import Migration, MigrationApplyResult, MigrationRunner
-from .ops_storage import OPS_SCHEMA
-from .performance_feedback import FEEDBACK_SCHEMA
-from .risk import DECISION_AUDIT_SCHEMA
-from .storage import AI_RUNTIME_STATE_MIGRATION_SQL, TRADINGAGENTS_SCHEMA
-
-
-SCHEMA_VERSION_SQL: str = """
-CREATE TABLE IF NOT EXISTS schema_version (
-    namespace TEXT PRIMARY KEY,
-    version TEXT NOT NULL,
-    applied_at TIMESTAMPTZ DEFAULT now()
-);
-
-INSERT INTO schema_version (
-    namespace,
-    version
-) VALUES (
-    'tradingagents',
-    'p6'
-)
-ON CONFLICT (namespace)
-DO UPDATE SET
-    version = EXCLUDED.version,
-    applied_at = now();
+"""
+Peewee-based initialization for TradingAgents/router extension tables.
 """
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
 
-class Cursor(Protocol):
-    """
-    Minimal DB-API cursor protocol.
-    """
+from vnpy.trader.setting import SETTINGS
+from vnpy_router.extension_models import (
+    ROUTER_EXTENSION_TABLE_NAMES,
+    build_router_extension_models,
+)
+from vnpy_router.peewee import create_vnpy_postgres_database
 
-    def execute(self, sql: str, params: dict[str, Any] | None = None) -> None:
-        pass
-
-    def close(self) -> None:
-        pass
-
-
-class Connection(Protocol):
-    """
-    Minimal DB-API connection protocol.
-    """
-
-    def cursor(self) -> Cursor:
-        pass
-
-    def commit(self) -> None:
-        pass
-
-
-DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
-    Migration(
-        version="0001_tradingagents_schema",
-        description="Create vnpy_router and TradingAgents production tables",
-        sql="\n".join(
-            [
-                SCHEMA_VERSION_SQL,
-                SNAPSHOT_SCHEMA,
-                EVENT_SCHEMA,
-                TRADINGAGENTS_SCHEMA,
-                DECISION_AUDIT_SCHEMA,
-                FEEDBACK_SCHEMA,
-                REPLAY_RUN_STATUS_SCHEMA,
-            ]
-        ),
-    ),
-    Migration(
-        version="0002_event_source_quality",
-        description="Add production event source quality columns",
-        sql=EVENT_SOURCE_QUALITY_MIGRATION_SQL,
-    ),
-    Migration(
-        version="0003_ops_heartbeat",
-        description="Create operational heartbeat tables",
-        sql=OPS_SCHEMA,
-    ),
-    Migration(
-        version="0004_ai_runtime_state",
-        description="Create TradingAgents runtime state table",
-        sql=AI_RUNTIME_STATE_MIGRATION_SQL,
-    ),
+from .models import (
+    TRADINGAGENTS_EXTENSION_TABLE_NAMES,
+    build_tradingagents_extension_models,
 )
 
 
-def initialize_postgres_schema(connection: Connection) -> MigrationApplyResult:
+EXTENSION_TABLE_NAMES: tuple[str, ...] = (
+    ROUTER_EXTENSION_TABLE_NAMES + TRADINGAGENTS_EXTENSION_TABLE_NAMES
+)
+
+
+@dataclass(frozen=True)
+class SchemaInitResult:
     """
-    Idempotently create all TradingAgents and router PostgreSQL tables.
+    Result of idempotent Peewee create_tables initialization.
     """
-    return MigrationRunner(connection, DEFAULT_MIGRATIONS).apply()
+
+    created_or_existing_tables: list[str]
+
+
+@dataclass(frozen=True)
+class SchemaStatus:
+    """
+    Extension table presence status.
+    """
+
+    tables: dict[str, str]
+
+
+def initialize_postgres_schema(
+    database: Any | None = None,
+    settings: Mapping[str, Any] | None = None,
+) -> SchemaInitResult:
+    """
+    Idempotently create all TradingAgents and router extension tables.
+    """
+    db = database or create_vnpy_postgres_database(settings or SETTINGS)
+    _connect(db)
+    models: list[type] = _build_extension_models(db)
+    db.create_tables(models, safe=True)
+    return SchemaInitResult(created_or_existing_tables=_table_names(models))
+
+
+def schema_status(
+    database: Any | None = None,
+    settings: Mapping[str, Any] | None = None,
+) -> SchemaStatus:
+    """
+    Return ready/missing status for every extension table.
+    """
+    db = database or create_vnpy_postgres_database(settings or SETTINGS)
+    _connect(db)
+    existing_tables: set[str] = set(db.get_tables())
+    return SchemaStatus(
+        tables={
+            table_name: "ready" if table_name in existing_tables else "missing"
+            for table_name in EXTENSION_TABLE_NAMES
+        }
+    )
+
+
+def _build_extension_models(database: Any) -> list[type]:
+    """
+    Build all router and TradingAgents extension models for one database.
+    """
+    return build_router_extension_models(database) + build_tradingagents_extension_models(database)
+
+
+def _connect(database: Any) -> None:
+    """
+    Connect a Peewee database or compatible fake.
+    """
+    connect = getattr(database, "connect", None)
+    if connect is not None:
+        connect(reuse_if_open=True)
+
+
+def _table_names(models: list[type]) -> list[str]:
+    """
+    Return table names in create order.
+    """
+    return [model._meta.table_name for model in models]

@@ -162,20 +162,18 @@ def test_manual_takeover_pauses_all_ai_signal_use():
 
 
 def test_schema_initializer_creates_all_postgres_tables_idempotently():
-    """A fresh environment should initialize TradingAgents and router schemas in one call."""
+    """A fresh environment should initialize TradingAgents and router schemas with Peewee."""
     from vnpy_tradingagents.schema_init import initialize_postgres_schema
 
-    connection = FakeConnection()
+    database = FakePeeweeDatabase()
 
-    initialize_postgres_schema(connection)
-    initialize_postgres_schema(connection)
+    first = initialize_postgres_schema(database)
+    second = initialize_postgres_schema(database)
 
-    executed_sql = "\n".join(sql for sql, _ in connection.cursor_obj.executed)
-    assert "CREATE TABLE IF NOT EXISTS schema_version" in executed_sql
-    assert "CREATE TABLE IF NOT EXISTS agent_run" in executed_sql
-    assert "CREATE TABLE IF NOT EXISTS news_raw" in executed_sql
-    assert "CREATE TABLE IF NOT EXISTS replay_run_status" in executed_sql
-    assert connection.commits == 2
+    assert database.safe is True
+    assert "market_bar_snapshot" in first.created_or_existing_tables
+    assert "agent_run" in second.created_or_existing_tables
+    assert "schema_migration" not in database.existing_tables
 
 
 def test_live_gate_requires_simulation_health_audit_and_explicit_live_enable():
@@ -263,6 +261,26 @@ class FakeConnection:
 
     def commit(self) -> None:
         self.commits += 1
+
+
+class FakePeeweeDatabase:
+    """Tiny Peewee-like database fake."""
+
+    def __init__(self) -> None:
+        self.existing_tables = set()
+        self.safe = None
+        self.connected = False
+
+    def connect(self, reuse_if_open=False) -> None:
+        self.connected = reuse_if_open
+
+    def create_tables(self, models, safe=False) -> None:
+        self.safe = safe
+        for model in models:
+            self.existing_tables.add(model._meta.table_name)
+
+    def get_tables(self):
+        return sorted(self.existing_tables)
 
 
 def make_audit_record() -> DecisionAuditRecord:

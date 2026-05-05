@@ -35,7 +35,8 @@ dependencies = [
     "plotly>=6.0.0",
     "tqdm>=4.67.1",
     "loguru>=0.7.3",
-    "nbformat>=5.10.4"
+    "nbformat>=5.10.4",
+    "peewee>=3.17.9"
 ]
 keywords = ["quant", "quantitative", "investment", "trading", "algotrading"]
 
@@ -44,7 +45,7 @@ vnpy-tradingagents-schema = "vnpy_tradingagents.cli:main"
 
 [project.optional-dependencies]
 router-postgres = [
-    "psycopg[binary]>=3.2.0",
+    "peewee>=3.17.9",
 ]
 akshare = [
     "akshare>=1.16.0",
@@ -53,9 +54,12 @@ tushare = [
     "tushare>=1.4.0",
 ]
 prod = [
-    "psycopg[binary]>=3.2.0",
+    "peewee>=3.17.9",
     "akshare>=1.16.0",
     "tushare>=1.4.0",
+]
+llm-secrets = [
+    "keyring>=25.0.0",
 ]
 alpha = [
     "polars[rtcompat]>=1.26.0",

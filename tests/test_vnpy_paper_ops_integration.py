@@ -317,15 +317,11 @@ def test_worker_adapter_blocks_secret_context_before_runner():
     assert response.raw_state["error_type"] == "secret_context"
 
 
-def test_schema_initializer_includes_ops_heartbeat_schema():
-    """Default schema migrations should include P11 operational heartbeat storage."""
-    from vnpy_tradingagents.schema_init import DEFAULT_MIGRATIONS
+def test_schema_initializer_includes_ops_heartbeat_model():
+    """Peewee extension models should include P11 operational heartbeat storage."""
+    from vnpy_tradingagents.schema_init import EXTENSION_TABLE_NAMES
 
-    migrations = {migration.version: migration.sql for migration in DEFAULT_MIGRATIONS}
-    sql = "\n".join(migrations.values())
-
-    assert "CREATE TABLE IF NOT EXISTS ops_heartbeat" in sql
-    assert "0003_ops_heartbeat" in migrations
+    assert "ops_heartbeat" in EXTENSION_TABLE_NAMES
 
 
 class FakeSignalReader:

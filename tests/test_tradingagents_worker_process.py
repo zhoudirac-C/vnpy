@@ -20,6 +20,39 @@ def test_worker_process_runs_json_request_with_injected_worker():
     assert output["raw_state"]["status"] == "ok"
 
 
+def test_worker_process_loads_default_context_only_factory(monkeypatch):
+    """Configured factory should load the built-in context-only TradingAgents runner."""
+    from vnpy_tradingagents.worker_adapter import TradingAgentsWorkerAdapter
+    from vnpy_tradingagents.worker_process import load_configured_worker
+
+    monkeypatch.setenv(
+        "TRADINGAGENTS_WORKER_FACTORY",
+        "vnpy_tradingagents.tradingagents_factory:build",
+    )
+
+    worker = load_configured_worker()
+
+    assert isinstance(worker, TradingAgentsWorkerAdapter)
+
+
+def test_worker_process_loads_factory_from_vnpy_settings(monkeypatch):
+    """Worker process should also support vn.py UI-configured worker factory."""
+    from vnpy.trader.setting import SETTINGS
+    from vnpy_tradingagents.worker_adapter import TradingAgentsWorkerAdapter
+    from vnpy_tradingagents.worker_process import load_configured_worker
+
+    monkeypatch.delenv("TRADINGAGENTS_WORKER_FACTORY", raising=False)
+    monkeypatch.setitem(
+        SETTINGS,
+        "tradingagents.worker_factory",
+        "vnpy_tradingagents.tradingagents_factory:build",
+    )
+
+    worker = load_configured_worker()
+
+    assert isinstance(worker, TradingAgentsWorkerAdapter)
+
+
 def test_subprocess_worker_returns_failed_response_on_timeout():
     """Subprocess worker should return auditable failure on timeout."""
     from vnpy_tradingagents.worker_process import SubprocessTradingAgentsWorker

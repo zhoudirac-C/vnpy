@@ -93,6 +93,24 @@ PostgreSQL配置示例如下所示：
     create database <填写的database.database>;
 ```
 
+#### TradingAgents/router 扩展表
+
+本 fork 的 TradingAgents 和数据路由扩展表复用同一个 PostgreSQL 数据库，配置入口仍然是上面的 `database.*` 字段，不再使用单独的 DSN 配置。
+
+初始化扩展表：
+
+```bash
+vnpy-tradingagents-schema schema init
+```
+
+查看扩展表状态：
+
+```bash
+vnpy-tradingagents-schema schema status
+```
+
+扩展表初始化方式与 `vnpy_postgresql` 保持一致：定义 Peewee Model，并调用 `create_tables(..., safe=True)`。这些扩展表只管理 provider trace、quality report、事件上下文、TradingAgents run/report/signal、审计和运维状态，不替代 vn.py 原有的 K线/Tick 数据表。
+
 
 ## 非SQL类数据库简介
 
