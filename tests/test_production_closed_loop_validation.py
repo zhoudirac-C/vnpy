@@ -48,6 +48,38 @@ def test_closed_loop_validation_passes_production_when_all_gates_pass():
     assert {check.status for check in report.checks} == {"passed"}
 
 
+def test_closed_loop_validation_ignores_generated_validation_evidence():
+    """Generated validation result files should not make production profile dirty."""
+    from tools.production.closed_loop_validation import build_report
+
+    def runner(command, repo_root: Path, timeout_seconds: int):
+        if command == ("git", "status", "--short"):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    "?? docs/community/ops/validation_results/podman-e2e/latest/run.log\n"
+                    "A  docs/community/ops/validation_results/podman-e2e/latest/pe2e_results.md\n"
+                ),
+                stderr="",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    report = build_report(
+        repo_root=Path("."),
+        profile="production",
+        environ={
+            "TRADINGAGENTS_WORKER_FACTORY": "worker_factory:build",
+            "OPENAI_API_KEY": "secret",
+        },
+        runner=runner,
+    )
+
+    assert report.worktree_clean
+    assert report.dirty_files == []
+    assert report.production_ready
+
+
 def test_closed_loop_validation_accepts_vnpy_worker_factory_setting(monkeypatch):
     """Worker factory gate should accept the vn.py UI setting, not only env vars."""
     from tools.production.closed_loop_validation import environment_gate_results

@@ -643,22 +643,24 @@ TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed。它可以参与买
 | AI 信号模式 | 输出 `RatingSignal`，参与策略排序和过滤 | 不允许 |
 | AI 策略模式 | 输出 `TradeIntent`，例如买入、卖出、减仓、持有 | 仍然不允许，必须经过 Risk App 和 MainEngine |
 
-### 8.2 Worker 化
+### 8.2 同进程 context-only Worker
 
-TradingAgents 建议作为独立 Worker 运行：
+TradingAgents 默认作为 vn.py App 内的同进程 context-only Worker 懒加载运行：
 
 ```text
 VeighNa App / Script
   -> AgentResearchService
-  -> tradingagents-worker
+  -> TradingAgentsService
+  -> context-only Worker
   -> report + rating + raw_state
 ```
 
-原因：
+这样做的边界：
 
-- TradingAgents 依赖 LangGraph、多个 LLM provider、yfinance、stockstats 等库。
-- VeighNa 主框架依赖 PySide6、TA-Lib、交易接口和 GUI 生态。
-- 两套依赖放在同一进程里容易产生版本冲突。
+- TradingAgents 依赖仍按可选依赖安装，不随 vn.py 主链路自动启用。
+- Worker 通过 `tradingagents.worker_factory` 或 `TRADINGAGENTS_WORKER_FACTORY` 懒加载。
+- Worker 只能读取 `native_input["context"]`，不能持有 Gateway、MainEngine、账号或下单函数。
+- 关闭 TradingAgents 开关后，数据、策略、风控和手工交易链路继续运行。
 
 P8 已落地的 Worker 边界：
 
@@ -893,7 +895,7 @@ TA -[#red,dashed]-> Event : 禁止阻塞事件线程
 | P2 | PortfolioManager | 用 `OrderRequest.reference` 做 AI 归因和绩效复盘 | 每笔 AI 影响订单要能查 source_run_id |
 | P2 | DataManager / DataRecorder | 下载、导入、录制数据，并生成研究/分时快照 | DataRecorder 依赖真实 Gateway 行情 |
 | P3 | ChartWizard / WebTrader / ExcelRTD | 展示 AI 评级、建议、风险原因和人工确认状态 | 只做展示，不做执行入口 |
-| P3 | RpcService | 让 TradingAgents Worker 跨进程查询或推送信号 | 不开放直接 RPC 下单权限 |
+| P3 | RpcService | 展示或转发已落库的 AI 报告和信号 | 不把 TradingAgents 做成独立 RPC 下单服务 |
 
 长期操作优先接 `vnpy.alpha`：
 
@@ -1172,19 +1174,19 @@ Risk -> Main : 风控通过后才发单
 
 ### 8.11 TradingAgents Worker 部署和 smoke
 
-生产部署时，TradingAgents Worker 应该和 vn.py GUI/交易主进程分开：
+生产部署时，TradingAgents Worker 保持在 vn.py 进程内同进程懒加载：
 
 ```text
 vn.py main process
-  -> TradingAgentsService / WorkerProcessClient
-  -> isolated tradingagents-worker environment
+  -> TradingAgentsService
+  -> context-only worker factory
   -> TradingAgentsRunnerAdapter
   -> patched native TradingAgents runner
 ```
 
 部署要点：
 
-- 独立 Python 环境安装 TradingAgents、LangGraph、LLM provider SDK、pandas/stockstats 等依赖，避免污染 vn.py 主环境。
+- 当前 vn.py 运行环境按需安装 TradingAgents、LangGraph、LLM provider SDK、pandas/stockstats 等依赖；未启用 TradingAgents 时不加载上游依赖。
 - API key 可以在 vn.py 全局配置界面的 `tradingagents.api_key <secret>` 安全输入框中填写；该字段不会保存到 `vt_setting.json`。运行期会写入当前进程环境变量，安装可选 `keyring` 时可保存到系统钥匙串。生产部署仍建议通过环境变量或 Secret Manager 注入，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
 - `tradingagents.llm_provider`、`tradingagents.model`、`tradingagents.timeout_seconds`、`tradingagents.max_retries`、`tradingagents.checkpoint_dir` 从 vn.py 全局配置或部署配置读取。
 - 默认 factory 是 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`。它返回 `AShareContextOnlyRunner`，内部用 `TradingAgentsContextOnlyGraphRunner` 创建上游 `TradingAgentsGraph`，并把 market/news/fundamental/social 工具替换为只读 `native_input["context"]` 的工具。
@@ -1285,15 +1287,14 @@ P10 --> P11
 
 目标：
 
-- 把 TradingAgents 独立成 Worker，不放进 vn.py 主进程。
+- 把 TradingAgents 做成同进程 context-only Worker，由 vn.py App 懒加载。
 - 替换 TradingAgents 默认美股数据工具，改为读取 PostgreSQL 中的 A 股快照。
 - 输出结构化报告、五档评级、交易意图和完整 raw state。
 - 先做到无交易接口权限也能运行，保证它只能写信号，不能下单。
 
 交付：
 
-- `tradingagents-worker`：独立运行入口。
-- `AgentResearchService`：vn.py App 或脚本调用 Worker 的边界服务。
+- `TradingAgentsService`：vn.py App 或脚本调用 Worker 的边界服务。
 - `MarketDataToolkit`：为 TradingAgents 提供行情、指标、财务、新闻、板块、benchmark 工具，底层读取 PostgreSQL 快照而不是直接绑定某个 provider。
 - `AgentRun` / `AgentReport` / `RatingSignal` / `TradeIntent` 数据表。
 - `SnapshotSourcePolicy`：定义 market/fundamentals/news/sentiment/benchmark/portfolio context 分别来自哪类快照、是否必填、缺失时如何降级。
@@ -1540,7 +1541,7 @@ P10 --> P11
 
 1. 在 vn.py 全局配置中设置 `database.name=postgresql` 和对应 `database.*` 字段后，运行 `vnpy-tradingagents-schema schema init`，确认扩展表通过 Peewee `create_tables()` 创建成功。
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
-3. 在独立 Worker 环境安装 TradingAgents，并设置 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build` 后跑 `TradingAgentsRunnerSmoke`。
+3. 在当前 vn.py 环境安装 TradingAgents 依赖，并设置 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build` 后跑 `TradingAgentsRunnerSmoke`。
 4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；QMT/XT 优先通过 vn.py 既有 datafeed/gateway 插件接入。
 5. 用真实 PostgreSQL 跑 `TradingAgentsRunnerSmoke` 和 `TradingAgentsPaperSmoke`，检查 `decision_audit`、`replay_run_status`、feedback 和 `ops_heartbeat`。
 6. 开通 QMT/XT 后，验证 vn.py 插件包装层、Gateway 行情订阅和本 fork provider trace 的协同关系。

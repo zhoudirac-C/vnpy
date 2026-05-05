@@ -80,6 +80,6 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 ## 下一步推荐
 
 1. 配置 vn.py 原生 PostgreSQL 后，运行 `vnpy-tradingagents-schema schema init/status` 验证扩展表。
-2. 独立 Worker 环境安装上游 TradingAgents 后，设置 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`。
+2. 当前 vn.py 环境安装上游 TradingAgents 后，保留默认 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build`。
 3. 在 vn.py UI 中填写 LLM key 或通过系统 Secret 注入，然后运行 schema init/status 和 P16 production profile。
 4. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。

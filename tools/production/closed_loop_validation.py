@@ -16,6 +16,9 @@ from vnpy.trader.setting import SETTINGS
 
 Status = str
 CommandRunner = Callable[[Sequence[str], Path, int], subprocess.CompletedProcess[str]]
+IGNORED_DIRTY_PREFIXES: tuple[str, ...] = (
+    "docs/community/ops/validation_results/",
+)
 
 
 @dataclass(frozen=True)
@@ -463,7 +466,19 @@ def _git_dirty_files(repo_root: Path, runner: CommandRunner) -> list[str]:
     completed = runner(("git", "status", "--short"), repo_root, 10)
     if completed.returncode != 0:
         return ["git status failed"]
-    return [line for line in completed.stdout.splitlines() if line.strip()]
+    return [
+        line
+        for line in completed.stdout.splitlines()
+        if line.strip() and not _is_ignored_dirty_line(line)
+    ]
+
+
+def _is_ignored_dirty_line(line: str) -> bool:
+    """Return whether a dirty worktree line only points at generated validation evidence."""
+    path = line[3:].strip() if len(line) > 3 else line.strip()
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1].strip()
+    return any(path.startswith(prefix) for prefix in IGNORED_DIRTY_PREFIXES)
 
 
 if __name__ == "__main__":

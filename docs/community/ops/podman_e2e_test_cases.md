@@ -9,7 +9,7 @@ Podman E2E 要验证本轮改动在接近生产的隔离环境中能否串起来
 1. PostgreSQL 使用 vn.py 原生 `database.*` 配置，不再依赖 `router.postgres.dsn` 或 `QUANT_DATABASE_URL`。
 2. TradingAgents/router 扩展表通过 Peewee Model + `create_tables(..., safe=True)` 初始化。
 3. `examples/veighna_trader/run.py` 能注册 `TradingAgentsApp`。
-4. `tradingagents.worker_factory` 和 `TRADINGAGENTS_WORKER_FACTORY` 都能加载默认 context-only Worker。
+4. `tradingagents.worker_factory` 和 `TRADINGAGENTS_WORKER_FACTORY` 都能加载默认同进程 context-only Worker。
 5. TradingAgents Worker 只能读取 `native_input["context"]`，不能直连外部数据源、Gateway、MainEngine 或 `send_order`。
 6. LLM API key 可通过 UI 安全输入或环境变量进入运行时，但不写入 `vt_setting.json`、日志、DB payload 或 worker context。
 7. 关闭 TradingAgents 后，vn.py 主链路、数据源、风控和手工交易逻辑仍能正常降级运行。
@@ -53,16 +53,12 @@ node "podman network\nvnpy-e2e" {
     component "context-only Worker\nlazy build()" as Worker
   }
 
-  node "optional worker container\nfuture production mode" as WorkerContainer {
-    component "TradingAgents\nupstream deps" as Upstream
-  }
 }
 
 Settings --> PG
 CLI --> PG
 Service --> Worker
 Worker --> PG : reads snapshots only
-WorkerContainer ..> Service : optional subprocess/RPC client
 @enduml
 ```
 
@@ -72,7 +68,6 @@ WorkerContainer ..> Service : optional subprocess/RPC client
 | --- | --- | --- |
 | `vnpy-e2e-postgres` | 必须 | 存 vn.py 原生表和 TradingAgents/router 扩展表 |
 | `vnpy-e2e` | 必须 | 构建源码、运行 CLI、pytest、closed-loop validation |
-| `tradingagents-worker` | 可选 | 后续验证独立 Worker 进程或 RPC 模式 |
 
 ## 4. 测试数据和配置
 
@@ -125,7 +120,6 @@ tests/fixtures/e2e/vt_setting.postgres.json
 | PE2E-13 | Paper smoke 不触发 live Gateway | 交易安全 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
 | PE2E-14 | TradingAgents 关闭后主链路降级可用 | 降级 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
 | PE2E-15 | 容器重启后 PostgreSQL 状态持久 | 稳定性 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-16 | 独立 Worker 容器模式 | 扩展 | 可选 | 跳过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
 
 ## 6. 测试结果标记规范
 
@@ -159,13 +153,12 @@ tests/fixtures/e2e/vt_setting.postgres.json
 | PE2E-13 | 通过 | 2026-05-05T06:46:40+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Paper smoke buy/hold paths passed without live Gateway |
 | PE2E-14 | 通过 | 2026-05-05T06:46:40+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Disabled TradingAgents service degraded without worker call |
 | PE2E-15 | 通过 | 2026-05-05T07:15:14+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Persistence sentinel survived PostgreSQL container restart |
-| PE2E-16 | 跳过 | 2026-05-05T06:46:40+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Independent Worker container/RPC mode is optional and not implemented |
 
 本次执行摘要：
 
 - 执行命令：`tools/podman/run_e2e.sh`
 - 执行窗口：2026-05-05 14:45:06 到 15:16:31（Asia/Shanghai）
-- 结果计数：15 通过，1 阻塞，1 跳过，0 失败。
+- 结果计数：15 通过，1 阻塞，0 失败。
 - 证据目录：`docs/community/ops/validation_results/podman-e2e/20260505-144506/`
 - 已修复项：E2E 镜像已安装 `git` 和 Qt headless import 所需系统库；`local_file` 配置已统一为 `router.providers=local_file` + `router.local_path=/path`。
 - 阻塞项：PE2E-12 的 production profile 当前命中 `pytest_non_alpha` 和 dirty worktree 门禁；它用于真实生产发布前检查，不影响本轮容器栈、数据库、UI import、local profile 和重启持久化验证。
@@ -314,7 +307,7 @@ docs/community/ops/validation_results/podman-e2e/<YYYYMMDD-HHMMSS>/
 
 **步骤**：
 
-1. 不启动独立 worker 容器。
+1. 不启动额外容器；Worker 在 vn.py 进程内按需懒加载。
 2. 配置 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build`。
 3. 调用 `load_configured_worker()`。
 4. 构造最小 `TradingAgentsWorkerRequest`。
@@ -458,33 +451,11 @@ Podman 中不强制启动真实 Qt GUI；GUI 冒烟测试以导入、metadata �
 - 已写入数据未丢失。
 - 重复 init 不破坏数据。
 
-### PE2E-16 独立 Worker 容器模式
-
-**目的**：为后续生产隔离部署预留验证。
-
-**前置条件**：
-
-- 已实现 vn.py 到独立 worker 容器的 subprocess/RPC client。
-- worker 容器内安装上游 TradingAgents 和 LLM provider SDK。
-
-**步骤**：
-
-1. 启动 `tradingagents-worker` 容器。
-2. vn.py 容器通过 client 调用 worker。
-3. worker 只接收 context payload。
-4. worker 返回结构化响应。
-
-**预期结果**：
-
-- vn.py 主进程不加载重型 LLM 依赖。
-- worker 容器不可访问 Gateway/MainEngine。
-- 超时、依赖缺失、LLM 失败返回结构化诊断。
-
 ## 8. 验收标准
 
 Podman E2E 通过标准：
 
-1. 容器栈验收：PE2E-00 到 PE2E-11、PE2E-13 到 PE2E-15 通过；PE2E-16 可按独立 Worker 容器能力跳过。
+1. 容器栈验收：PE2E-00 到 PE2E-11、PE2E-13 到 PE2E-15 通过。
 2. 生产发布验收：PE2E-12 必须在 clean worktree 下通过，且 `pytest_non_alpha` 等生产门禁不能失败。
 3. 所有测试结果落档到 `docs/community/ops/validation_results/`。
 4. `production_ready` 判断和实际门禁一致，不误报。
@@ -501,7 +472,6 @@ Podman E2E 通过标准：
 - 真实新闻/社媒情绪实时抓取。
 - 真实桌面 Qt 点击测试。
 - 真实 LLM 计费调用。
-- 独立 Worker RPC 服务化，除非先实现 PE2E-16 前置能力。
 
 ## 10. 风险和注意事项
 

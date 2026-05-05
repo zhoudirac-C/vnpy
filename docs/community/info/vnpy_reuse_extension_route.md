@@ -12,7 +12,7 @@
 2. vn.py 原生 `get_datafeed()` 仍负责统一历史数据入口，通过 `datafeed.name=router` 接入本 fork 的可切换数据源。
 3. vn.py 原生 `get_database()` 仍负责 K 线、Tick、成交、持仓等标准交易数据的落库，PostgreSQL 作为首选数据库插件。
 4. 本 fork 的 PostgreSQL 扩展表只保存 provider trace、研究快照、TradingAgents 输出、审计、事件和运维状态。
-5. TradingAgents 作为独立 Worker 和 vn.py App 接入，只产出报告、评级、日内建议和交易意图，不直接持有 Gateway、账号、订单接口。
+5. TradingAgents 作为 vn.py App 内的同进程 context-only Worker 接入，只产出报告、评级、日内建议和交易意图，不直接持有 Gateway、账号、订单接口。
 6. AKShare、TuShare、QMT、XT、RQData、本地 CSV/Parquet 都只是 provider 或 vn.py datafeed 的来源，不写死到策略和 TradingAgents 中。
 
 ## 2. 需要修改的技术路线
@@ -138,7 +138,7 @@ PostgreSQL 不再承担所有职责：
 
 `alpha` 是可选研究增强模块，不随 vn.py 主进程启动自动安装。`vnpy.alpha` 入口采用懒加载，未安装 `alpha` extra 时，主交易、数据路由、TradingAgents 基础上下文不受影响；只有实际使用 AlphaDataset、Alpha101、因子模型或 tear sheet 分析时才需要安装。
 
-TradingAgents 不放入本仓库 extras，建议安装在独立 Worker 环境，避免和 vn.py 主进程、alpha 回测依赖产生 pandas 版本冲突。QMT/XT/RQData 这类 vn.py 插件不放入本 fork 的默认依赖，由使用者按券商和账号情况单独安装对应 vn.py datafeed/gateway 包。
+TradingAgents 不放入本仓库默认依赖，建议作为可选运行依赖安装在 vn.py 所在环境中，并通过 context-only factory 懒加载，避免未启用 AI 时污染主交易链路。QMT/XT/RQData 这类 vn.py 插件不放入本 fork 的默认依赖，由使用者按券商和账号情况单独安装对应 vn.py datafeed/gateway 包。
 
 ## 5. TradingAgents 路线
 

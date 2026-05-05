@@ -33,7 +33,7 @@ vnpy_tradingagents.tradingagents_factory:build
 export TRADINGAGENTS_WORKER_FACTORY="vnpy_tradingagents.tradingagents_factory:build"
 ```
 
-如果从 vn.py UI 启动，保留默认 `tradingagents.worker_factory` 即可；如果从独立 Worker 进程、systemd、Docker 或 CI 启动，也可以用 `TRADINGAGENTS_WORKER_FACTORY` 注入同一个值。
+如果从 vn.py UI 启动，保留默认 `tradingagents.worker_factory` 即可；如果从 systemd、Docker 或 CI 启动 vn.py 进程，也可以用 `TRADINGAGENTS_WORKER_FACTORY` 注入同一个值。
 
 安装可选钥匙串支持：
 
@@ -49,7 +49,7 @@ uv pip install "vnpy[llm-secrets]"
 export OPENAI_API_KEY="sk-..."
 ```
 
-只对当前终端有效。若从这个终端启动 vn.py 或 TradingAgents Worker，Worker 可以读取该变量。
+只对当前终端有效。若从这个终端启动 vn.py，TradingAgents Worker 可以读取该变量。
 
 ## macOS/Linux zsh 持久配置
 

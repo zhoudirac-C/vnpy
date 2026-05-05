@@ -27,7 +27,7 @@
   - 验收：PostgreSQL 扩展表 create_tables/status、snapshot 读写和 runtime state 均通过真实连接验证。
 
 - [ ] **P16-T05: 真实 TradingAgents Worker production profile 验证**
-  - 前置：独立 Worker 环境安装上游 TradingAgents，`TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`，LLM API key，真实 PostgreSQL 快照。
+  - 前置：当前 vn.py 环境安装上游 TradingAgents 依赖，保留默认 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build`，LLM API key，真实 PostgreSQL 快照。
   - 目标：用真实 Worker 跑一轮 runner smoke，不触发 Gateway/MainEngine。
   - 验收：报告、评级、交易意图入库；失败时不生成有效交易意图。
 
@@ -45,5 +45,5 @@
 | P16-T03 | 2026-05-04 | 未提交 | `uv run python -m tools.production.closed_loop_validation --profile local --repo-root . --output docs/community/ops/validation_results/2026-05-04-production-closed-loop-local.md --json-output docs/community/ops/validation_results/2026-05-04-production-closed-loop-local.json` |
 | P16-T03A | 2026-05-05 | 未提交 | P17 纠错后重新落档：`uv run python -m tools.production.closed_loop_validation --profile local --repo-root . --output docs/community/ops/validation_results/2026-05-05-production-closed-loop-local.md --json-output docs/community/ops/validation_results/2026-05-05-production-closed-loop-local.json` |
 | P16-T04 | Blocked | 未提交 | 等待真实 PostgreSQL |
-| P16-T05 | Blocked | 未提交 | 代码侧已提供默认 context-only factory；仍等待独立 Worker 环境安装上游 TradingAgents、真实 LLM key 和真实 PostgreSQL 快照 |
+| P16-T05 | Blocked | 未提交 | 代码侧已提供默认 context-only factory；仍等待当前 vn.py 环境安装上游 TradingAgents、真实 LLM key 和真实 PostgreSQL 快照 |
 | P16-T06 | Blocked | 未提交 | 等待 P16-T04/P16-T05 |

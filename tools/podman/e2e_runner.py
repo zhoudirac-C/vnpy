@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-CASE_IDS: tuple[str, ...] = tuple(f"PE2E-{index:02d}" for index in range(17))
+CASE_IDS: tuple[str, ...] = tuple(f"PE2E-{index:02d}" for index in range(16))
 
 
 @dataclass
@@ -122,7 +122,6 @@ def main(argv: list[str] | None = None) -> int:
         runner.run_case("PE2E-13", case_paper_smoke_no_live_gateway)
         runner.run_case("PE2E-14", case_tradingagents_disabled_degrades)
         runner.run_case("PE2E-15", case_persistence_pre_restart)
-        runner.run_case("PE2E-16", case_optional_worker_container)
     else:
         runner.run_case("PE2E-15", case_persistence_post_restart)
 
@@ -531,10 +530,6 @@ def case_persistence_post_restart() -> str:
     if row != ("started",):
         raise AssertionError(f"persistence sentinel missing after restart: {row}")
     return "Persistence sentinel survived PostgreSQL container restart"
-
-
-def case_optional_worker_container() -> str:
-    raise SkippedCase("Independent worker container/RPC mode is optional and not implemented in this fork yet")
 
 
 def _prepare_vnpy_settings() -> None:

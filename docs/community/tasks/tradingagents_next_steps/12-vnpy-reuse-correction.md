@@ -33,8 +33,8 @@
 
 - [x] **P12-T06: 依赖分组和安装说明**
   - 修改：`pyproject.toml`、`docs/community/info/vnpy_reuse_extension_route.md`
-  - 目标：把 Peewee PostgreSQL 扩展、`akshare`、`tushare` 等主进程依赖拆成可选 extras；TradingAgents 只在独立 Worker 环境安装，避免污染 vn.py 主环境。
-  - 验收：文档说明 `router-postgres`、`akshare`、`tushare`、`prod` 等安装组合，并明确 TradingAgents 独立安装；无对应 extra 时 readiness 能给出明确诊断。
+  - 目标：把 Peewee PostgreSQL 扩展、`akshare`、`tushare` 等主进程依赖拆成可选 extras；TradingAgents 作为可选运行依赖安装并由 context-only factory 懒加载，避免未启用 AI 时污染 vn.py 主链路。
+  - 验收：文档说明 `router-postgres`、`akshare`、`tushare`、`prod` 等安装组合，并明确 TradingAgents 可选安装；无对应 extra 时 readiness 能给出明确诊断。
 
 ## 完成记录
 
