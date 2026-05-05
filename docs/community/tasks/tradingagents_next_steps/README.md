@@ -76,10 +76,15 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 | P16 | [16-production-closed-loop-validation.md](16-production-closed-loop-validation.md) | 生成生产闭环验证脚本、流程文档和当前验证结果落档 |
 | P17 | [17-vnpy-native-config-cleanup.md](17-vnpy-native-config-cleanup.md) | 删除重复 PostgreSQL 配置入口，统一复用 vn.py `database.*` 和 Peewee `create_tables()`，补 LLM 环境变量说明 |
 | P18 | [18-context-worker-ui-key.md](18-context-worker-ui-key.md) | 内置 context-only TradingAgents factory，并在 UI 中支持真实 LLM key 安全输入 |
+| P19 | [19-backtest-closed-loop-validation.md](19-backtest-closed-loop-validation.md) | 跑通 vn.py BacktestingEngine + AI 信号 + 风控审计的可重复回测闭环 |
+| P20 | [20-real-data-source-hardening.md](20-real-data-source-hardening.md) | 强化真实数据源能力边界、fallback 和质量校验 |
+| P21 | [21-stock-gateway-simulation-validation.md](21-stock-gateway-simulation-validation.md) | 验证股票 Gateway、仿真和 live gate 接入边界 |
+| P22 | [22-ui-usability-fixes.md](22-ui-usability-fixes.md) | 修复配置、交易面板和回测入口的 UI 可用性问题 |
+| P23 | [23-docs-dependency-consistency.md](23-docs-dependency-consistency.md) | 清理文档、依赖和阶段状态之间的不一致 |
 
 ## 下一步推荐
 
-1. 配置 vn.py 原生 PostgreSQL 后，运行 `vnpy-tradingagents-schema schema init/status` 验证扩展表。
-2. 当前 vn.py 环境安装上游 TradingAgents 后，保留默认 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build`。
-3. 在 vn.py UI 中填写 LLM key 或通过系统 Secret 注入，然后运行 schema init/status 和 P16 production profile。
+1. 先完成 P19，用本地 fixture 和 vn.py BacktestingEngine 跑通回测闭环，并把验证结果落档。
+2. 再完成 P20/P21，把真实数据源、股票 Gateway、仿真和 live gate 分别验证清楚。
+3. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
 4. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。
