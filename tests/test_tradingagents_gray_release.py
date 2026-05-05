@@ -83,6 +83,8 @@ def test_paper_bridge_enables_only_simulation_and_writes_trade_feedback():
     assert bridge.positions["600519.SSE"] == 100
     assert feedback_storage.trade_feedback[0].run_id == "run-1"
     assert feedback_storage.trade_feedback[0].payload["account_mode"] == "simulation"
+    assert feedback_storage.trade_feedback[0].payload["gateway_name"] == "PAPER"
+    assert feedback_storage.trade_feedback[0].payload["ai_enabled"] is True
 
 
 def test_replay_run_status_storage_persists_and_loads_latest_status():
@@ -197,6 +199,49 @@ def test_live_gate_requires_simulation_health_audit_and_explicit_live_enable():
     assert refused.reason == "live_ai_not_enabled"
     assert allowed.allowed
     assert allowed.reason == "ready"
+
+
+def test_live_gate_blocks_high_failure_rate_and_missing_manual_takeover():
+    """Live gate should require low worker failure rate and manual takeover readiness."""
+    from vnpy_tradingagents.live_gate import LiveGate, LiveGateConfig, LiveGateMetrics
+
+    runtime = TradingAgentsRuntimeController()
+    runtime.enable(mode=TradingAgentsMode.LIVE_ALLOWED, live_enabled=True)
+    gate = LiveGate(
+        LiveGateConfig(
+            min_stable_days=5,
+            max_drawdown=0.08,
+            min_audit_completeness=1.0,
+            max_failure_rate=0.05,
+            require_manual_takeover=True,
+        )
+    )
+
+    high_failure = gate.evaluate(
+        runtime,
+        LiveGateMetrics(
+            simulation_stable_days=5,
+            max_drawdown=0.03,
+            audit_completeness=1.0,
+            failure_rate=0.2,
+            manual_takeover_ready=True,
+        ),
+    )
+    no_takeover = gate.evaluate(
+        runtime,
+        LiveGateMetrics(
+            simulation_stable_days=5,
+            max_drawdown=0.03,
+            audit_completeness=1.0,
+            failure_rate=0.01,
+            manual_takeover_ready=False,
+        ),
+    )
+
+    assert not high_failure.allowed
+    assert high_failure.reason == "failure_rate_exceeded"
+    assert not no_takeover.allowed
+    assert no_takeover.reason == "manual_takeover_not_ready"
 
 
 class FakeSignalReader:

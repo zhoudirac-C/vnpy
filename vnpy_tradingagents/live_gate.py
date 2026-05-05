@@ -12,6 +12,8 @@ class LiveGateConfig:
     min_stable_days: int
     max_drawdown: float
     min_audit_completeness: float
+    max_failure_rate: float | None = None
+    require_manual_takeover: bool = False
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,8 @@ class LiveGateMetrics:
     simulation_stable_days: int
     max_drawdown: float
     audit_completeness: float
+    failure_rate: float = 0
+    manual_takeover_ready: bool = True
 
 
 @dataclass(frozen=True)
@@ -63,5 +67,14 @@ class LiveGate:
 
         if metrics.audit_completeness < self.config.min_audit_completeness:
             return LiveGateResult(False, "audit_incomplete")
+
+        if (
+            self.config.max_failure_rate is not None
+            and metrics.failure_rate > self.config.max_failure_rate
+        ):
+            return LiveGateResult(False, "failure_rate_exceeded")
+
+        if self.config.require_manual_takeover and not metrics.manual_takeover_ready:
+            return LiveGateResult(False, "manual_takeover_not_ready")
 
         return LiveGateResult(True, "ready")

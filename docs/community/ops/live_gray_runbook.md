@@ -50,6 +50,8 @@ select count(*) from decision_audit where created_at::date = current_date;
 - simulation stable days 达到配置下限。
 - max drawdown 小于配置上限。
 - audit completeness 达到配置下限。
+- worker/LLM failure rate 小于配置上限。
+- 手工接管能力已验证 ready。
 - TradingAgents 前端开关已启用，live 二次确认已勾选。
 
 ## 开关顺序

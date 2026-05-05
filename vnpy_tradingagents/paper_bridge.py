@@ -69,6 +69,7 @@ class PaperAccountBridge:
         self.gateway_policy: GatewayAiPolicy = gateway_policy
         self.feedback_storage: FeedbackStorage = feedback_storage
         self.profile: GatewayProfile | None = None
+        self.ai_enabled: bool = False
         self.positions: dict[str, float] = {}
 
     def configure(self, profile: GatewayProfile, ai_enabled: bool) -> None:
@@ -76,6 +77,7 @@ class PaperAccountBridge:
         Apply gateway policy; AI is eligible only for simulation accounts by default.
         """
         self.profile = profile
+        self.ai_enabled = ai_enabled
         self.gateway_policy.apply(self.runtime, profile, ai_enabled)
 
     def record_fill(self, trade: SimulatedTrade) -> None:
@@ -100,6 +102,7 @@ class PaperAccountBridge:
                 payload={
                     "account_mode": self.profile.account_mode.value,
                     "gateway_name": self.profile.gateway_name,
+                    "ai_enabled": self.ai_enabled,
                 },
             )
         )
@@ -127,6 +130,7 @@ class PaperAccountBridge:
                 payload={
                     "account_mode": self.profile.account_mode.value,
                     "gateway_name": self.profile.gateway_name,
+                    "ai_enabled": self.ai_enabled,
                     "portfolio_value": snapshot.portfolio_value,
                     "previous_value": snapshot.previous_value,
                 },
