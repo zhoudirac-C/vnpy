@@ -42,6 +42,8 @@ dependencies = [
     "psycopg2-binary>=2.9.12",
     "keyring>=25.7.0",
     "tradingagents",
+    "vnpy-ctastrategy>=1.4.1",
+    "vnpy-ctabacktester>=1.3.0",
 ]
 keywords = ["quant", "quantitative", "investment", "trading", "algotrading"]
 
