@@ -1,0 +1,123 @@
+{
+  "generated_at": "2026-05-05T08:16:24+00:00",
+  "profile": "local",
+  "repo_root": "/workspace",
+  "branch": "feature/akshare-tradingagents-architecture",
+  "commit": "e81ff256",
+  "worktree_clean": true,
+  "dirty_files": [],
+  "production_ready": true,
+  "checks": [
+    {
+      "name": "ruff_core",
+      "status": "passed",
+      "command": "uv run --with ruff ruff check vnpy/alpha vnpy_router vnpy_tradingagents tests/test_alpha_optional_imports.py tests/test_data_router.py tests/test_tradingagents_toolkit.py",
+      "exit_code": 0,
+      "duration_seconds": 0.236,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "All checks passed!",
+      "stderr_tail": "Installed 1 package in 1ms"
+    },
+    {
+      "name": "pytest_non_alpha",
+      "status": "passed",
+      "command": "uv run --with pytest --with psycopg2-binary pytest tests -q --ignore=tests/test_alpha101.py",
+      "exit_code": 0,
+      "duration_seconds": 2.314,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": ".sss.................................................................... [ 36%]\n........................................................................ [ 72%]\n......................................................                   [100%]\n195 passed, 3 skipped in 1.59s",
+      "stderr_tail": "Installed 6 packages in 22ms"
+    },
+    {
+      "name": "alpha_optional_imports",
+      "status": "passed",
+      "command": "uv run --with polars[rtcompat] --with pytest pytest tests/test_alpha_optional_imports.py -q",
+      "exit_code": 0,
+      "duration_seconds": 1.719,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "....                                                                     [100%]\n4 passed in 1.18s",
+      "stderr_tail": "Installed 8 packages in 23ms"
+    },
+    {
+      "name": "alpha101_smoke",
+      "status": "passed",
+      "command": "uv run --with polars[rtcompat] --with scipy --with pytest pytest tests/test_alpha101.py::TestAlpha101::test_alpha1 -q",
+      "exit_code": 0,
+      "duration_seconds": 3.621,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": ".                                                                        [100%]\n1 passed in 2.90s",
+      "stderr_tail": "Installed 10 packages in 108ms"
+    },
+    {
+      "name": "compileall_core",
+      "status": "passed",
+      "command": "uv run python -m compileall vnpy/alpha vnpy_router vnpy_tradingagents -q",
+      "exit_code": 0,
+      "duration_seconds": 0.169,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "name": "diff_check",
+      "status": "passed",
+      "command": "git diff --check",
+      "exit_code": 0,
+      "duration_seconds": 0.043,
+      "required_local": true,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "name": "readiness_cli",
+      "status": "passed",
+      "command": "uv run --with psycopg2-binary vnpy-tradingagents-schema readiness --json",
+      "exit_code": 0,
+      "duration_seconds": 1.062,
+      "required_local": false,
+      "required_production": true,
+      "message": "command passed",
+      "stdout_tail": "{\"items\": [{\"message\": \"vn.py database.* selects the shared PostgreSQL database\", \"name\": \"vnpy_postgres_config\", \"status\": \"ready\"}, {\"message\": \"peewee dependency is available\", \"name\": \"peewee\", \"status\": \"ready\"}, {\"message\": \"psycopg2 PostgreSQL driver is available\", \"name\": \"psycopg2\", \"status\": \"ready\"}, {\"message\": \"TradingAgents API key environment variable is present\", \"name\": \"tradingagents_api_key\", \"status\": \"ready\"}, {\"message\": \"context-only worker factory is configured\", \"name\": \"tradingagents_worker\", \"status\": \"ready\"}, {\"message\": \"router.local_path exists: /workspace/tests/fixtures/e2e\", \"name\": \"local_file_provider\", \"status\": \"ready\"}], \"status\": \"ready\"}",
+      "stderr_tail": "Installed 1 package in 3ms"
+    },
+    {
+      "name": "tradingagents_worker_factory_env",
+      "status": "passed",
+      "command": "env:TRADINGAGENTS_WORKER_FACTORY",
+      "exit_code": null,
+      "duration_seconds": 0,
+      "required_local": false,
+      "required_production": true,
+      "message": "context-only worker factory is configured",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "name": "llm_api_key_env",
+      "status": "passed",
+      "command": "env:OPENAI_API_KEY",
+      "exit_code": null,
+      "duration_seconds": 0,
+      "required_local": false,
+      "required_production": true,
+      "message": "LLM API key environment variable is configured",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    }
+  ],
+  "status_counts": {
+    "passed": 9
+  }
+}

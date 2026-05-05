@@ -1,0 +1,3 @@
+CONTAINER ID  IMAGE                                 COMMAND               CREATED             STATUS                   PORTS       NAMES
+573c41fdcae3  quay.io/podman/hello:latest           /usr/local/bin/po...  5 months ago        Exited (0) 5 months ago              strange_kapitsa
+c9258eea2802  docker.io/library/postgres:16-alpine  postgres              About a minute ago  Up 37 seconds            5432/tcp    vnpy-e2e-postgres

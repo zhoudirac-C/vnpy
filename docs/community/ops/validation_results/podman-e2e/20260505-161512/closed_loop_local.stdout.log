@@ -1,0 +1,34 @@
+# 生产闭环验证结果
+
+- 生成时间：`2026-05-05T08:16:24+00:00`
+- profile：`local`
+- branch：`feature/akshare-tradingagents-architecture`
+- commit：`e81ff256`
+- worktree_clean：`true`
+- production_ready：`true`
+- 结果计数：`{"passed": 9}`
+
+## 命令和门禁结果
+
+| 检查项 | 状态 | 生产必需 | 命令/门禁 | 说明 |
+| --- | --- | --- | --- | --- |
+| ruff_core | passed | yes | `uv run --with ruff ruff check vnpy/alpha vnpy_router vnpy_tradingagents tests/test_alpha_optional_imports.py tests/test_data_router.py tests/test_tradingagents_toolkit.py` | command passed |
+| pytest_non_alpha | passed | yes | `uv run --with pytest --with psycopg2-binary pytest tests -q --ignore=tests/test_alpha101.py` | command passed |
+| alpha_optional_imports | passed | yes | `uv run --with polars[rtcompat] --with pytest pytest tests/test_alpha_optional_imports.py -q` | command passed |
+| alpha101_smoke | passed | yes | `uv run --with polars[rtcompat] --with scipy --with pytest pytest tests/test_alpha101.py::TestAlpha101::test_alpha1 -q` | command passed |
+| compileall_core | passed | yes | `uv run python -m compileall vnpy/alpha vnpy_router vnpy_tradingagents -q` | command passed |
+| diff_check | passed | yes | `git diff --check` | command passed |
+| readiness_cli | passed | yes | `uv run --with psycopg2-binary vnpy-tradingagents-schema readiness --json` | command passed |
+| tradingagents_worker_factory_env | passed | yes | `env:TRADINGAGENTS_WORKER_FACTORY` | context-only worker factory is configured |
+| llm_api_key_env | passed | yes | `env:OPENAI_API_KEY` | LLM API key environment variable is configured |
+
+## 结论
+
+本次验证满足 production profile 的所有生产必需门禁。
+
+## 备注
+
+- 本地 profile 的目标是证明代码级闭环、smoke、依赖边界和降级路径可重复验证。
+- production profile 必须接入真实 PostgreSQL、真实 context-only TradingAgents Worker、真实 API key 和真实 provider 配置后再运行。
+- 新闻/社媒实时 provider 本轮不纳入验证范围；缺失时应保持 degraded，不阻塞主交易链路。
+

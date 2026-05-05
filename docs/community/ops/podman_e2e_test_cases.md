@@ -104,22 +104,22 @@ tests/fixtures/e2e/vt_setting.postgres.json
 
 | ID | 用例 | 类型 | 必须 | 当前结果 | 证据路径 |
 | --- | --- | --- | --- | --- | --- |
-| PE2E-00 | Podman 测试栈构建 | 基础设施 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-01 | PostgreSQL 启动和连接 | 基础设施 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-02 | vn.py 原生 PostgreSQL 配置注入 | 配置 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-03 | 扩展表 schema init/status | DB | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-04 | readiness 缺配置时明确失败 | 负向 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-05 | readiness 完整配置时通过关键门禁 | 正向 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-06 | 数据源 router/local_file 到 PostgreSQL 快照 | 数据 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-07 | context-only Worker factory 懒加载 | Worker | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-08 | Worker 禁止外部数据源和交易句柄 | 安全 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-09 | LLM key UI/环境变量不明文落盘 | 安全 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-10 | TradingAgentsApp 启动入口注册 | vn.py UI | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-11 | 生产闭环 validation local profile | 运维 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-12 | 生产闭环 validation production profile | 运维 | 是 | 阻塞 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-13 | Paper smoke 不触发 live Gateway | 交易安全 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-14 | TradingAgents 关闭后主链路降级可用 | 降级 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
-| PE2E-15 | 容器重启后 PostgreSQL 状态持久 | 稳定性 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/pe2e_results.md` |
+| PE2E-00 | Podman 测试栈构建 | 基础设施 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-01 | PostgreSQL 启动和连接 | 基础设施 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-02 | vn.py 原生 PostgreSQL 配置注入 | 配置 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-03 | 扩展表 schema init/status | DB | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-04 | readiness 缺配置时明确失败 | 负向 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-05 | readiness 完整配置时通过关键门禁 | 正向 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-06 | 数据源 router/local_file 到 PostgreSQL 快照 | 数据 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-07 | context-only Worker factory 懒加载 | Worker | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-08 | Worker 禁止外部数据源和交易句柄 | 安全 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-09 | LLM key UI/环境变量不明文落盘 | 安全 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-10 | TradingAgentsApp 启动入口注册 | vn.py UI | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-11 | 生产闭环 validation local profile | 运维 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-12 | 生产闭环 validation production profile | 运维 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-13 | Paper smoke 不触发 live Gateway | 交易安全 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-14 | TradingAgents 关闭后主链路降级可用 | 降级 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
+| PE2E-15 | 容器重启后 PostgreSQL 状态持久 | 稳定性 | 是 | 通过 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/pe2e_results.md` |
 
 ## 6. 测试结果标记规范
 
@@ -137,31 +137,31 @@ tests/fixtures/e2e/vt_setting.postgres.json
 
 | ID | 执行结果 | 执行时间 | Git commit | 执行环境 | 证据路径 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
-| PE2E-00 | 通过 | 2026-05-05T06:46:09+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Podman image built and postgres runner container started by `tools/podman/run_e2e.sh` |
-| PE2E-01 | 通过 | 2026-05-05T06:46:09+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | PostgreSQL `select 1` succeeded |
-| PE2E-02 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Peewee params came from vn.py `database.*` settings |
-| PE2E-03 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | 25 extension tables are ready |
-| PE2E-04 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Missing PostgreSQL/provider/API key readiness fails explicitly |
-| PE2E-05 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Readiness status is ready |
-| PE2E-06 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | `local_file` provider returned and persisted 3 bars |
-| PE2E-07 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Worker loaded lazily; response action=`hold`, error_type=`dependency_error` |
-| PE2E-08 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Forbidden trading handles blocked before runner execution |
-| PE2E-09 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | UI guidance is present; runtime secret stays out of settings and secret policy blocks value leaks |
-| PE2E-10 | 通过 | 2026-05-05T06:46:10+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | TradingAgentsApp is registered and UI module imports |
-| PE2E-11 | 通过 | 2026-05-05T06:46:21+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Local closed-loop report: `closed_loop_local.md` |
-| PE2E-12 | 阻塞 | 2026-05-05T06:46:38+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Production profile 未通过：`pytest_non_alpha` 失败且当前 E2E 工作树非 clean；见 `closed_loop_production_full` 日志 |
-| PE2E-13 | 通过 | 2026-05-05T06:46:40+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Paper smoke buy/hold paths passed without live Gateway |
-| PE2E-14 | 通过 | 2026-05-05T06:46:40+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Disabled TradingAgents service degraded without worker call |
-| PE2E-15 | 通过 | 2026-05-05T07:15:14+00:00 | 95747e92 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-144506/` | Persistence sentinel survived PostgreSQL container restart |
+| PE2E-00 | 通过 | 2026-05-05T08:16:12+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Podman image built and postgres runner container started by `tools/podman/run_e2e.sh` |
+| PE2E-01 | 通过 | 2026-05-05T08:16:12+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | PostgreSQL `select 1` succeeded |
+| PE2E-02 | 通过 | 2026-05-05T08:16:13+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Peewee params came from vn.py `database.*` settings |
+| PE2E-03 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | 25 extension tables are ready |
+| PE2E-04 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Missing PostgreSQL/provider/API key readiness fails explicitly |
+| PE2E-05 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Readiness status is ready |
+| PE2E-06 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | `local_file` provider returned and persisted 3 bars |
+| PE2E-07 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Worker loaded lazily; response action=`hold`, error_type=`dependency_error` |
+| PE2E-08 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Forbidden trading handles blocked before runner execution |
+| PE2E-09 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | UI guidance is present; runtime secret stays out of settings and secret policy blocks value leaks |
+| PE2E-10 | 通过 | 2026-05-05T08:16:14+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | TradingAgentsApp is registered and UI module imports |
+| PE2E-11 | 通过 | 2026-05-05T08:16:24+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Local closed-loop report: `closed_loop_local.md` |
+| PE2E-12 | 通过 | 2026-05-05T08:16:42+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Production profile rejects missing key and passes with configured gates |
+| PE2E-13 | 通过 | 2026-05-05T08:16:43+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Paper smoke buy/hold paths passed without live Gateway |
+| PE2E-14 | 通过 | 2026-05-05T08:16:43+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Disabled TradingAgents service degraded without worker call |
+| PE2E-15 | 通过 | 2026-05-05T08:17:22+00:00 | e81ff256 | Podman linux/arm64, Python 3.13 | `docs/community/ops/validation_results/podman-e2e/20260505-161512/` | Persistence sentinel survived PostgreSQL container restart |
 
 本次执行摘要：
 
 - 执行命令：`tools/podman/run_e2e.sh`
-- 执行窗口：2026-05-05 14:45:06 到 15:16:31（Asia/Shanghai）
-- 结果计数：15 通过，1 阻塞，0 失败。
-- 证据目录：`docs/community/ops/validation_results/podman-e2e/20260505-144506/`
+- 执行窗口：2026-05-05 16:15:13 到 16:17:21（Asia/Shanghai）
+- 结果计数：16 通过，0 阻塞，0 跳过，0 失败。
+- 证据目录：`docs/community/ops/validation_results/podman-e2e/20260505-161512/`
 - 已修复项：E2E 镜像已安装 `git` 和 Qt headless import 所需系统库；`local_file` 配置已统一为 `router.providers=local_file` + `router.local_path=/path`。
-- 阻塞项：PE2E-12 的 production profile 当前命中 `pytest_non_alpha` 和 dirty worktree 门禁；它用于真实生产发布前检查，不影响本轮容器栈、数据库、UI import、local profile 和重启持久化验证。
+- 生产门禁：PE2E-12 已通过，`closed_loop_production.md` 显示 `production_ready=true`。
 
 推荐证据目录：
 
@@ -455,7 +455,7 @@ Podman 中不强制启动真实 Qt GUI；GUI 冒烟测试以导入、metadata �
 
 Podman E2E 通过标准：
 
-1. 容器栈验收：PE2E-00 到 PE2E-11、PE2E-13 到 PE2E-15 通过。
+1. 容器栈验收：PE2E-00 到 PE2E-15 全部通过。
 2. 生产发布验收：PE2E-12 必须在 clean worktree 下通过，且 `pytest_non_alpha` 等生产门禁不能失败。
 3. 所有测试结果落档到 `docs/community/ops/validation_results/`。
 4. `production_ready` 判断和实际门禁一致，不误报。

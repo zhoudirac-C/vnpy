@@ -79,7 +79,20 @@ docs/community/ops/validation_results/YYYY-MM-DD-production-closed-loop-<profile
 | `blocked` | 代码可验证，但缺少生产外部依赖或配置 |
 | `failed` | 命令或生产检查失败，需要修复 |
 
-## 6. 当前结论
+## 6. TradingAgents 生产配置含义
+
+“真实 TradingAgents 上游依赖和成本/超时/审计配置”不是要独立部署 worker 服务，而是指同进程 context-only Worker 在生产运行前必须明确这些运行参数：
+
+| 类别 | 大白话解释 | 需要落地的配置 |
+| --- | --- | --- |
+| 上游依赖 | 当前环境里真的装了 TradingAgents 及其运行所需库，而不是只用 fallback stub | TradingAgents、LangGraph、LLM provider SDK、pandas/stockstats 等可选运行依赖 |
+| 成本 | 每次让大模型分析都会花 token 或调用额度，需要限预算 | `tradingagents.llm_provider`、`tradingagents.model`、单次/单日最大 token、最大分析标的数、手工开关 |
+| 超时 | 不能让 LLM 卡住 vn.py 主进程或策略线程 | `tradingagents.timeout_seconds`、`tradingagents.max_retries`、并发上限、失败降级为 `hold/watch` |
+| 审计 | 以后要能回答“这笔建议为什么产生、用了哪些数据、有没有影响订单” | `AgentRun`、`RatingSignal`、`TradeIntent`、`DecisionAudit`、snapshot id、prompt version、model、耗时、错误类型和订单 `reference` |
+
+生产准入要求是：这些配置存在、能被 readiness/closed-loop 验证读取，并且失败时不影响 vn.py 主交易链路。
+
+## 7. 当前结论
 
 截至 `2026-05-05` 的本地验证结果见：
 
@@ -88,7 +101,7 @@ docs/community/ops/validation_results/YYYY-MM-DD-production-closed-loop-<profile
 
 当前结论：代码级闭环、Alpha 可选依赖边界和 smoke 验证通过；P18 后代码侧已提供默认同进程 context-only TradingAgents factory 和 UI 安全 key 输入。生产准入仍需要 vn.py PostgreSQL 全局配置、上游 TradingAgents 依赖、真实 LLM API key、真实 provider/readiness 全部通过。因此当前项目不是生产可用状态，只能作为生产候选代码继续联调。
 
-## 7. 下一步
+## 8. 下一步
 
 1. 在 vn.py 全局配置中设置 `database.name=postgresql` 和对应 `database.*` 字段，执行 schema init/status。
 2. 在当前 vn.py 运行环境安装上游 TradingAgents 依赖，并保留默认 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build`。
