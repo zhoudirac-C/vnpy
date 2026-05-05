@@ -4,7 +4,7 @@
 
 ## 任务清单
 
-- [ ] **P20-T01: AKShare 能力边界落库**
+- [x] **P20-T01: AKShare 能力边界落库**
   - 目标：明确 AKShare 当前支持的 A 股日线/周线能力、缺失的分钟/tick/实时盘口能力，并在 readiness 和 provider metadata 中输出。
   - 验收：请求不支持的 interval 时返回结构化诊断，不被误判为 provider 故障。
 
@@ -24,7 +24,7 @@
 
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
-| P20-T01 | 未完成 | 未提交 | 未运行 |
+| P20-T01 | 2026-05-05 | 未提交 | `uv run --with pytest pytest tests/test_production_data_sources.py::test_akshare_provider_declares_research_only_boundaries -q` |
 | P20-T02 | 未完成 | 未提交 | 未运行 |
 | P20-T03 | 未完成 | 未提交 | 未运行 |
 | P20-T04 | 未完成 | 未提交 | 未运行 |

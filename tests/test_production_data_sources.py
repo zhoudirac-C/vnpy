@@ -71,6 +71,31 @@ def test_tushare_provider_requires_token_and_sets_metadata(monkeypatch):
     assert "secret-token" not in str(bars[0].extra)
 
 
+def test_akshare_provider_declares_research_only_boundaries(monkeypatch):
+    """AKShare provider should expose production boundaries without importing dependency for unsupported requests."""
+    from vnpy_router.providers import akshare as akshare_module
+    from vnpy_router.providers.akshare import AkshareProvider
+
+    def fail_import(name: str):
+        raise AssertionError(f"should not import {name} for unsupported interval")
+
+    monkeypatch.setattr(akshare_module, "import_module", fail_import)
+
+    provider = AkshareProvider()
+    metadata = provider.capability.to_metadata()
+    messages: list[str] = []
+    req = _history_request()
+    req.interval = Interval.MINUTE
+
+    assert provider.query_bar_history(req, output=messages.append) == []
+    assert metadata["supports_tick"] is False
+    assert metadata["realtime"] is False
+    assert metadata["metadata"]["production_scope"] == "research_history"
+    assert "minute" in metadata["metadata"]["unsupported_intervals"]
+    assert "Gateway" in metadata["realtime_notes"]
+    assert any("does not support interval" in message for message in messages)
+
+
 def test_qmt_and_xt_providers_wrap_vnpy_datafeed_plugins(monkeypatch):
     """QMT/XT adapters should route through vn.py datafeed plugins, not xtquant directly."""
     import importlib

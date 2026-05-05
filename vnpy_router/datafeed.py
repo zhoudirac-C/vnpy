@@ -203,5 +203,5 @@ def _connect_postgres() -> Any | None:
     """
     try:
         return connect_vnpy_postgres_adapter(SETTINGS)
-    except RuntimeError:
+    except Exception:
         return None

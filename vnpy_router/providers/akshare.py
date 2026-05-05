@@ -27,6 +27,14 @@ class AkshareProvider(BaseProvider):
         realtime=False,
         history=True,
         cost_level=ProviderCostLevel.FREE,
+        realtime_notes="AKShare is a research/history provider here; realtime quotes and trading should use a vn.py Gateway.",
+        metadata={
+            "production_scope": "research_history",
+            "supported_market": "A-share",
+            "supported_intervals": ["daily", "weekly"],
+            "unsupported_intervals": ["minute", "hour", "tick"],
+            "unsupported_realtime": ["tick", "orderbook", "broker_position", "trading"],
+        },
     )
 
     def __init__(self) -> None:
@@ -55,11 +63,11 @@ class AkshareProvider(BaseProvider):
         """
         Query A-share bar history from AKShare.
         """
-        if not self.init(output):
-            return []
-
         if req.interval not in {Interval.DAILY, Interval.WEEKLY}:
             output(f"AkshareProvider does not support interval: {req.interval}")
+            return []
+
+        if not self.init(output):
             return []
 
         if not self.akshare:
