@@ -23,6 +23,7 @@ uv.lock
 
 # VeighNa
 .vntrader
+.tradingagents/
 
 # Visual Studio intermediate files
 *.exp

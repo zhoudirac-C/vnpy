@@ -657,7 +657,7 @@ VeighNa App / Script
 
 这样做的边界：
 
-- TradingAgents 依赖仍按可选依赖安装，不随 vn.py 主链路自动启用。
+- 使用本 fork 默认 AI 能力时，TradingAgents 依赖在部署/构建阶段随项目环境安装；运行期不自动联网安装。
 - Worker 通过 `tradingagents.worker_factory` 或 `TRADINGAGENTS_WORKER_FACTORY` 懒加载。
 - Worker 只能读取 `native_input["context"]`，不能持有 Gateway、MainEngine、账号或下单函数。
 - 关闭 TradingAgents 开关后，数据、策略、风控和手工交易链路继续运行。
@@ -1186,9 +1186,11 @@ vn.py main process
 
 部署要点：
 
-- 当前 vn.py 运行环境按需安装 TradingAgents、LangGraph、LLM provider SDK、pandas/stockstats 等依赖；未启用 TradingAgents 时不加载上游依赖。
-- API key 可以在 vn.py 全局配置界面的 `tradingagents.api_key <secret>` 安全输入框中填写；该字段不会保存到 `vt_setting.json`。运行期会写入当前进程环境变量，安装可选 `keyring` 时可保存到系统钥匙串。生产部署仍建议通过环境变量或 Secret Manager 注入，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
-- `tradingagents.llm_provider`、`tradingagents.model`、`tradingagents.timeout_seconds`、`tradingagents.max_retries`、`tradingagents.checkpoint_dir` 从 vn.py 全局配置或部署配置读取。
+- 当前 vn.py 运行环境在部署/构建阶段安装 TradingAgents、LangGraph、LLM provider SDK、pandas/stockstats 等依赖；未启用 TradingAgents 时不加载上游依赖，也不在 vn.py 启动或 Worker 懒加载时自动安装。
+- API key 可以在 vn.py 全局配置界面的 `tradingagents.api_key <secret>` 安全输入框中填写；该字段不会保存到 `vt_setting.json`。运行期会写入当前进程环境变量，安装可选 `keyring` 时可保存到系统钥匙串。生产部署仍建议通过环境变量或 Secret Manager 注入，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`、`ZHIPU_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
+- `tradingagents.llm_provider`、`tradingagents.model`、`tradingagents.backend_url`、`tradingagents.timeout_seconds`、`tradingagents.max_retries`、`tradingagents.checkpoint_dir` 从 vn.py 全局配置或部署配置读取；BigModel Coding Plan 可通过 `tradingagents.backend_url=https://open.bigmodel.cn/api/coding/paas/v4` 指定 Coding 专用端点。
+- Worker 按 request mode 自动切换 thinking 和超时：日内/分时默认 `tradingagents.intraday_thinking_type=disabled`、`tradingagents.intraday_timeout_seconds=360`；长期研究和组合评级默认 `tradingagents.long_horizon_thinking_type=enabled`、`tradingagents.long_horizon_timeout_seconds=2700`；复盘/回测默认 `tradingagents.replay_thinking_type=enabled`、`tradingagents.replay_timeout_seconds=2700`。
+- 生产和回测链路默认隔离：`TradingAgentsStrategyMixin` 和 `OrderBridge` 默认按 `live=True` 检查，未进入 `LIVE_ALLOWED + live_enabled` 时不消费 AI 信号、不生成 live OrderRequest；回测、复盘、paper 路径必须显式传 `live=False`。
 - 默认 factory 是 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`。它返回 `AShareContextOnlyRunner`，内部用 `TradingAgentsContextOnlyGraphRunner` 创建上游 `TradingAgentsGraph`，并把 market/news/fundamental/social 工具替换为只读 `native_input["context"]` 的工具。
 - native runner 必须被包装成 context-only runner。它只能使用 `native_input["context"]` 中的 PostgreSQL 快照，不允许直接访问 yfinance、Alpha Vantage、AKShare、TuShare、QMT 或 Gateway。
 - 裸的上游 `TradingAgentsGraph.propagate(symbol, date)` 只能在 legacy/test 模式显式启用；生产 A 股路径使用默认 context-only factory 或等价 wrapper。
@@ -1541,7 +1543,7 @@ P10 --> P11
 
 1. 在 vn.py 全局配置中设置 `database.name=postgresql` 和对应 `database.*` 字段后，运行 `vnpy-tradingagents-schema schema init`，确认扩展表通过 Peewee `create_tables()` 创建成功。
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
-3. 在当前 vn.py 环境安装 TradingAgents 依赖，并设置 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build` 后跑 `TradingAgentsRunnerSmoke`。
+3. 在部署/构建阶段确认 TradingAgents 依赖已随项目环境安装，并设置 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build` 后跑 `TradingAgentsRunnerSmoke`。
 4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；QMT/XT 优先通过 vn.py 既有 datafeed/gateway 插件接入。
 5. 用真实 PostgreSQL 跑 `TradingAgentsRunnerSmoke` 和 `TradingAgentsPaperSmoke`，检查 `decision_audit`、`replay_run_status`、feedback 和 `ops_heartbeat`。
 6. 开通 QMT/XT 后，验证 vn.py 插件包装层、Gateway 行情订阅和本 fork provider trace 的协同关系。

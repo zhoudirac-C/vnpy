@@ -48,6 +48,7 @@ def test_strategy_mixin_loads_and_fuses_ai_signals_when_enabled():
         rule_signal=RuleSignal("buy", 0.7, "breakout"),
         vt_symbol="600519.SSE",
         now=datetime(2024, 1, 3, 10),
+        live=False,
     )
 
     assert fused.ai_used
@@ -77,10 +78,40 @@ def test_strategy_mixin_blocks_rule_buy_on_bearish_rating():
         rule_signal=RuleSignal("buy", 0.7),
         vt_symbol="600519.SSE",
         now=datetime(2024, 1, 3, 10),
+        live=False,
     )
 
     assert fused.action == "hold"
     assert fused.blocked_reason == "ai_block_buy"
+
+
+def test_strategy_mixin_defaults_to_live_scope_and_blocks_ai_in_paper_mode():
+    """Strategy helpers should not accidentally consume paper AI signals in live code."""
+    runtime = TradingAgentsRuntimeController()
+    runtime.enable(mode=TradingAgentsMode.PAPER_ONLY)
+    strategy = DemoStrategy()
+    reader = FakeSignalReader(
+        rating=RatingSignal("600519.SSE", "Buy", 0.8, "rating-1"),
+        advice=IntradayAdvice(
+            "600519.SSE",
+            "buy",
+            0.75,
+            datetime(2024, 1, 3, 10, 15),
+            "advice-1",
+        ),
+    )
+    strategy.init_ai_signal_support(runtime=runtime, signal_reader=reader)
+
+    fused = strategy.fuse_ai_signal(
+        rule_signal=RuleSignal("buy", 0.7),
+        vt_symbol="600519.SSE",
+        now=datetime(2024, 1, 3, 10),
+    )
+
+    assert not fused.ai_used
+    assert fused.blocked_reason == "ai_unavailable"
+    assert reader.rating_calls == []
+    assert reader.advice_calls == []
 
 
 class DemoStrategy(TradingAgentsStrategyMixin):

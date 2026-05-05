@@ -69,6 +69,11 @@ def _native_input(payload: TradingAgentsContextPayload) -> dict[str, Any]:
         "context": payload.context,
         "llm_provider": payload.config.llm_provider,
         "model": payload.config.model,
+        "backend_url": payload.config.backend_url,
+        "thinking_type": payload.config.thinking_type,
+        "timeout_seconds": payload.config.timeout_seconds,
+        "max_retries": payload.config.max_retries,
+        "max_completion_tokens": payload.config.max_completion_tokens,
         "checkpoint_dir": str(checkpoint_dir),
     }
 

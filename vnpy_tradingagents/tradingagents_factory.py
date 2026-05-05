@@ -14,6 +14,22 @@ _CURRENT_CONTEXT: ContextVar[Mapping[str, Any] | None] = ContextVar(
     default=None,
 )
 
+OPENAI_COMPATIBLE_PROVIDER_CONFIG: dict[str, tuple[str, str]] = {
+    "glm": ("https://open.bigmodel.cn/api/paas/v4/", "ZHIPU_API_KEY"),
+    "qwen": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY"),
+    "kimi": ("https://api.moonshot.cn/v1", "MOONSHOT_API_KEY"),
+    "doubao": ("https://ark.cn-beijing.volces.com/api/v3", "ARK_API_KEY"),
+    "hunyuan": ("https://api.hunyuan.cloud.tencent.com/v1", "HUNYUAN_API_KEY"),
+    "qianfan": ("https://qianfan.baidubce.com/v2", "QIANFAN_API_KEY"),
+    "minimax": ("https://api.minimax.io/v1", "MINIMAX_API_KEY"),
+    "spark": ("https://spark-api-open.xf-yun.com/v1", "SPARK_API_KEY"),
+    "stepfun": ("https://api.stepfun.ai/v1", "STEPFUN_API_KEY"),
+    "yi": ("https://api.lingyiwanwu.com/v1", "YI_API_KEY"),
+    "siliconflow": ("https://api.siliconflow.cn/v1", "SILICONFLOW_API_KEY"),
+    "modelscope": ("https://api-inference.modelscope.cn/v1", "MODELSCOPE_API_KEY"),
+    "openai_compatible": ("https://api.openai.com/v1", "OPENAI_API_KEY"),
+}
+
 
 class TradingAgentsContextOnlyGraphRunner:
     """
@@ -78,6 +94,11 @@ class TradingAgentsContextOnlyGraphRunner:
                 "llm_provider": str(native_input.get("llm_provider") or "openai"),
                 "deep_think_llm": str(native_input.get("model") or "gpt-4o-mini"),
                 "quick_think_llm": str(native_input.get("model") or "gpt-4o-mini"),
+                "backend_url": str(native_input.get("backend_url") or "") or None,
+                "thinking_type": str(native_input.get("thinking_type") or "auto"),
+                "timeout": float(native_input.get("timeout_seconds") or 120),
+                "max_retries": _int_config(native_input, "max_retries", 1),
+                "max_completion_tokens": int(native_input.get("max_completion_tokens") or 1536),
                 "data_cache_dir": str(checkpoint_dir / "cache"),
                 "results_dir": str(checkpoint_dir / "results"),
                 "memory_log_path": str(checkpoint_dir / "memory" / "trading_memory.md"),
@@ -105,13 +126,16 @@ class TradingAgentsContextOnlyGraphRunner:
             return list(self.selected_analysts)
 
         analysts: list[str] = ["market"]
-        if any(key in context for key in ("social", "sentiment")):
+        if _has_context_section(context, "social", "sentiment"):
             analysts.append("social")
-        if any(key in context for key in ("news", "events", "announcements")):
+        if _has_context_section(context, "news", "events", "announcements"):
             analysts.append("news")
-        if any(
-            key in context
-            for key in ("fundamental", "fundamentals", "financials", "valuation")
+        if _has_context_section(
+            context,
+            "fundamental",
+            "fundamentals",
+            "financials",
+            "valuation",
         ):
             analysts.append("fundamentals")
         return analysts
@@ -328,9 +352,23 @@ def _default_graph_factory(*, selected_analysts: Sequence[str], debug: bool, con
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError("tradingagents") from exc
 
+    _register_openai_compatible_providers()
+    _enable_openai_client_passthrough("extra_body", "max_completion_tokens")
     tools = _context_tools()
 
     class ContextOnlyTradingAgentsGraph(TradingAgentsGraph):
+        def _get_provider_kwargs(self) -> dict[str, Any]:
+            kwargs = super()._get_provider_kwargs()
+            for key in ("timeout", "max_retries", "max_completion_tokens"):
+                value = self.config.get(key)
+                if value:
+                    kwargs[key] = value
+
+            extra_body = _provider_extra_body(self.config)
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+            return kwargs
+
         def _create_tool_nodes(self) -> dict[str, Any]:
             return {
                 "market": ToolNode(
@@ -403,8 +441,85 @@ def _context_tools() -> dict[str, Any]:
     }
 
 
+def _enable_openai_client_passthrough(*names: str) -> None:
+    """
+    Allow our provider kwargs through upstream TradingAgents' OpenAI wrapper.
+    """
+    try:
+        from tradingagents.llm_clients import openai_client
+    except ModuleNotFoundError:
+        return
+
+    current = tuple(getattr(openai_client, "_PASSTHROUGH_KWARGS", ()))
+    missing = tuple(name for name in names if name not in current)
+    if missing:
+        openai_client._PASSTHROUGH_KWARGS = current + missing
+
+
+def _register_openai_compatible_providers() -> None:
+    """
+    Register domestic OpenAI-compatible providers in upstream TradingAgents.
+    """
+    try:
+        from tradingagents.llm_clients import factory, openai_client
+    except ModuleNotFoundError:
+        return
+
+    compatible = tuple(getattr(factory, "_OPENAI_COMPATIBLE", ()))
+    missing = tuple(
+        provider
+        for provider in OPENAI_COMPATIBLE_PROVIDER_CONFIG
+        if provider not in compatible
+    )
+    if missing:
+        factory._OPENAI_COMPATIBLE = compatible + missing
+
+    provider_config = dict(getattr(openai_client, "_PROVIDER_CONFIG", {}))
+    provider_config.update(OPENAI_COMPATIBLE_PROVIDER_CONFIG)
+    openai_client._PROVIDER_CONFIG = provider_config
+
+
+def _provider_extra_body(config: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Provider-specific request body values for OpenAI-compatible models.
+    """
+    provider = str(config.get("llm_provider") or "").lower()
+    if provider != "glm":
+        return {}
+
+    thinking_type = str(config.get("thinking_type") or "auto").lower()
+    if thinking_type == "auto" and _is_glm_forced_thinking_model(config):
+        thinking_type = "disabled"
+
+    if thinking_type in {"enabled", "disabled"}:
+        return {"thinking": {"type": thinking_type}}
+    return {}
+
+
+def _is_glm_forced_thinking_model(config: Mapping[str, Any]) -> bool:
+    for key in ("deep_think_llm", "quick_think_llm"):
+        model = str(config.get(key) or "").lower()
+        if model.startswith(("glm-4.7", "glm-5")):
+            return True
+    return False
+
+
+def _int_config(mapping: Mapping[str, Any], key: str, default: int) -> int:
+    value = mapping.get(key)
+    if value is None:
+        return default
+    return int(value)
+
+
 def _active_context() -> Mapping[str, Any] | None:
     return _CURRENT_CONTEXT.get()
+
+
+def _has_context_section(mapping: Mapping[str, Any], *keys: str) -> bool:
+    for key in keys:
+        if mapping.get(key) not in (None, {}, []):
+            return True
+    return False
 
 
 def _lookup(mapping: Any, *keys: str, default: Any) -> Any:

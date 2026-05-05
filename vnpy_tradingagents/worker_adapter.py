@@ -1,6 +1,8 @@
+import os
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
+from queue import Queue
+from threading import Thread
 from typing import Protocol, Any
 
 from .config import TradingAgentsWorkerConfig
@@ -53,6 +55,12 @@ class TradingAgentsRunner(Protocol):
         pass
 
 
+class RunnerTimeoutError(TimeoutError):
+    """
+    Raised when a TradingAgents runner exceeds the adapter timeout.
+    """
+
+
 class TradingAgentsWorkerAdapter:
     """
     Safe adapter from vn.py worker requests to a context-only TradingAgents runner.
@@ -75,9 +83,11 @@ class TradingAgentsWorkerAdapter:
         """
         Run TradingAgents through a context-only boundary.
         """
-        validation = self.config.validate(self.environ)
+        config: TradingAgentsWorkerConfig = self.config.for_request_mode(request.mode)
+        validation = config.validate(self.environ)
         if not validation.ready:
             return _failure_response(request, "configuration_error", validation.error)
+        self._sync_api_key_to_process_env(config)
 
         forbidden_key: str = _find_forbidden_context_key(request.context)
         if forbidden_key:
@@ -113,21 +123,33 @@ class TradingAgentsWorkerAdapter:
             trade_date=request.trade_date,
             mode=request.mode,
             context=request.context,
-            config=self.config,
+            config=config,
         )
 
         try:
             result = self._run_with_timeout(payload)
-        except FutureTimeout:
+        except RunnerTimeoutError:
             return _failure_response(
                 request,
                 "timeout",
-                f"TradingAgents runner exceeded {self.config.timeout_seconds} seconds",
+                f"TradingAgents runner exceeded {config.timeout_seconds} seconds",
             )
         except Exception as exc:
             return _failure_response(request, "worker_error", str(exc))
 
         return _response_from_result(request, result)
+
+    def _sync_api_key_to_process_env(self, config: TradingAgentsWorkerConfig) -> None:
+        """
+        Make keyring-resolved secrets visible to upstream LLM SDKs.
+        """
+        if self.environ is not None:
+            return
+        if os.environ.get(config.api_key_env_var):
+            return
+        api_key = config.resolve_api_key()
+        if api_key:
+            os.environ[config.api_key_env_var] = api_key
 
     def _run_with_timeout(
         self,
@@ -139,12 +161,33 @@ class TradingAgentsWorkerAdapter:
         if self.runner is None:
             raise RuntimeError("TradingAgents runner is not configured")
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(self.runner.run, payload)
-        try:
-            return future.result(timeout=float(self.config.timeout_seconds))
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+        result_queue: Queue[
+            tuple[str, Mapping[str, Any] | TradingAgentsWorkerResponse | BaseException]
+        ] = Queue(maxsize=1)
+
+        def invoke_runner() -> None:
+            try:
+                result_queue.put(("result", self.runner.run(payload)))
+            except BaseException as exc:
+                result_queue.put(("error", exc))
+
+        thread = Thread(
+            target=invoke_runner,
+            name=f"tradingagents-runner-{payload.run_id}",
+            daemon=True,
+        )
+        thread.start()
+        timeout_seconds: float = float(payload.config.timeout_seconds)
+        thread.join(timeout=timeout_seconds)
+        if thread.is_alive():
+            raise RunnerTimeoutError(
+                f"TradingAgents runner exceeded {timeout_seconds:g} seconds"
+            )
+
+        kind, value = result_queue.get_nowait()
+        if kind == "error":
+            raise value
+        return value
 
 
 def _response_from_result(

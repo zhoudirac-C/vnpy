@@ -1,0 +1,78 @@
+{
+  "date": "2026-05-05",
+  "branch": "feature/akshare-tradingagents-architecture",
+  "provider_input": "zhipu",
+  "provider_runtime": "glm",
+  "model": "glm-4.7",
+  "worker_factory": "vnpy_tradingagents.tradingagents_factory:build",
+  "secret_recorded": false,
+  "cases": [
+    {
+      "name": "direct_llm_disabled",
+      "thinking": "disabled",
+      "elapsed_sec": 1.43,
+      "status": "passed",
+      "text": "OK",
+      "total_tokens": 11
+    },
+    {
+      "name": "direct_llm_enabled",
+      "thinking": "enabled",
+      "elapsed_sec": 11.94,
+      "status": "passed",
+      "text": "OK",
+      "total_tokens": 116
+    },
+    {
+      "name": "tradingagents_full_disabled",
+      "thinking": "disabled",
+      "timeout_sec": 900,
+      "max_completion_tokens": 1024,
+      "elapsed_sec": 230.58,
+      "status": "passed",
+      "rating": "Buy",
+      "action": "buy",
+      "raw_status": "ok",
+      "error_type": null
+    },
+    {
+      "name": "tradingagents_full_enabled",
+      "thinking": "enabled",
+      "timeout_sec": 1800,
+      "max_completion_tokens": 1024,
+      "elapsed_sec": 1480.67,
+      "status": "passed",
+      "rating": "Hold",
+      "action": "hold",
+      "raw_status": "ok",
+      "error_type": null,
+      "observations": [
+        "Research Manager structured-output fallback",
+        "Trader structured-output fallback",
+        "Portfolio Manager provider 500 then free-text retry"
+      ]
+    }
+  ],
+  "recommendation": {
+    "intraday_default_thinking": "disabled",
+    "long_horizon_optional_thinking": "enabled",
+    "default_max_completion_tokens": 1536,
+    "ui_provider_names": [
+      "openai",
+      "anthropic",
+      "google",
+      "azure",
+      "xai",
+      "deepseek",
+      "qwen",
+      "glm",
+      "openrouter",
+      "ollama"
+    ],
+    "aliases": {
+      "zhipu": "glm",
+      "bigmodel": "glm",
+      "dashscope": "qwen"
+    }
+  }
+}

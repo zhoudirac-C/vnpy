@@ -68,6 +68,45 @@ def test_global_setting_ui_documents_worker_factory_default():
     assert "TRADINGAGENTS_WORKER_FACTORY" in SETTING_HELP_TEXT["tradingagents.worker_factory"]
 
 
+def test_global_setting_ui_lists_domestic_llm_providers_and_base_urls():
+    """Global settings help should show common domestic LLM provider choices."""
+    from vnpy.trader.ui.widget import SETTING_HELP_TEXT
+
+    provider_help = SETTING_HELP_TEXT["tradingagents.llm_provider"]
+    base_url_help = SETTING_HELP_TEXT["tradingagents.backend_url"]
+
+    assert "kimi" in provider_help
+    assert "doubao" in provider_help
+    assert "qianfan" in provider_help
+    assert "MOONSHOT_API_KEY" in provider_help
+    assert "modelscope" in provider_help
+    assert "openai_compatible" in provider_help
+    assert "https://api.moonshot.cn/v1" in base_url_help
+    assert "https://ark.cn-beijing.volces.com/api/v3" in base_url_help
+    assert "https://qianfan.baidubce.com/v2" in base_url_help
+    assert "https://api-inference.modelscope.cn/v1" in base_url_help
+
+
+def test_global_setting_ui_documents_mode_specific_thinking_and_timeouts():
+    """Global settings help should explain intraday and long-horizon LLM profiles."""
+    from vnpy.trader.ui.widget import SETTING_HELP_TEXT
+    from vnpy_tradingagents.config import TradingAgentsWorkerConfig
+
+    config = TradingAgentsWorkerConfig.from_settings({"tradingagents.llm_provider": "openai"})
+    assert config.timeout_seconds == 1800
+    assert config.intraday_thinking_type == "disabled"
+    assert config.intraday_timeout_seconds == 360
+    assert config.long_horizon_thinking_type == "enabled"
+    assert config.long_horizon_timeout_seconds == 2700
+    assert config.replay_thinking_type == "enabled"
+    assert config.replay_timeout_seconds == 2700
+
+    assert "日内" in SETTING_HELP_TEXT["tradingagents.intraday_thinking_type"]
+    assert "360" in SETTING_HELP_TEXT["tradingagents.intraday_timeout_seconds"]
+    assert "长期" in SETTING_HELP_TEXT["tradingagents.long_horizon_thinking_type"]
+    assert "45 分钟" in SETTING_HELP_TEXT["tradingagents.replay_timeout_seconds"]
+
+
 class FakeKeyring:
     """In-memory keyring fake."""
 

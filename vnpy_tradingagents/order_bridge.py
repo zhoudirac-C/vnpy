@@ -7,12 +7,16 @@ from vnpy.trader.object import OrderRequest
 
 from .fusion import FusedSignal
 from .risk import (
+    DecisionAuditRecord,
     DecisionAuditStorage,
     OrderIntent,
     PreOrderDecisionResult,
     PreOrderDecisionService,
+    RiskCheckResult,
+    RiskDecision,
     RiskRuleSet,
 )
+from .runtime import TradingAgentsRuntimeController
 
 
 BUY_ACTIONS: frozenset[str] = frozenset({"buy", "add", "increase", "open_long"})
@@ -38,10 +42,12 @@ class OrderBridge:
         self,
         rules: RiskRuleSet,
         audit_storage: DecisionAuditStorage,
+        runtime: TradingAgentsRuntimeController | None = None,
         decision_id_factory: Callable[[], str] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         """"""
+        self.runtime: TradingAgentsRuntimeController | None = runtime
         self.decision_service: PreOrderDecisionService = PreOrderDecisionService(
             rules=rules,
             audit_storage=audit_storage,
@@ -53,10 +59,17 @@ class OrderBridge:
         self,
         intent: OrderIntent,
         fused_signal: FusedSignal,
+        live: bool = True,
     ) -> OrderBridgeResult:
         """
         Save pre-order audit, then build OrderRequest only if risk allows.
         """
+        if live and not self._live_ai_order_allowed():
+            return OrderBridgeResult(
+                decision=self._blocked_live_decision(intent, fused_signal),
+                order_request=None,
+            )
+
         decision: PreOrderDecisionResult = self.decision_service.evaluate(
             intent,
             fused_signal,
@@ -67,6 +80,39 @@ class OrderBridge:
         return OrderBridgeResult(
             decision=decision,
             order_request=_intent_to_order_request(intent, decision),
+        )
+
+    def _live_ai_order_allowed(self) -> bool:
+        """
+        Return whether this bridge may create live AI-assisted orders.
+        """
+        return bool(self.runtime and self.runtime.can_use_signal(live=True))
+
+    def _blocked_live_decision(
+        self,
+        intent: OrderIntent,
+        fused_signal: FusedSignal,
+    ) -> PreOrderDecisionResult:
+        """
+        Save an audit record for a live-order block before returning no order.
+        """
+        risk_result = RiskCheckResult(
+            decision=RiskDecision.REJECTED,
+            failed_rule="live_ai_disabled",
+            reason="live TradingAgents order bridge requires live_allowed runtime mode",
+        )
+        audit_record = DecisionAuditRecord.from_decision(
+            decision_id=self.decision_service.decision_id_factory(),
+            created_at=self.decision_service.clock(),
+            intent=intent,
+            fused_signal=fused_signal,
+            risk_result=risk_result,
+        )
+        self.decision_service.audit_storage.save_decision(audit_record)
+        return PreOrderDecisionResult(
+            submit_allowed=False,
+            risk_result=risk_result,
+            audit_record=audit_record,
         )
 
 

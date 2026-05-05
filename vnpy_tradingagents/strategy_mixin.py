@@ -52,7 +52,7 @@ class TradingAgentsStrategyMixin:
         self,
         vt_symbol: str,
         at: datetime,
-        live: bool = False,
+        live: bool = True,
     ) -> IntradayAdvice | None:
         """
         Load latest intraday advice when AI signal use is allowed.
@@ -65,7 +65,7 @@ class TradingAgentsStrategyMixin:
         self,
         vt_symbol: str,
         trade_date: str,
-        live: bool = False,
+        live: bool = True,
     ) -> RatingSignal | None:
         """
         Load latest long-horizon rating when AI signal use is allowed.
@@ -79,7 +79,7 @@ class TradingAgentsStrategyMixin:
         rule_signal: RuleSignal,
         vt_symbol: str,
         now: datetime,
-        live: bool = False,
+        live: bool = True,
     ) -> FusedSignal:
         """
         Fuse strategy signal with AI signals, or return rule signal unchanged.

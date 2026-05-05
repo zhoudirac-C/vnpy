@@ -195,6 +195,7 @@ def build_report(
     profile: str,
     environ: Mapping[str, str],
     runner: CommandRunner | None = None,
+    settings: Mapping[str, Any] | None = None,
 ) -> ValidationReport:
     """Build a validation report by running local checks and production gates."""
     command_runner = runner or _run_subprocess
@@ -206,7 +207,7 @@ def build_report(
     for spec in PRODUCTION_COMMANDS:
         checks.append(run_command(spec, repo_root, profile, command_runner))
 
-    checks.extend(environment_gate_results(environ))
+    checks.extend(environment_gate_results(environ, settings=settings))
     dirty_files = _git_dirty_files(repo_root, command_runner)
     production_ready = _is_production_ready(checks) and not dirty_files
     return ValidationReport(
@@ -266,11 +267,15 @@ def run_command(
     )
 
 
-def environment_gate_results(environ: Mapping[str, str]) -> list[CheckResult]:
+def environment_gate_results(
+    environ: Mapping[str, str],
+    settings: Mapping[str, Any] | None = None,
+) -> list[CheckResult]:
     """Return production-only gate results that depend on external runtime config."""
-    results: list[CheckResult] = [_worker_factory_gate(environ)]
+    source: Mapping[str, Any] = SETTINGS if settings is None else settings
+    results: list[CheckResult] = [_worker_factory_gate(environ, source)]
 
-    api_key_env_name = str(SETTINGS.get("tradingagents.api_key_env_var", "OPENAI_API_KEY"))
+    api_key_env_name = str(source.get("tradingagents.api_key_env_var", "OPENAI_API_KEY"))
     api_key_value = environ.get(api_key_env_name, "").strip()
     results.append(
         CheckResult(
@@ -291,9 +296,12 @@ def environment_gate_results(environ: Mapping[str, str]) -> list[CheckResult]:
     return results
 
 
-def _worker_factory_gate(environ: Mapping[str, str]) -> CheckResult:
+def _worker_factory_gate(
+    environ: Mapping[str, str],
+    settings: Mapping[str, Any],
+) -> CheckResult:
     env_value = environ.get("TRADINGAGENTS_WORKER_FACTORY", "").strip()
-    setting_value = str(SETTINGS.get("tradingagents.worker_factory", "")).strip()
+    setting_value = str(settings.get("tradingagents.worker_factory", "")).strip()
 
     if env_value:
         return CheckResult(

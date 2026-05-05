@@ -45,10 +45,44 @@ COLOR_ASK = QtGui.QColor(160, 255, 160)
 COLOR_BLACK = QtGui.QColor("black")
 
 SETTING_HELP_TEXT: dict[str, str] = {
-    "tradingagents.api_key_env_var": "环境变量名，例如 OPENAI_API_KEY；真实 API key 请填下面的安全输入框。",
+    "tradingagents.api_key_env_var": "环境变量名，例如 OPENAI_API_KEY、ZHIPU_API_KEY；真实 API key 请填下面的安全输入框。",
     "tradingagents.worker_factory": "TradingAgents Worker 工厂，默认等同于环境变量 TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build。",
-    "tradingagents.llm_provider": "LLM provider，例如 openai、anthropic、dashscope、deepseek。",
+    "tradingagents.llm_provider": (
+        "TradingAgents 支持：openai、anthropic、google、azure、xai、deepseek、"
+        "qwen、glm、openrouter、ollama。国内常用 OpenAI 兼容 provider："
+        "glm(智谱/ZHIPU_API_KEY)、qwen(阿里百炼/DASHSCOPE_API_KEY)、"
+        "kimi(月之暗面/MOONSHOT_API_KEY)、doubao(火山方舟/ARK_API_KEY)、"
+        "hunyuan(腾讯混元/HUNYUAN_API_KEY)、qianfan(百度千帆/QIANFAN_API_KEY)、"
+        "minimax(MiniMax/MINIMAX_API_KEY)、spark(讯飞星火/SPARK_API_KEY)、"
+        "stepfun(阶跃星辰/STEPFUN_API_KEY)、yi(零一万物/YI_API_KEY)、"
+        "siliconflow(硅基流动/SILICONFLOW_API_KEY)、modelscope(魔搭/MODELSCOPE_API_KEY)。"
+        "其他国内厂商、私有网关或未列出的 OpenAI 兼容服务填 openai_compatible，并配置 backend_url。"
+        "别名：zhipu/bigmodel -> glm，"
+        "dashscope/aliyun -> qwen，moonshot -> kimi，volcengine/ark -> doubao。"
+    ),
     "tradingagents.model": "TradingAgents Worker 使用的模型名；未配置 API key 时不会调用大模型。",
+    "tradingagents.backend_url": (
+        "可选 base_url。留空使用 provider 默认值。常用：智谱 https://open.bigmodel.cn/api/paas/v4/；"
+        "智谱 Coding Plan https://open.bigmodel.cn/api/coding/paas/v4；"
+        "阿里百炼 https://dashscope.aliyuncs.com/compatible-mode/v1；"
+        "Kimi https://api.moonshot.cn/v1；DeepSeek https://api.deepseek.com；"
+        "火山方舟 https://ark.cn-beijing.volces.com/api/v3；"
+        "腾讯混元 https://api.hunyuan.cloud.tencent.com/v1；"
+        "百度千帆 https://qianfan.baidubce.com/v2；"
+        "MiniMax https://api.minimax.io/v1；讯飞星火 https://spark-api-open.xf-yun.com/v1；"
+        "阶跃星辰 https://api.stepfun.ai/v1；零一万物 https://api.lingyiwanwu.com/v1；"
+        "硅基流动 https://api.siliconflow.cn/v1；"
+        "魔搭 https://api-inference.modelscope.cn/v1。"
+    ),
+    "tradingagents.thinking_type": "默认 Thinking 开关：auto/disabled/enabled；未命中日内、长期、复盘专用配置时使用。",
+    "tradingagents.timeout_seconds": "默认超时时间，单位秒；默认 1800 秒，即 30 分钟。",
+    "tradingagents.intraday_thinking_type": "日内/分时请求 Thinking 开关；默认 disabled，降低延迟并减少结构化输出不稳定。",
+    "tradingagents.intraday_timeout_seconds": "日内/分时请求超时时间，单位秒；默认 360 秒。",
+    "tradingagents.long_horizon_thinking_type": "长期研究、组合评级请求 Thinking 开关；默认 enabled。",
+    "tradingagents.long_horizon_timeout_seconds": "长期研究、组合评级请求超时时间，单位秒；默认 2700 秒，即 45 分钟。",
+    "tradingagents.replay_thinking_type": "复盘/回测请求 Thinking 开关；默认 enabled。",
+    "tradingagents.replay_timeout_seconds": "复盘/回测请求超时时间，单位秒；默认 2700 秒，即 45 分钟。",
+    "tradingagents.max_completion_tokens": "单次 LLM 回复 token 上限；TradingAgents 多角色链路建议 1024-2048，避免单个 analyst 输出过长导致整体超时。",
 }
 
 TRADINGAGENTS_API_KEY_FIELD: str = "tradingagents.api_key"

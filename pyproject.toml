@@ -36,7 +36,12 @@ dependencies = [
     "tqdm>=4.67.1",
     "loguru>=0.7.3",
     "nbformat>=5.10.4",
-    "peewee>=3.17.9"
+    "peewee>=3.17.9",
+    "vnpy-datamanager>=1.2.0",
+    "vnpy-postgresql>=1.1.2",
+    "psycopg2-binary>=2.9.12",
+    "keyring>=25.7.0",
+    "tradingagents",
 ]
 keywords = ["quant", "quantitative", "investment", "trading", "algotrading"]
 
@@ -141,3 +146,6 @@ module = [
     "hatchling.*"
 ]
 ignore_missing_imports = true
+
+[tool.uv.sources]
+tradingagents = { git = "https://github.com/TauricResearch/TradingAgents.git" }

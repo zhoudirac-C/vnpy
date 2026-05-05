@@ -33,6 +33,7 @@ def test_context_only_graph_runner_feeds_tools_from_payload_context(tmp_path):
             },
             "llm_provider": "openai",
             "model": "gpt-test",
+            "backend_url": "https://example.test/v1",
             "checkpoint_dir": str(tmp_path / "checkpoint"),
             "config": TradingAgentsWorkerConfig(api_key_env_var="TEST_KEY"),
         }
@@ -46,9 +47,135 @@ def test_context_only_graph_runner_feeds_tools_from_payload_context(tmp_path):
         "fundamental_data": "context",
         "news_data": "context",
     }
+    assert seen["config"]["backend_url"] == "https://example.test/v1"
+    assert seen["config"]["max_completion_tokens"] == 1536
     assert result["action"] == "buy"
     assert result["rating"] == "Buy"
     assert "local snapshot news" in result["report"]
+
+
+def test_context_only_graph_runner_ignores_empty_optional_sections(tmp_path):
+    """Empty optional snapshots should not activate heavier TradingAgents analysts."""
+    from vnpy_tradingagents.tradingagents_factory import (
+        TradingAgentsContextOnlyGraphRunner,
+    )
+
+    seen = {}
+
+    def graph_factory(*, selected_analysts, debug, config):
+        seen["selected_analysts"] = selected_analysts
+        return FakeTradingAgentsGraph()
+
+    runner = TradingAgentsContextOnlyGraphRunner(graph_factory=graph_factory)
+
+    runner.run(
+        {
+            "run_id": "run-1",
+            "symbol": "600519.SSE",
+            "trade_date": "2024-01-03",
+            "mode": "intraday",
+            "context": {
+                "market": {"bars": [{"datetime": "2024-01-03", "close": 11}]},
+                "news": [],
+                "sentiment": {},
+                "fundamentals": None,
+            },
+            "checkpoint_dir": str(tmp_path / "checkpoint"),
+        }
+    )
+
+    assert seen["selected_analysts"] == ["market"]
+
+
+def test_context_only_graph_runner_disables_glm_forced_thinking_in_auto_mode():
+    """GLM thinking models should disable thinking by default for structured output."""
+    from vnpy_tradingagents.tradingagents_factory import _provider_extra_body
+
+    extra_body = _provider_extra_body(
+        {
+            "llm_provider": "glm",
+            "deep_think_llm": "glm-4.7",
+            "quick_think_llm": "glm-4.7",
+            "thinking_type": "auto",
+        }
+    )
+
+    assert extra_body == {"thinking": {"type": "disabled"}}
+
+
+def test_context_only_graph_runner_allows_explicit_glm_thinking_enabled():
+    """Explicit UI settings should override the GLM auto default."""
+    from vnpy_tradingagents.tradingagents_factory import _provider_extra_body
+
+    extra_body = _provider_extra_body(
+        {
+            "llm_provider": "glm",
+            "deep_think_llm": "glm-4.7",
+            "quick_think_llm": "glm-4.7",
+            "thinking_type": "enabled",
+        }
+    )
+
+    assert extra_body == {"thinking": {"type": "enabled"}}
+
+
+def test_context_only_graph_runner_passes_llm_runtime_limits():
+    """Context runner should cap each upstream LLM call for predictable latency."""
+    from vnpy_tradingagents.tradingagents_factory import (
+        TradingAgentsContextOnlyGraphRunner,
+    )
+
+    seen = {}
+
+    def graph_factory(*, selected_analysts, debug, config):
+        seen["config"] = config
+        return FakeTradingAgentsGraph()
+
+    runner = TradingAgentsContextOnlyGraphRunner(graph_factory=graph_factory)
+
+    runner.run(
+        {
+            "run_id": "run-1",
+            "symbol": "600519.SSE",
+            "trade_date": "2024-01-03",
+            "context": {"market": {"bars": [{"close": 10}]}},
+            "timeout_seconds": 42,
+            "max_retries": 0,
+            "max_completion_tokens": 512,
+        }
+    )
+
+    assert seen["config"]["timeout"] == 42
+    assert seen["config"]["max_retries"] == 0
+    assert seen["config"]["max_completion_tokens"] == 512
+
+
+def test_context_only_graph_runner_registers_domestic_openai_providers():
+    """Domestic provider names should be runnable through upstream TradingAgents."""
+    from vnpy_tradingagents.tradingagents_factory import (
+        OPENAI_COMPATIBLE_PROVIDER_CONFIG,
+        _register_openai_compatible_providers,
+    )
+
+    _register_openai_compatible_providers()
+
+    from tradingagents.llm_clients import factory, openai_client
+
+    assert "kimi" in factory._OPENAI_COMPATIBLE
+    assert openai_client._PROVIDER_CONFIG["kimi"] == (
+        "https://api.moonshot.cn/v1",
+        "MOONSHOT_API_KEY",
+    )
+    assert openai_client._PROVIDER_CONFIG["qianfan"] == (
+        "https://qianfan.baidubce.com/v2",
+        "QIANFAN_API_KEY",
+    )
+    assert "siliconflow" in OPENAI_COMPATIBLE_PROVIDER_CONFIG
+    assert openai_client._PROVIDER_CONFIG["modelscope"] == (
+        "https://api-inference.modelscope.cn/v1",
+        "MODELSCOPE_API_KEY",
+    )
+    assert "openai_compatible" in factory._OPENAI_COMPATIBLE
 
 
 def test_context_tools_fail_closed_without_payload_context():

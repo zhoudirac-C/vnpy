@@ -3,7 +3,9 @@ from vnpy.event import EventEngine
 from vnpy.trader.engine import MainEngine
 from vnpy.trader.ui import MainWindow, create_qapp
 
-from vnpy_ctp import CtpGateway
+from importlib import import_module
+from typing import Any
+
 # from vnpy_ctptest import CtptestGateway
 # from vnpy_mini import MiniGateway
 # from vnpy_femas import FemasGateway
@@ -19,8 +21,6 @@ from vnpy_ctp import CtpGateway
 # from vnpy_tts import TtsGateway
 
 # from vnpy_paperaccount import PaperAccountApp
-from vnpy_ctastrategy import CtaStrategyApp
-from vnpy_ctabacktester import CtaBacktesterApp
 # from vnpy_spreadtrading import SpreadTradingApp
 # from vnpy_algotrading import AlgoTradingApp
 # from vnpy_optionmaster import OptionMasterApp
@@ -29,12 +29,41 @@ from vnpy_ctabacktester import CtaBacktesterApp
 # from vnpy_chartwizard import ChartWizardApp
 # from vnpy_rpcservice import RpcServiceApp
 # from vnpy_excelrtd import ExcelRtdApp
-from vnpy_datamanager import DataManagerApp
 # from vnpy_datarecorder import DataRecorderApp
 # from vnpy_riskmanager import RiskManagerApp
 # from vnpy_webtrader import WebTraderApp
 # from vnpy_portfoliomanager import PortfolioManagerApp
 from vnpy_tradingagents import TradingAgentsApp
+
+
+def optional_class(module_name: str, class_name: str) -> type[Any] | None:
+    """
+    Import optional VeighNa plugins without blocking the base UI startup.
+    """
+    try:
+        module = import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name == module_name:
+            print(f"Skip optional plugin {module_name}: not installed")
+            return None
+        raise
+    return getattr(module, class_name)
+
+
+def add_optional_gateway(main_engine: MainEngine, gateway_class: type[Any] | None) -> None:
+    """
+    Register an optional gateway when its package is installed.
+    """
+    if gateway_class is not None:
+        main_engine.add_gateway(gateway_class)
+
+
+def add_optional_app(main_engine: MainEngine, app_class: type[Any] | None) -> None:
+    """
+    Register an optional app when its package is installed.
+    """
+    if app_class is not None:
+        main_engine.add_app(app_class)
 
 
 def main():
@@ -45,7 +74,7 @@ def main():
 
     main_engine = MainEngine(event_engine)
 
-    main_engine.add_gateway(CtpGateway)
+    add_optional_gateway(main_engine, optional_class("vnpy_ctp", "CtpGateway"))
     # main_engine.add_gateway(CtptestGateway)
     # main_engine.add_gateway(MiniGateway)
     # main_engine.add_gateway(FemasGateway)
@@ -62,8 +91,8 @@ def main():
     # main_engine.add_gateway(TtsGateway)
 
     # main_engine.add_app(PaperAccountApp)
-    main_engine.add_app(CtaStrategyApp)
-    main_engine.add_app(CtaBacktesterApp)
+    add_optional_app(main_engine, optional_class("vnpy_ctastrategy", "CtaStrategyApp"))
+    add_optional_app(main_engine, optional_class("vnpy_ctabacktester", "CtaBacktesterApp"))
     # main_engine.add_app(SpreadTradingApp)
     # main_engine.add_app(AlgoTradingApp)
     # main_engine.add_app(OptionMasterApp)
@@ -72,7 +101,7 @@ def main():
     # main_engine.add_app(ChartWizardApp)
     # main_engine.add_app(RpcServiceApp)
     # main_engine.add_app(ExcelRtdApp)
-    main_engine.add_app(DataManagerApp)
+    add_optional_app(main_engine, optional_class("vnpy_datamanager", "DataManagerApp"))
     # main_engine.add_app(DataRecorderApp)
     # main_engine.add_app(RiskManagerApp)
     # main_engine.add_app(WebTraderApp)

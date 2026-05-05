@@ -42,6 +42,7 @@ def test_closed_loop_validation_passes_production_when_all_gates_pass():
             "OPENAI_API_KEY": "secret",
         },
         runner=runner,
+        settings={"tradingagents.api_key_env_var": "OPENAI_API_KEY"},
     )
 
     assert report.production_ready
@@ -73,6 +74,7 @@ def test_closed_loop_validation_ignores_generated_validation_evidence():
             "OPENAI_API_KEY": "secret",
         },
         runner=runner,
+        settings={"tradingagents.api_key_env_var": "OPENAI_API_KEY"},
     )
 
     assert report.worktree_clean
@@ -80,18 +82,17 @@ def test_closed_loop_validation_ignores_generated_validation_evidence():
     assert report.production_ready
 
 
-def test_closed_loop_validation_accepts_vnpy_worker_factory_setting(monkeypatch):
+def test_closed_loop_validation_accepts_vnpy_worker_factory_setting():
     """Worker factory gate should accept the vn.py UI setting, not only env vars."""
     from tools.production.closed_loop_validation import environment_gate_results
-    from vnpy.trader.setting import SETTINGS
 
-    monkeypatch.setitem(
-        SETTINGS,
-        "tradingagents.worker_factory",
-        "vnpy_tradingagents.tradingagents_factory:build",
+    results = environment_gate_results(
+        {"OPENAI_API_KEY": "secret"},
+        settings={
+            "tradingagents.api_key_env_var": "OPENAI_API_KEY",
+            "tradingagents.worker_factory": "vnpy_tradingagents.tradingagents_factory:build",
+        },
     )
-
-    results = environment_gate_results({"OPENAI_API_KEY": "secret"})
     worker_gate = next(
         result for result in results if result.name == "tradingagents_worker_factory_env"
     )
@@ -117,6 +118,7 @@ def test_closed_loop_validation_markdown_contains_conclusion():
             "OPENAI_API_KEY": "secret",
         },
         runner=runner,
+        settings={"tradingagents.api_key_env_var": "OPENAI_API_KEY"},
     )
 
     markdown = render_markdown(report)
