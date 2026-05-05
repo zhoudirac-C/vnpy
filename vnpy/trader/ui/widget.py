@@ -45,6 +45,9 @@ COLOR_ASK = QtGui.QColor(160, 255, 160)
 COLOR_BLACK = QtGui.QColor("black")
 
 SETTING_HELP_TEXT: dict[str, str] = {
+    "datafeed.name": "使用本 fork 可切换数据源时填 datafeed.name=router；实时行情和交易仍需要 Gateway。",
+    "router.providers": "router 历史 Datafeed 的 provider 列表，例如 akshare、local_file、tushare、qmt、xt。AKShare 只作为历史 Datafeed 起步源，不是实时 Gateway。",
+    "router.local_path": "local_file provider 的本地 K 线路径；router.providers=local_file 时使用 router.local_path，而不是 local_file:/path 写法。",
     "tradingagents.api_key_env_var": "环境变量名，例如 OPENAI_API_KEY、ZHIPU_API_KEY；真实 API key 请填下面的安全输入框。",
     "tradingagents.worker_factory": "TradingAgents Worker 工厂，默认等同于环境变量 TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build。",
     "tradingagents.llm_provider": (
@@ -949,12 +952,14 @@ class TradingWidget(QtWidgets.QWidget):
         Set the tick depth data to monitor by vt_symbol.
         """
         symbol: str = str(self.symbol_line.text())
-        if not symbol:
+        exchange_value: str = str(self.exchange_combo.currentText())
+        req: SubscribeRequest | None = build_trading_subscribe_request(symbol, exchange_value)
+        if req is None:
+            self.name_line.setText("")
             return
 
         # Generate vt_symbol from symbol and exchange
-        exchange_value: str = str(self.exchange_combo.currentText())
-        vt_symbol: str = f"{symbol}.{exchange_value}"
+        vt_symbol: str = f"{req.symbol}.{req.exchange.value}"
 
         if vt_symbol == self.vt_symbol:
             return
@@ -981,10 +986,6 @@ class TradingWidget(QtWidgets.QWidget):
         self.price_line.setText("")
 
         # Subscribe tick data
-        req: SubscribeRequest = SubscribeRequest(
-            symbol=symbol, exchange=Exchange(exchange_value)
-        )
-
         self.main_engine.subscribe(req, gateway_name)
 
     def clear_label_text(self) -> None:
@@ -1039,9 +1040,14 @@ class TradingWidget(QtWidgets.QWidget):
         else:
             price = float(price_text)
 
+        exchange_value: str = str(self.exchange_combo.currentText())
+        if not _is_valid_exchange(exchange_value):
+            QtWidgets.QMessageBox.critical(self, _("委托失败"), _("请选择交易所"))
+            return
+
         req: OrderRequest = OrderRequest(
             symbol=symbol,
-            exchange=Exchange(str(self.exchange_combo.currentText())),
+            exchange=Exchange(exchange_value),
             direction=Direction(str(self.direction_combo.currentText())),
             type=OrderType(str(self.order_type_combo.currentText())),
             volume=volume,
@@ -1400,6 +1406,36 @@ def coerce_global_setting_values(
         settings[field_name] = field_value
 
     return settings, secrets
+
+
+def build_trading_subscribe_request(
+    symbol: str,
+    exchange_value: str,
+) -> SubscribeRequest | None:
+    """
+    Build a subscribe request from trading panel text fields.
+    """
+    normalized_symbol = symbol.strip()
+    normalized_exchange = exchange_value.strip()
+    if not normalized_symbol or not _is_valid_exchange(normalized_exchange):
+        return None
+    return SubscribeRequest(
+        symbol=normalized_symbol,
+        exchange=Exchange(normalized_exchange),
+    )
+
+
+def _is_valid_exchange(exchange_value: str) -> bool:
+    """
+    Return whether text maps to a vn.py Exchange enum.
+    """
+    if not exchange_value.strip():
+        return False
+    try:
+        Exchange(exchange_value)
+    except ValueError:
+        return False
+    return True
 
 
 def save_tradingagents_api_key_from_ui(

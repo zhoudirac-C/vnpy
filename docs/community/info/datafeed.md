@@ -10,6 +10,25 @@
 
 以上字段对于所有数据服务都是必填的，如果是token方式授权请填写在datafeed.password字段中。目前VeighNa Trader支持以下七种数据服务，**具体每个数据服务的细节可在对应的项目地址中找到**。
 
+## Router 和 AKShare
+
+本 fork 增加了 `vnpy_router.Datafeed`，用于在 vn.py 原生 Datafeed 入口下切换多个历史数据来源。配置方式仍在 **配置 -> 全局配置** 中完成：
+
+| 字段 | 示例 | 说明 |
+| --- | --- | --- |
+| `datafeed.name` | `router` | 让 vn.py `get_datafeed()` 加载本 fork 的可切换 Datafeed |
+| `router.providers` | `akshare` 或 `local_file,akshare` | provider 优先级列表 |
+| `router.local_path` | `/path/to/bars` | `local_file` provider 使用的本地 K 线目录 |
+
+AKShare 在本 fork 中是历史 Datafeed provider，不是 Gateway：
+
+- 支持当前实现覆盖 A 股日线/周线研究数据。
+- 不作为分钟线、tick、实时盘口或交易接口。
+- 不会自动填充主界面的实时行情表；实时行情仍需要 QMT/XT、XTP、TORA、CTP 等 Gateway 连接和订阅。
+- 回测、数据管理或脚本查询历史 K 线时，可以通过 `datafeed.name=router` 和 `router.providers=akshare` 使用。
+
+如果要查看回测，请启动 Trader 后进入 **功能 -> CTA回测**。当前示例启动脚本已经自动加载 `CtaStrategyApp` 和 `CtaBacktesterApp`；回测数据来自 vn.py Database 或 Datafeed，而不是主交易窗口的实时行情表。
+
 ## 迅投研
 
 迅投研是由睿智融科公司推出的专业数据服务，对于大部分个人投资者来说应该都是性价比比较高的选择：

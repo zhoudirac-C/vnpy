@@ -107,6 +107,30 @@ def test_global_setting_ui_documents_mode_specific_thinking_and_timeouts():
     assert "45 分钟" in SETTING_HELP_TEXT["tradingagents.replay_timeout_seconds"]
 
 
+def test_trading_widget_subscribe_request_rejects_empty_exchange():
+    """Trading panel helpers should not raise ValueError when exchange text is empty."""
+    from vnpy.trader.constant import Exchange
+    from vnpy.trader.ui.widget import build_trading_subscribe_request
+
+    assert build_trading_subscribe_request("001267", "") is None
+    assert build_trading_subscribe_request("001267", "NOT_AN_EXCHANGE") is None
+
+    req = build_trading_subscribe_request("001267", "SZSE")
+    assert req is not None
+    assert req.symbol == "001267"
+    assert req.exchange == Exchange.SZSE
+
+
+def test_global_setting_ui_documents_router_akshare_configuration():
+    """Global settings help should explain router/AKShare datafeed fields."""
+    from vnpy.trader.ui.widget import SETTING_HELP_TEXT
+
+    assert "datafeed.name=router" in SETTING_HELP_TEXT["datafeed.name"]
+    assert "akshare" in SETTING_HELP_TEXT["router.providers"]
+    assert "router.local_path" in SETTING_HELP_TEXT["router.local_path"]
+    assert "历史 Datafeed" in SETTING_HELP_TEXT["router.providers"]
+
+
 class FakeKeyring:
     """In-memory keyring fake."""
 
