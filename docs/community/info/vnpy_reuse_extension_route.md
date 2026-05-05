@@ -134,11 +134,11 @@ PostgreSQL 不再承担所有职责：
 | `akshare` | 安装 AKShare，适合无账号阶段拉公开数据 |
 | `tushare` | 安装 TuShare，适合有 token 后补齐行情和基础数据 |
 | `alpha` | 安装 `vnpy.alpha` 因子研究依赖，用于 Alpha101/Alpha158、因子分析和模型研究；Polars 使用 `rtcompat` 运行时以避开部分 macOS/Python 组合的 CPU 指令兼容问题 |
-| `prod` | vn.py 主进程的 PostgreSQL、AKShare、TuShare 生产候选组合，不包含 TradingAgents |
+| `prod` | vn.py 主进程的 PostgreSQL、AKShare、TuShare 生产候选组合 |
 
 `alpha` 是可选研究增强模块，不随 vn.py 主进程启动自动安装。`vnpy.alpha` 入口采用懒加载，未安装 `alpha` extra 时，主交易、数据路由、TradingAgents 基础上下文不受影响；只有实际使用 AlphaDataset、Alpha101、因子模型或 tear sheet 分析时才需要安装。
 
-TradingAgents 不放入本仓库默认依赖，建议作为可选运行依赖安装在 vn.py 所在环境中，并通过 context-only factory 懒加载，避免未启用 AI 时污染主交易链路。QMT/XT/RQData 这类 vn.py 插件不放入本 fork 的默认依赖，由使用者按券商和账号情况单独安装对应 vn.py datafeed/gateway 包。
+本 fork 当前把 `tradingagents` 放入主依赖，目的是让默认 context-only factory 在部署阶段即可解析并验证；但它仍然是懒加载：vn.py 启动不会自动调用大模型，未启用 TradingAgents 或缺少 API key 时会结构化降级。QMT/XT/RQData 这类 vn.py 插件不放入本 fork 的默认依赖，由使用者按券商和账号情况单独安装对应 vn.py datafeed/gateway 包。
 
 ## 5. TradingAgents 路线
 

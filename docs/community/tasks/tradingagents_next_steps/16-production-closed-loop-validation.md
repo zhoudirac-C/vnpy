@@ -21,7 +21,7 @@
   - 目标：记录当前本机 local profile 的实际验证过程和结果。
   - 验收：结果明确显示代码级检查通过，但生产准入因真实 PostgreSQL、Worker、API key 和 readiness 阻塞而未通过。
 
-- [ ] **P16-T04: 真实 PostgreSQL production profile 验证**
+- [x] **P16-T04: 真实 PostgreSQL production profile 验证**
   - 前置：vn.py 全局 `database.name=postgresql` 和完整 `database.*`、schema init/status、备份恢复策略。
   - 目标：在真实 PostgreSQL 上跑 production profile 并落档。
   - 验收：PostgreSQL 扩展表 create_tables/status、snapshot 读写和 runtime state 均通过真实连接验证。
@@ -44,6 +44,6 @@
 | P16-T02 | 2026-05-04 | 未提交 | 文档检查 |
 | P16-T03 | 2026-05-04 | 未提交 | `uv run python -m tools.production.closed_loop_validation --profile local --repo-root . --output docs/community/ops/validation_results/2026-05-04-production-closed-loop-local.md --json-output docs/community/ops/validation_results/2026-05-04-production-closed-loop-local.json` |
 | P16-T03A | 2026-05-05 | 未提交 | P17 纠错后重新落档：`uv run python -m tools.production.closed_loop_validation --profile local --repo-root . --output docs/community/ops/validation_results/2026-05-05-production-closed-loop-local.md --json-output docs/community/ops/validation_results/2026-05-05-production-closed-loop-local.json` |
-| P16-T04 | Blocked | 未提交 | 等待真实 PostgreSQL |
-| P16-T05 | Blocked | 未提交 | 代码侧已提供默认 context-only factory；仍等待当前 vn.py 环境安装上游 TradingAgents、真实 LLM key 和真实 PostgreSQL 快照 |
+| P16-T04 | 2026-05-05 | `fc697468` | Podman E2E `20260505-161512`：真实 PostgreSQL 容器、schema init/status、snapshot 持久化和容器重启持久性均通过 |
+| P16-T05 | Smoke Passed | 未提交 | BigModel/GLM-4.7 线上 smoke 已通过，见 `docs/community/ops/validation_results/2026-05-05-tradingagents-online-thinking-smoke.md`；仍需真实 PostgreSQL 快照入库和批量运行验证 |
 | P16-T06 | Blocked | 未提交 | 等待 P16-T04/P16-T05 |
