@@ -114,6 +114,12 @@ class ProductionReadinessChecker:
         else:
             items.append(_ready("peewee", "peewee dependency is available"))
 
+        if not missing_postgres_fields:
+            if not self.module_available("psycopg2"):
+                items.append(_failed("psycopg2", "psycopg2 is required for Peewee PostgreSQL connections"))
+            else:
+                items.append(_ready("psycopg2", "psycopg2 PostgreSQL driver is available"))
+
         api_key_env_var: str = str(
             self.settings.get("tradingagents.api_key_env_var", "OPENAI_API_KEY")
         )
@@ -178,13 +184,21 @@ class ProductionReadinessChecker:
         items: list[ReadinessItem] = []
         for name, value in providers:
             if name == "local_file":
-                path: str = value or str(self.settings.get("router.local_path", ""))
+                path: str = str(self.settings.get("router.local_path", "")).strip()
+                if value:
+                    items.append(
+                        _warning(
+                            "local_file_provider",
+                            "local_file path in router.providers is ignored; configure router.local_path for vn.py Datafeed compatibility",
+                        )
+                    )
+                    continue
                 if not path:
-                    items.append(_warning("local_file_provider", "local_file provider has no path configured"))
+                    items.append(_warning("local_file_provider", "local_file provider has no router.local_path configured"))
                 elif not self.path_exists(path):
-                    items.append(_warning("local_file_provider", f"local_file path does not exist: {path}"))
+                    items.append(_warning("local_file_provider", f"router.local_path does not exist: {path}"))
                 else:
-                    items.append(_ready("local_file_provider", f"local_file path exists: {path}"))
+                    items.append(_ready("local_file_provider", f"router.local_path exists: {path}"))
             elif name == "akshare":
                 if self.module_available("akshare"):
                     items.append(_ready("akshare_provider", "akshare dependency is available"))
@@ -227,7 +241,8 @@ class ProductionReadinessChecker:
 
 def _parse_provider_specs(raw: Any) -> list[tuple[str, str]]:
     """
-    Parse simple provider specs such as local_file:/path,akshare.
+    Parse provider specs while keeping path-like values for provider types that
+    explicitly support them, such as social:/path.
     """
     if not raw:
         return []

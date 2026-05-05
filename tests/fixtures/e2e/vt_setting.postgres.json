@@ -1,0 +1,13 @@
+{
+    "datafeed.name": "router",
+    "router.providers": "local_file",
+    "router.local_path": "/workspace/tests/fixtures/e2e",
+    "tradingagents.api_key_env_var": "OPENAI_API_KEY",
+    "tradingagents.worker_factory": "vnpy_tradingagents.tradingagents_factory:build",
+    "database.name": "postgresql",
+    "database.database": "vnpy",
+    "database.host": "vnpy-e2e-postgres",
+    "database.port": 5432,
+    "database.user": "vnpy",
+    "database.password": "vnpy-e2e-password"
+}

@@ -1,0 +1,164 @@
+Client:
+  APIVersion: 5.6.2
+  BuildOrigin: pkginstaller
+  Built: 1759260947
+  BuiltTime: Wed Oct  1 03:35:47 2025
+  GitCommit: 9dd5e1ed33830612bc200d7a13db00af6ab865a4
+  GoVersion: go1.25.1
+  Os: darwin
+  OsArch: darwin/arm64
+  Version: 5.6.2
+host:
+  arch: arm64
+  buildahVersion: 1.41.5
+  cgroupControllers:
+  - cpuset
+  - cpu
+  - io
+  - memory
+  - pids
+  - rdma
+  - misc
+  - dmem
+  cgroupManager: systemd
+  cgroupVersion: v2
+  conmon:
+    package: conmon-2.1.13-1.fc42.aarch64
+    path: /usr/bin/conmon
+    version: 'conmon version 2.1.13, commit: '
+  cpuUtilization:
+    idlePercent: 99.93
+    systemPercent: 0.05
+    userPercent: 0.02
+  cpus: 6
+  databaseBackend: sqlite
+  distribution:
+    distribution: fedora
+    variant: coreos
+    version: "42"
+  emulatedArchitectures:
+  - linux/386
+  - linux/amd64
+  - linux/arm64be
+  eventLogger: journald
+  freeLocks: 2045
+  hostname: localhost.localdomain
+  idMappings:
+    gidmap: null
+    uidmap: null
+  kernel: 6.15.10-200.fc42.aarch64
+  linkmode: dynamic
+  logDriver: journald
+  memFree: 2588176384
+  memTotal: 3787886592
+  networkBackend: netavark
+  networkBackendInfo:
+    backend: netavark
+    dns:
+      package: aardvark-dns-1.16.0-1.fc42.aarch64
+      path: /usr/libexec/podman/aardvark-dns
+      version: aardvark-dns 1.16.0
+    package: netavark-1.16.1-1.fc42.aarch64
+    path: /usr/libexec/podman/netavark
+    version: netavark 1.16.1
+  ociRuntime:
+    name: crun
+    package: crun-1.23.1-1.fc42.aarch64
+    path: /usr/bin/crun
+    version: |-
+      crun version 1.23.1
+      commit: d20b23dba05e822b93b82f2f34fd5dada433e0c2
+      rundir: /run/crun
+      spec: 1.0.0
+      +SYSTEMD +SELINUX +APPARMOR +CAP +SECCOMP +EBPF +CRIU +LIBKRUN +WASM:wasmedge +YAJL
+  os: linux
+  pasta:
+    executable: /usr/bin/pasta
+    package: passt-0^20250805.g309eefd-2.fc42.aarch64
+    version: |
+      pasta 0^20250805.g309eefd-2.fc42.aarch64-pasta
+      Copyright Red Hat
+      GNU General Public License, version 2 or later
+        <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>
+      This is free software: you are free to change and redistribute it.
+      There is NO WARRANTY, to the extent permitted by law.
+  remoteSocket:
+    exists: true
+    path: unix:///run/podman/podman.sock
+  rootlessNetworkCmd: pasta
+  security:
+    apparmorEnabled: false
+    capabilities: CAP_CHOWN,CAP_DAC_OVERRIDE,CAP_FOWNER,CAP_FSETID,CAP_KILL,CAP_NET_BIND_SERVICE,CAP_SETFCAP,CAP_SETGID,CAP_SETPCAP,CAP_SETUID,CAP_SYS_CHROOT
+    rootless: false
+    seccompEnabled: true
+    seccompProfilePath: /usr/share/containers/seccomp.json
+    selinuxEnabled: true
+  serviceIsRemote: true
+  slirp4netns:
+    executable: /usr/bin/slirp4netns
+    package: slirp4netns-1.3.1-2.fc42.aarch64
+    version: |-
+      slirp4netns version 1.3.1
+      commit: e5e368c4f5db6ae75c2fce786e31eef9da6bf236
+      libslirp: 4.8.0
+      SLIRP_CONFIG_VERSION_MAX: 5
+      libseccomp: 2.5.5
+  swapFree: 0
+  swapTotal: 0
+  uptime: 39h 46m 8.00s (Approximately 1.62 days)
+  variant: v8
+plugins:
+  authorization: null
+  log:
+  - k8s-file
+  - none
+  - passthrough
+  - journald
+  network:
+  - bridge
+  - macvlan
+  - ipvlan
+  volume:
+  - local
+registries:
+  search:
+  - docker.io
+store:
+  configFile: /usr/share/containers/storage.conf
+  containerStore:
+    number: 2
+    paused: 0
+    running: 1
+    stopped: 1
+  graphDriverName: overlay
+  graphOptions:
+    overlay.additionalImageStores:
+    - /usr/lib/containers/storage
+    overlay.imagestore: /usr/lib/containers/storage
+    overlay.mountopt: nodev,metacopy=on
+  graphRoot: /var/lib/containers/storage
+  graphRootAllocated: 31607205888
+  graphRootUsed: 4822003712
+  graphStatus:
+    Backing Filesystem: xfs
+    Native Overlay Diff: "false"
+    Supports d_type: "true"
+    Supports shifting: "true"
+    Supports volatile: "true"
+    Using metacopy: "true"
+  imageCopyTmpDir: /var/tmp
+  imageStore:
+    number: 45
+  runRoot: /run/containers/storage
+  transientStore: false
+  volumePath: /var/lib/containers/storage/volumes
+version:
+  APIVersion: 5.6.2
+  BuildOrigin: 'Copr: packit/containers-podman-27198'
+  Built: 1759190400
+  BuiltTime: Tue Sep 30 08:00:00 2025
+  GitCommit: 9dd5e1ed33830612bc200d7a13db00af6ab865a4
+  GoVersion: go1.24.7
+  Os: linux
+  OsArch: linux/arm64
+  Version: 5.6.2

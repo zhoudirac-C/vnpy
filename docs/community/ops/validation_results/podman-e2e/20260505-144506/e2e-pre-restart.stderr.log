@@ -1,0 +1,32 @@
+Using CPython 3.13.13 interpreter at: /usr/local/bin/python3
+Creating virtual environment at: /tmp/vnpy-e2e-venv
+   Building vnpy @ file:///workspace
+Downloading plotly (9.4MiB)
+Downloading numpy (14.9MiB)
+Downloading pyside6-essentials (88.9MiB)
+Downloading ta-lib (3.8MiB)
+Downloading pyside6-addons (149.2MiB)
+Downloading pandas (11.2MiB)
+Downloading pyqtgraph (1.8MiB)
+ Downloaded pyqtgraph
+ Downloaded ta-lib
+ Downloaded plotly
+ Downloaded pandas
+ Downloaded numpy
+      Built vnpy @ file:///workspace
+ Downloaded pyside6-essentials
+ Downloaded pyside6-addons
+Installed 40 packages in 305ms
+Downloading pygments (1.2MiB)
+Downloading polars-runtime-compat (47.8MiB)
+Downloading psycopg2-binary (5.6MiB)
+Downloading scipy (31.4MiB)
+Downloading polars-runtime-32 (47.9MiB)
+Downloading ruff (10.3MiB)
+ Downloaded pygments
+ Downloaded psycopg2-binary
+ Downloaded ruff
+ Downloaded scipy
+ Downloaded polars-runtime-compat
+ Downloaded polars-runtime-32
+Installed 12 packages in 128ms

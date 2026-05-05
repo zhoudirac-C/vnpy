@@ -87,7 +87,18 @@ LOCAL_COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         name="pytest_non_alpha",
-        command=("uv", "run", "--with", "pytest", "pytest", "tests", "-q", "--ignore=tests/test_alpha101.py"),
+        command=(
+            "uv",
+            "run",
+            "--with",
+            "pytest",
+            "--with",
+            "psycopg2-binary",
+            "pytest",
+            "tests",
+            "-q",
+            "--ignore=tests/test_alpha101.py",
+        ),
     ),
     CommandSpec(
         name="alpha_optional_imports",
@@ -133,7 +144,15 @@ LOCAL_COMMANDS: tuple[CommandSpec, ...] = (
 PRODUCTION_COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec(
         name="readiness_cli",
-        command=("uv", "run", "vnpy-tradingagents-schema", "readiness", "--json"),
+        command=(
+            "uv",
+            "run",
+            "--with",
+            "psycopg2-binary",
+            "vnpy-tradingagents-schema",
+            "readiness",
+            "--json",
+        ),
         required_local=False,
         required_production=True,
     ),
