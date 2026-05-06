@@ -62,6 +62,12 @@ from .audit_export import AuditExportRecord, export_audit_csv, export_audit_json
 from .live_gate import LiveGate, LiveGateConfig, LiveGateMetrics, LiveGateResult
 from .metrics import MetricsCollector, MetricsSnapshot
 from .ops_storage import OpsHeartbeat, PostgresOpsStorage
+from .news_ingestion import (
+    ExternalNewsIngestionJob,
+    ExternalNewsIngestionScheduler,
+    NewsIngestionSummary,
+    build_news_ingestion_provider,
+)
 from .output_validation import validate_worker_response
 from .readiness import (
     ProductionReadinessChecker,
@@ -120,6 +126,8 @@ __all__ = [
     "BatchRunSummary",
     "DecisionAuditRecord",
     "EventEngineIntradayCollector",
+    "ExternalNewsIngestionJob",
+    "ExternalNewsIngestionScheduler",
     "FusedSignal",
     "GatewayAccountMode",
     "GatewayAiPolicy",
@@ -142,6 +150,7 @@ __all__ = [
     "MarketDataToolkit",
     "MetricsCollector",
     "MetricsSnapshot",
+    "NewsIngestionSummary",
     "OrderBridge",
     "OrderBridgeResult",
     "OrderIntent",
@@ -225,6 +234,7 @@ __all__ = [
     "build_feedback_context",
     "build_reflection_context",
     "build_worker_system_prompt",
+    "build_news_ingestion_provider",
     "export_audit_csv",
     "export_audit_jsonl",
     "initialize_postgres_schema",

@@ -134,6 +134,7 @@ class ProductionReadinessChecker:
 
         items.extend(self._worker_checks())
         items.extend(self._provider_checks())
+        items.append(self._news_ingestion_check())
         return ReadinessReport(items)
 
     def _worker_checks(self) -> list[ReadinessItem]:
@@ -270,6 +271,44 @@ class ProductionReadinessChecker:
             "no production minute source is configured; AKShare/local_file/TuShare daily data is not enough for intraday AI",
         )
 
+    def _news_ingestion_check(self) -> ReadinessItem:
+        """
+        Check optional external news ingestion configuration.
+        """
+        if not _to_bool(self.settings.get("news.ingestion.enabled", False)):
+            return _ready(
+                "news_ingestion",
+                "external news ingestion is disabled; news context may degrade without blocking",
+            )
+
+        provider_names: list[str] = _split_names(
+            self.settings.get("news.ingestion.providers", "")
+        )
+        if not provider_names:
+            return _warning(
+                "news_ingestion",
+                "news.ingestion.enabled is true but news.ingestion.providers is empty",
+            )
+
+        warnings: list[str] = []
+        for provider in provider_names:
+            if provider == "local_file":
+                path = str(self.settings.get("news.ingestion.local_path", "")).strip()
+                if not path:
+                    warnings.append("local_file has no news.ingestion.local_path configured")
+                elif not self.path_exists(path):
+                    warnings.append(f"news.ingestion.local_path does not exist: {path}")
+            elif provider in {"akshare_stock_news", "akshare_global_news"}:
+                if not self.module_available("akshare"):
+                    warnings.append(f"{provider} requires akshare")
+            else:
+                warnings.append(f"provider has no news ingestion readiness checker: {provider}")
+
+        if warnings:
+            return _warning("news_ingestion", "; ".join(warnings))
+
+        return _ready("news_ingestion", "external news ingestion providers are configured")
+
 
 def _parse_provider_specs(raw: Any) -> list[tuple[str, str]]:
     """
@@ -299,6 +338,19 @@ def _parse_provider_specs(raw: Any) -> list[tuple[str, str]]:
                 specs.append((str(item), ""))
         return [(name, value) for name, value in specs if name]
     return []
+
+
+def _split_names(raw: Any) -> list[str]:
+    """
+    Split comma/list configuration values into names.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    if isinstance(raw, list):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    return [str(raw).strip()]
 
 
 def _ready(name: str, message: str) -> ReadinessItem:

@@ -86,6 +86,16 @@ SETTING_HELP_TEXT: dict[str, str] = {
     "tradingagents.replay_thinking_type": "复盘/回测请求 Thinking 开关；默认 enabled。",
     "tradingagents.replay_timeout_seconds": "复盘/回测请求超时时间，单位秒；默认 2700 秒，即 45 分钟。",
     "tradingagents.max_completion_tokens": "单次 LLM 回复 token 上限；TradingAgents 多角色链路建议 1024-2048，避免单个 analyst 输出过长导致整体超时。",
+    "news.ingestion.enabled": "外部新闻入库定时任务开关，默认关闭。开启后按 news.ingestion.providers 拉取新闻并写入 PostgreSQL；公开源失败只会降级，不影响主交易链路。",
+    "news.ingestion.providers": "外部新闻 provider 顺序，例如 local_file、akshare_stock_news、akshare_global_news。AKShare 新闻源为研究增强，不承诺生产 SLA。",
+    "news.ingestion.interval_seconds": "外部新闻定时任务触发间隔，单位秒；默认 900 秒。",
+    "news.ingestion.lookback_minutes": "每次新闻抓取回看窗口，单位分钟；默认 1440 分钟。",
+    "news.ingestion.max_items_per_symbol": "单标的单次最多入库新闻条数；默认 50。",
+    "news.ingestion.symbols": "新闻入库关注标的列表，逗号分隔，例如 600519.SSE,000001.SZSE；为空时由调用方或后续股票池提供。",
+    "news.ingestion.local_path": "local_file 新闻 provider 的本地 CSV/JSON 路径，用于 fixture、人工事件或离线验证。",
+    "news.ingestion.akshare.endpoints": "AKShare 新闻 endpoint 顺序，例如 stock_news_em,stock_info_global_cls；个股新闻和全局财经新闻分开入库。",
+    "news.ingestion.timeout_seconds": "单个外部新闻 provider 的建议超时时间，单位秒；第一版仅用于配置和诊断。",
+    "news.ingestion.enabled_in_live": "实盘时是否允许外部新闻定时任务运行，默认 false；建议先在回测/Paper/仿真中验证。",
 }
 
 TRADINGAGENTS_API_KEY_FIELD: str = "tradingagents.api_key"

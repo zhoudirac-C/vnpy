@@ -81,10 +81,12 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 | P21 | [21-stock-gateway-simulation-validation.md](21-stock-gateway-simulation-validation.md) | 验证股票 Gateway、仿真和 live gate 接入边界 |
 | P22 | [22-ui-usability-fixes.md](22-ui-usability-fixes.md) | 修复配置、交易面板和回测入口的 UI 可用性问题 |
 | P23 | [23-docs-dependency-consistency.md](23-docs-dependency-consistency.md) | 清理文档、依赖和阶段状态之间的不一致 |
+| P24 | [24-news-ingestion-scheduler.md](24-news-ingestion-scheduler.md) | 补外部新闻入库 provider、定时任务、readiness 和验证落档 |
 
 ## 下一步推荐
 
 1. 先完成 P19，用本地 fixture 和 vn.py BacktestingEngine 跑通回测闭环，并把验证结果落档。
 2. 再完成 P20/P21，把真实数据源、股票 Gateway、仿真和 live gate 分别验证清楚。
-3. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
-4. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。
+3. 若要补新闻增强，按 P24 先做外部新闻入库定时任务；社媒情绪继续后置。
+4. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
+5. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。
