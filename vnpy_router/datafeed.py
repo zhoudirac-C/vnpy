@@ -161,6 +161,15 @@ def _build_provider(config: Mapping[str, Any]) -> BaseProvider | None:
         return LocalFileProvider(Path(str(local_path)))
 
     if name == "akshare":
+        endpoints: list[str] | None = _optional_str_list(
+            config.get("endpoints") or config.get("endpoint_order")
+        )
+        if endpoints or config.get("adjustment") or config.get("provider_version"):
+            return AkshareProvider(
+                endpoints=endpoints,
+                adjustment=str(config.get("adjustment") or ""),
+                provider_version=str(config.get("provider_version") or ""),
+            )
         return AkshareProvider()
 
     if name == "tushare":
@@ -195,6 +204,19 @@ def _optional_str(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _optional_str_list(value: Any) -> list[str] | None:
+    """
+    Return an optional list of non-empty strings from JSON/list/comma text config.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, Sequence):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()]
 
 
 def _connect_postgres() -> Any | None:

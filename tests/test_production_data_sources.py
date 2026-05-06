@@ -96,6 +96,27 @@ def test_akshare_provider_declares_research_only_boundaries(monkeypatch):
     assert any("does not support interval" in message for message in messages)
 
 
+def test_akshare_provider_falls_back_between_internal_endpoints(monkeypatch):
+    """AKShare provider should try secondary public endpoints when the primary endpoint fails."""
+    from vnpy_router.providers import akshare as akshare_module
+    from vnpy_router.providers.akshare import AkshareProvider
+
+    fake_akshare = FakeAkshareModule()
+    monkeypatch.setattr(akshare_module, "import_module", lambda name: fake_akshare)
+
+    messages: list[str] = []
+    provider = AkshareProvider(endpoints=["stock_zh_a_hist", "stock_zh_a_hist_tx"])
+
+    bars = provider.query_bar_history(_history_request(), output=messages.append)
+
+    assert fake_akshare.calls == ["stock_zh_a_hist", "stock_zh_a_hist_tx"]
+    assert len(bars) == 1
+    assert bars[0].close_price == 1695
+    assert bars[0].extra["provider_name"] == "akshare"
+    assert bars[0].extra["provider_endpoint"] == "stock_zh_a_hist_tx"
+    assert any("stock_zh_a_hist query failed" in message for message in messages)
+
+
 def test_qmt_and_xt_providers_wrap_vnpy_datafeed_plugins(monkeypatch):
     """QMT/XT adapters should route through vn.py datafeed plugins, not xtquant directly."""
     import importlib
@@ -359,6 +380,33 @@ class FakeTushareModule:
                     "close": 1695,
                     "vol": 12,
                     "amount": 2034,
+                }
+            ]
+        )
+
+
+class FakeAkshareModule:
+    """Tiny AKShare module that fails primary endpoint and succeeds on fallback."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def stock_zh_a_hist(self, **kwargs):
+        self.calls.append("stock_zh_a_hist")
+        raise RuntimeError("primary down")
+
+    def stock_zh_a_hist_tx(self, **kwargs):
+        self.calls.append("stock_zh_a_hist_tx")
+        assert kwargs["symbol"] == "sh600519"
+        return pd.DataFrame(
+            [
+                {
+                    "date": "2024-01-03",
+                    "open": 1688,
+                    "high": 1700,
+                    "low": 1680,
+                    "close": 1695,
+                    "amount": 1200,
                 }
             ]
         )

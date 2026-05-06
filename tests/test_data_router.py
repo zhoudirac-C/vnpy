@@ -60,6 +60,36 @@ def test_datafeed_honors_configured_provider_order(monkeypatch, tmp_path):
     ]
 
 
+def test_datafeed_passes_akshare_internal_endpoint_config(monkeypatch):
+    """Datafeed JSON config should customize AKShare internal endpoint order."""
+    from vnpy_router import datafeed as datafeed_module
+
+    seen = {}
+
+    class FakeAkshareProvider:
+        name = "akshare"
+
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def init(self, output=print):
+            return True
+
+        def query_bar_history(self, req, output=print):
+            return []
+
+    monkeypatch.setitem(
+        SETTINGS,
+        "router.providers",
+        '[{"name":"akshare","endpoints":["stock_zh_a_hist_tx","stock_zh_a_hist"]}]',
+    )
+    monkeypatch.setattr(datafeed_module, "AkshareProvider", FakeAkshareProvider)
+
+    datafeed_module.Datafeed()
+
+    assert seen["endpoints"] == ["stock_zh_a_hist_tx", "stock_zh_a_hist"]
+
+
 def test_datafeed_wires_snapshot_cache_into_router(monkeypatch, tmp_path):
     """Datafeed should pass configured snapshot cache objects into the router."""
     from vnpy_router import datafeed as datafeed_module

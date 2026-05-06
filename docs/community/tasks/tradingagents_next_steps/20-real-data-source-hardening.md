@@ -20,6 +20,10 @@
   - 目标：明确日内 TradingAgents 分时建议依赖的分钟线来自 QMT/XT Gateway、付费 datafeed、AKShare 补充源还是本地导入。
   - 验收：没有稳定分钟线前，日内建议 readiness 只能 degraded。
 
+- [x] **P20-T05: AKShare 内部多 endpoint 降级**
+  - 目标：在 `AkshareProvider` 内部增加 A 股日线 endpoint 链式降级，避免单个公开网页源失败时直接返回空数据。
+  - 验收：`stock_zh_a_hist` 失败时继续尝试 `stock_zh_a_hist_tx`，返回的 `BarData.extra["provider_endpoint"]` 记录真实命中的 endpoint。
+
 ## 完成记录
 
 | 任务 | 日期 | 提交 | 验证 |
@@ -28,6 +32,7 @@
 | P20-T02 | 2026-05-05 | 未提交 | 文档调研：BaoStock、efinance、`vnpy_baostock` |
 | P20-T03 | 2026-05-05 | 未提交 | `uv run --with pytest pytest tests/test_data_router.py::test_provider_cross_check_reports_ohlcv_differences -q` |
 | P20-T04 | 2026-05-05 | 未提交 | `uv run --with pytest pytest tests/test_production_data_sources.py::test_readiness_checker_reports_production_provider_diagnostics -q` |
+| P20-T05 | 2026-05-06 | 未提交 | `uv run --with pytest pytest tests/test_production_data_sources.py::test_akshare_provider_falls_back_between_internal_endpoints tests/test_data_router.py::test_datafeed_passes_akshare_internal_endpoint_config -q` |
 
 ## P20-T02 调研结论和接入计划
 

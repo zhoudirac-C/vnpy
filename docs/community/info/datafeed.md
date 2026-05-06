@@ -20,9 +20,21 @@
 | `router.providers` | `akshare` 或 `local_file,akshare` | provider 优先级列表 |
 | `router.local_path` | `/path/to/bars` | `local_file` provider 使用的本地 K 线目录 |
 
+`router.providers` 也支持 JSON 配置，用于调整 provider 参数。例如 AKShare 内部多 endpoint 降级：
+
+```json
+[
+  {
+    "name": "akshare",
+    "endpoints": ["stock_zh_a_hist", "stock_zh_a_hist_tx", "stock_zh_a_daily"]
+  }
+]
+```
+
 AKShare 在本 fork 中是历史 Datafeed provider，不是 Gateway：
 
 - 支持当前实现覆盖 A 股日线/周线研究数据。
+- 日线默认按 `stock_zh_a_hist`、`stock_zh_a_hist_tx`、`stock_zh_a_daily` 顺序降级；单个公开网页源失败、空数据或字段不合格时，会继续尝试下一个 endpoint。
 - 不作为分钟线、tick、实时盘口或交易接口。
 - 不会自动填充主界面的实时行情表；实时行情仍需要 QMT/XT、XTP、TORA、CTP 等 Gateway 连接和订阅。
 - 回测、数据管理或脚本查询历史 K 线时，可以通过 `datafeed.name=router` 和 `router.providers=akshare` 使用。
