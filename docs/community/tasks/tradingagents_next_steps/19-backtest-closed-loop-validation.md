@@ -19,7 +19,7 @@
   - 目标：把当前分支的一次 P19 验证过程和结果落档。
   - 验收：Markdown/JSON 同时存在，结果明确区分 fixture 回测和真实生产回测。
 
-- [ ] **P19-T04: 真实 PostgreSQL/AKShare 回测扩展**
+- [x] **P19-T04: 真实 PostgreSQL/AKShare 回测扩展**
   - 前置：真实 PostgreSQL、AKShare 或其他 provider ready。
   - 目标：用 `vnpy_router.Datafeed` 或 vn.py Database 加载同一标的历史 K 线，再跑相同回测验证。
   - 验收：结果落档中包含 provider trace 和数据版本；若 provider 不可用，状态为 Blocked 而不是通过。
@@ -31,4 +31,4 @@
 | P19-T01 | 2026-05-05 | 未提交 | `uv run --with pytest pytest tests/test_backtest_closed_loop_validation.py -q` |
 | P19-T02 | 2026-05-05 | 未提交 | `uv run --with pytest pytest tests/test_backtest_closed_loop_validation.py -q` |
 | P19-T03 | 2026-05-05 | 未提交 | `uv run python -m tools.production.backtest_closed_loop_validation --output docs/community/ops/validation_results/2026-05-05-backtest-closed-loop.md --json-output docs/community/ops/validation_results/2026-05-05-backtest-closed-loop.json` |
-| P19-T04 | Blocked | 未提交 | 等待真实 provider 回测数据 |
+| P19-T04 | 2026-05-06 | 未提交 | 本地 PostgreSQL + `router.providers=akshare`：`uv run python -m tools.production.backtest_closed_loop_validation --source datafeed --vt-symbol 600519.SSE --start 2024-01-02 --end 2024-01-10 --output docs/community/ops/validation_results/2026-05-06-backtest-akshare-postgres.md --json-output docs/community/ops/validation_results/2026-05-06-backtest-akshare-postgres.json` |

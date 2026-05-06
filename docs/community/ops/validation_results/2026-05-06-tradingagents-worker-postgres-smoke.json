@@ -1,0 +1,53 @@
+{
+  "date": "2026-05-06",
+  "task": "P16-T05",
+  "success": true,
+  "run_id": "p16-t05-local-postgres-20260506",
+  "vt_symbol": "600519.SSE",
+  "trade_date": "2024-01-10",
+  "mode": "intraday_advice",
+  "postgres": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "vnpy",
+    "user": "vnpy"
+  },
+  "datafeed": {
+    "name": "router",
+    "providers": [
+      "akshare"
+    ],
+    "market_bar_snapshot_count": 7,
+    "provider_endpoint": "stock_zh_a_hist"
+  },
+  "tradingagents": {
+    "worker_factory": "vnpy_tradingagents.tradingagents_factory:build",
+    "worker_shape": "in_process_lazy_loaded",
+    "llm_provider_setting": "zhipu",
+    "llm_provider_runtime": "glm",
+    "model": "glm-4.7",
+    "thinking_type_effective": "disabled",
+    "timeout_seconds": 360,
+    "elapsed_seconds_approx": 113,
+    "api_key_logged": false
+  },
+  "worker_result": {
+    "success": true,
+    "error_type": "",
+    "error_message": "",
+    "rating": "Hold",
+    "action": "hold",
+    "confidence": 0.0
+  },
+  "postgres_writes": {
+    "agent_run": true,
+    "agent_report": true,
+    "rating_signal": true,
+    "trade_intent": true,
+    "report_chars": 515
+  },
+  "live_gateway_touched": false,
+  "remaining": [
+    "P16-T06 paper/simulation continuous run validation"
+  ]
+}

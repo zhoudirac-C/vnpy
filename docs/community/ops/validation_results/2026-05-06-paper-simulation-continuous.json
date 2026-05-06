@@ -1,0 +1,23 @@
+{
+  "agent_report_count": 3,
+  "agent_run_count": 3,
+  "cycles": 3,
+  "decision_audit_count": 3,
+  "final_position": 0.0,
+  "live_gateway_touched": false,
+  "notes": [
+    "accelerated paper/simulation validation",
+    "deterministic worker avoids repeated LLM token cost; P16-T05 covers real LLM worker connectivity",
+    "long-running multi-day soak remains a separate operational validation window"
+  ],
+  "ops_heartbeat_saved": true,
+  "performance_feedback_count": 3,
+  "rating_signal_count": 3,
+  "replay_status_saved": true,
+  "run_id": "p16-t06-local-20260506",
+  "success": true,
+  "trade_feedback_count": 2,
+  "trade_intent_count": 3,
+  "vt_symbol": "600519.SSE",
+  "worker_runs": 3
+}

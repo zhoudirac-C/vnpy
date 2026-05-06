@@ -26,7 +26,7 @@
   - 目标：在真实 PostgreSQL 上跑 production profile 并落档。
   - 验收：PostgreSQL 扩展表 create_tables/status、snapshot 读写和 runtime state 均通过真实连接验证。
 
-- [ ] **P16-T05: 真实 TradingAgents Worker production profile 验证**
+- [x] **P16-T05: 真实 TradingAgents Worker production profile 验证**
   - 前置：当前 vn.py 环境安装上游 TradingAgents 依赖，保留默认 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build`，LLM API key，真实 PostgreSQL 快照。
   - 目标：用真实 Worker 跑一轮 runner smoke，不触发 Gateway/MainEngine。
   - 验收：报告、评级、交易意图入库；失败时不生成有效交易意图。
@@ -35,6 +35,7 @@
   - 前置：P16-T04、P16-T05。
   - 目标：按 `live_gray_runbook.md` 进入 paper/simulation 连续运行。
   - 验收：连续运行记录、replay status、decision audit、feedback、ops heartbeat 全部可导出。
+  - 当前状态：本地加速连续验证已通过；长时间 paper/simulation soak 仍需单独运行窗口。
 
 ## 完成记录
 
@@ -45,5 +46,5 @@
 | P16-T03 | 2026-05-04 | 未提交 | `uv run python -m tools.production.closed_loop_validation --profile local --repo-root . --output docs/community/ops/validation_results/2026-05-04-production-closed-loop-local.md --json-output docs/community/ops/validation_results/2026-05-04-production-closed-loop-local.json` |
 | P16-T03A | 2026-05-05 | 未提交 | P17 纠错后重新落档：`uv run python -m tools.production.closed_loop_validation --profile local --repo-root . --output docs/community/ops/validation_results/2026-05-05-production-closed-loop-local.md --json-output docs/community/ops/validation_results/2026-05-05-production-closed-loop-local.json` |
 | P16-T04 | 2026-05-05 | `fc697468` | Podman E2E `20260505-161512`：真实 PostgreSQL 容器、schema init/status、snapshot 持久化和容器重启持久性均通过 |
-| P16-T05 | Smoke Passed | 未提交 | BigModel/GLM-4.7 线上 smoke 已通过，见 `docs/community/ops/validation_results/2026-05-05-tradingagents-online-thinking-smoke.md`；仍需真实 PostgreSQL 快照入库和批量运行验证 |
-| P16-T06 | Blocked | 未提交 | 等待 P16-T04/P16-T05 |
+| P16-T05 | 2026-05-06 | 未提交 | 本地 PostgreSQL + 真实 TradingAgents Worker + 入库闭环已通过，见 `docs/community/ops/validation_results/2026-05-06-tradingagents-worker-postgres-smoke.md`；run_id=`p16-t05-local-postgres-20260506` |
+| P16-T06 | Accelerated Passed | 未提交 | 本地 PostgreSQL 3-cycle paper/simulation 加速验证通过，见 `docs/community/ops/validation_results/2026-05-06-paper-simulation-continuous.md`；长时间 soak 仍待运行 |

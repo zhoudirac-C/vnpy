@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from vnpy.trader.constant import Exchange, Interval
-from vnpy.trader.object import BarData
+from vnpy.trader.object import BarData, HistoryRequest
 from vnpy.trader.utility import extract_vt_symbol
 from vnpy_ctastrategy import CtaTemplate
 from vnpy_ctastrategy.backtesting import BacktestingEngine, BacktestingMode
+from vnpy_router.datafeed import Datafeed
 
 from vnpy_tradingagents.backtesting_app_bridge import (
     BacktestingAppBridge,
@@ -37,7 +38,10 @@ class BacktestClosedLoopConfig:
     """
 
     vt_symbol: str = "600519.SSE"
+    data_source: str = "fixture"
     fixture_path: Path = Path("tests/fixtures/e2e/600519.SSE_d.csv")
+    start: datetime | None = None
+    end: datetime | None = None
     output_path: Path | None = None
     json_output_path: Path | None = None
     capital: int = 1_000_000
@@ -57,7 +61,9 @@ class BacktestClosedLoopResult:
 
     success: bool
     vt_symbol: str
+    data_source: str
     fixture_path: str
+    provider_names: list[str]
     engine_name: str
     bar_count: int
     trade_count: int
@@ -150,12 +156,16 @@ def run_backtest_closed_loop(config: BacktestClosedLoopConfig) -> BacktestClosed
     """
     Run a deterministic vn.py backtest through the AI signal bridge.
     """
-    bars = load_fixture_bars(config.fixture_path, config.vt_symbol)
+    bars = load_validation_bars(config)
+    data_source = _result_data_source(config, bars)
+    provider_names = _provider_names(bars)
     if not bars:
         return BacktestClosedLoopResult(
             success=False,
             vt_symbol=config.vt_symbol,
-            fixture_path=str(config.fixture_path),
+            data_source=data_source,
+            fixture_path=str(config.fixture_path) if config.data_source == "fixture" else "",
+            provider_names=provider_names,
             engine_name="vnpy_ctastrategy.BacktestingEngine",
             bar_count=0,
             trade_count=0,
@@ -214,7 +224,9 @@ def run_backtest_closed_loop(config: BacktestClosedLoopConfig) -> BacktestClosed
     return BacktestClosedLoopResult(
         success=success,
         vt_symbol=config.vt_symbol,
-        fixture_path=str(config.fixture_path),
+        data_source=data_source,
+        fixture_path=str(config.fixture_path) if config.data_source == "fixture" else "",
+        provider_names=provider_names,
         engine_name="vnpy_ctastrategy.BacktestingEngine",
         bar_count=len(bars),
         trade_count=len(trade_records),
@@ -223,10 +235,38 @@ def run_backtest_closed_loop(config: BacktestClosedLoopConfig) -> BacktestClosed
         statistics=statistics,
         audit_records=audit_records,
         trades=trade_records,
-        notes=[
-            "fixture backtest; not a broker, QMT, XTP or TORA run",
-            "未触碰真实 Gateway/MainEngine",
-        ],
+        notes=_result_notes(config),
+    )
+
+
+def load_validation_bars(config: BacktestClosedLoopConfig) -> list[BarData]:
+    """
+    Load bars for a P19 validation run.
+    """
+    if config.data_source == "fixture":
+        return load_fixture_bars(config.fixture_path, config.vt_symbol)
+    if config.data_source == "datafeed":
+        return load_datafeed_bars(config)
+    raise ValueError(f"unsupported backtest data_source: {config.data_source}")
+
+
+def load_datafeed_bars(config: BacktestClosedLoopConfig) -> list[BarData]:
+    """
+    Load historical bars through vn.py Datafeed/router.
+    """
+    symbol, exchange = extract_vt_symbol(config.vt_symbol)
+    start = config.start or datetime(2024, 1, 2)
+    end = config.end or datetime.now()
+    return list(
+        Datafeed().query_bar_history(
+            HistoryRequest(
+                symbol=symbol,
+                exchange=Exchange(exchange),
+                interval=Interval.DAILY,
+                start=start,
+                end=end,
+            )
+        )
     )
 
 
@@ -269,7 +309,8 @@ def render_markdown(result: BacktestClosedLoopResult) -> str:
         "",
         f"- 结果：`{status}`",
         f"- 标的：`{result.vt_symbol}`",
-        f"- 数据：`fixture:{result.fixture_path}`",
+        f"- 数据：`{result.data_source}`",
+        f"- provider：`{','.join(result.provider_names) or 'n/a'}`",
         f"- 引擎：`{result.engine_name}`",
         f"- K 线数量：`{result.bar_count}`",
         f"- 回测成交数：`{result.trade_count}`",
@@ -338,14 +379,20 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser(description="Run P19 backtest closed-loop validation.")
     parser.add_argument("--vt-symbol", default="600519.SSE")
+    parser.add_argument("--source", choices=["fixture", "datafeed"], default="fixture")
     parser.add_argument("--fixture", type=Path, default=Path("tests/fixtures/e2e/600519.SSE_d.csv"))
+    parser.add_argument("--start")
+    parser.add_argument("--end")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--json-output", type=Path)
     args = parser.parse_args()
 
     config = BacktestClosedLoopConfig(
         vt_symbol=args.vt_symbol,
+        data_source=args.source,
         fixture_path=args.fixture,
+        start=datetime.fromisoformat(args.start) if args.start else None,
+        end=datetime.fromisoformat(args.end) if args.end else None,
         output_path=args.output,
         json_output_path=args.json_output,
     )
@@ -383,6 +430,39 @@ def _trade_to_dict(trade: Any) -> dict[str, Any]:
         "volume": trade.volume,
         "datetime": trade.datetime.isoformat() if trade.datetime else "",
     }
+
+
+def _result_data_source(config: BacktestClosedLoopConfig, bars: list[BarData]) -> str:
+    """
+    Return a source label for reports.
+    """
+    if config.data_source == "fixture":
+        return f"fixture:{config.fixture_path}"
+    providers = ",".join(_provider_names(bars)) or "unknown"
+    return f"datafeed:{providers}"
+
+
+def _provider_names(bars: list[BarData]) -> list[str]:
+    """
+    Return provider names seen in the loaded bars.
+    """
+    names = {
+        str((bar.extra or {}).get("provider_name") or bar.gateway_name)
+        for bar in bars
+        if (bar.extra or {}).get("provider_name") or bar.gateway_name
+    }
+    return sorted(names)
+
+
+def _result_notes(config: BacktestClosedLoopConfig) -> list[str]:
+    """
+    Return report notes for the selected validation source.
+    """
+    if config.data_source == "datafeed":
+        source_note = "datafeed backtest; provider bars may be cached into PostgreSQL snapshots"
+    else:
+        source_note = "fixture backtest; not a broker, QMT, XTP or TORA run"
+    return [source_note, "未触碰真实 Gateway/MainEngine"]
 
 
 def _jsonable(value: Any) -> Any:
