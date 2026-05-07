@@ -36,6 +36,7 @@ from vnpy_ctabacktester import CtaBacktesterApp
 # from vnpy_webtrader import WebTraderApp
 # from vnpy_portfoliomanager import PortfolioManagerApp
 from vnpy_tradingagents import TradingAgentsApp
+from vnpy_tradingagents.cta_ui_compat import install_cta_strategy_ui_refresh_patch
 
 
 def optional_class(module_name: str, class_name: str) -> type[Any] | None:
@@ -70,6 +71,8 @@ def add_optional_app(main_engine: MainEngine, app_class: type[Any] | None) -> No
 
 def main():
     """"""
+    install_cta_strategy_ui_refresh_patch()
+
     qapp = create_qapp()
 
     event_engine = EventEngine()
