@@ -49,6 +49,7 @@ class AkshareGateway(BaseGateway):
         self.active: bool = False
         self.subscribed: set[str] = set()
         self.contracts: dict[str, ContractData] = {}
+        self.latest_snapshot: pd.DataFrame = pd.DataFrame()
         self.poll_interval_seconds: int = 15
         self.snapshot_endpoints: list[str] = list(DEFAULT_SNAPSHOT_ENDPOINTS)
         self._elapsed_seconds: int = 0
@@ -68,14 +69,18 @@ class AkshareGateway(BaseGateway):
             return
 
         snapshot = self._query_snapshot()
+        self.latest_snapshot = snapshot
         if _is_enabled(setting.get(SETTING_LOAD_CONTRACTS, "是")):
             self._push_contracts(snapshot)
         elif self.subscribed:
             self._push_missing_contracts(snapshot)
 
         if _is_enabled(setting.get(SETTING_SUBSCRIBE_ALL, "否")):
+            if not self.contracts:
+                self._push_contracts(snapshot)
             self.subscribed.update(self.contracts)
 
+        self._push_subscribed_ticks(snapshot)
         self.active = True
         self._register_timer()
         self.write_log(
@@ -95,12 +100,13 @@ class AkshareGateway(BaseGateway):
         """
         Subscribe one symbol for snapshot polling.
         """
-        vt_symbol = req.vt_symbol
+        symbol, exchange = _symbol_exchange_from_subscribe_request(req)
+        vt_symbol = f"{symbol}.{exchange.value}"
         self.subscribed.add(vt_symbol)
         if vt_symbol not in self.contracts:
             contract = ContractData(
-                symbol=req.symbol,
-                exchange=req.exchange,
+                symbol=symbol,
+                exchange=exchange,
                 name="",
                 product=Product.EQUITY,
                 size=1,
@@ -110,6 +116,8 @@ class AkshareGateway(BaseGateway):
             )
             self.contracts[vt_symbol] = contract
             self.on_contract(contract)
+        self._push_missing_contracts(self.latest_snapshot)
+        self._push_subscribed_ticks(self.latest_snapshot, subscribed={vt_symbol})
         self.write_log(f"AKShare订阅行情：{vt_symbol}")
 
     def send_order(self, req: OrderRequest) -> str:
@@ -167,16 +175,9 @@ class AkshareGateway(BaseGateway):
             return
 
         snapshot = self._query_snapshot()
+        self.latest_snapshot = snapshot
         self._push_missing_contracts(snapshot)
-
-        rows = _rows_by_vt_symbol(snapshot)
-        now = datetime.now()
-        for vt_symbol in sorted(self.subscribed):
-            row = rows.get(vt_symbol)
-            if row is None:
-                continue
-            tick = _tick_from_row(row, gateway_name=self.gateway_name, timestamp=now)
-            self.on_tick(tick)
+        self._push_subscribed_ticks(snapshot)
 
     def _init_akshare(self) -> bool:
         """
@@ -241,6 +242,27 @@ class AkshareGateway(BaseGateway):
             if contract.vt_symbol in self.subscribed:
                 self.contracts[contract.vt_symbol] = contract
                 self.on_contract(contract)
+
+    def _push_subscribed_ticks(
+        self,
+        snapshot: pd.DataFrame,
+        subscribed: set[str] | None = None,
+    ) -> None:
+        """
+        Push ticks for subscribed symbols from an already fetched snapshot.
+        """
+        target_symbols = subscribed or self.subscribed
+        if snapshot.empty or not target_symbols:
+            return
+
+        rows = _rows_by_vt_symbol(snapshot)
+        now = datetime.now()
+        for vt_symbol in sorted(target_symbols):
+            row = rows.get(vt_symbol)
+            if row is None:
+                continue
+            tick = _tick_from_row(row, gateway_name=self.gateway_name, timestamp=now)
+            self.on_tick(tick)
 
     def _register_timer(self) -> None:
         """
@@ -353,6 +375,16 @@ def _exchange_from_symbol(symbol: str) -> Exchange:
     if clean_symbol:
         return exchange
     return Exchange.SZSE
+
+
+def _symbol_exchange_from_subscribe_request(req: SubscribeRequest) -> tuple[str, Exchange]:
+    """
+    Normalize UI subscribe input while keeping vn.py vt_symbol format.
+    """
+    symbol, exchange = _symbol_exchange_from_value(req.symbol)
+    if symbol:
+        return symbol, exchange
+    return req.symbol, req.exchange
 
 
 def _symbol_exchange_from_value(value: str) -> tuple[str, Exchange]:

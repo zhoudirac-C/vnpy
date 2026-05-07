@@ -56,7 +56,6 @@ def test_akshare_gateway_loads_contracts_and_polls_subscribed_ticks(monkeypatch)
             "订阅全市场行情": "否",
         }
     )
-    gateway.poll_once()
 
     assert [(contract.vt_symbol, contract.name, contract.product) for contract in contracts] == [
         ("600519.SSE", "贵州茅台", Product.EQUITY),
@@ -70,6 +69,37 @@ def test_akshare_gateway_loads_contracts_and_polls_subscribed_ticks(monkeypatch)
     assert ticks[0].pre_close == 1670.0
 
 
+def test_akshare_gateway_subscribe_all_pushes_snapshot_ticks_on_connect(monkeypatch):
+    """Subscribe-all setting should behave like Gateway tick subscription and fill tick monitor."""
+    import vnpy_akshare_gateway.gateway as gateway_module
+    from vnpy_akshare_gateway import AkshareGateway
+
+    fake_akshare = FakeAkshare(
+        pd.DataFrame(
+            [
+                {"代码": "600519", "名称": "贵州茅台", "最新价": 1688.0},
+                {"代码": "001267", "名称": "汇绿生态", "最新价": 56.71},
+            ]
+        )
+    )
+    monkeypatch.setattr(gateway_module, "import_module", lambda name: fake_akshare)
+
+    gateway = AkshareGateway(FakeEventEngine(), "AKSHARE")
+    ticks = []
+    gateway.on_tick = ticks.append
+
+    gateway.connect(
+        {
+            "轮询间隔秒数": 5,
+            "订阅代码": "",
+            "连接后加载全市场合约": "是",
+            "订阅全市场行情": "是",
+        }
+    )
+
+    assert [tick.vt_symbol for tick in ticks] == ["001267.SZSE", "600519.SSE"]
+
+
 def test_akshare_gateway_subscribe_adds_symbol_and_rejects_trading(monkeypatch):
     """Manual UI subscription should work, while trading requests remain disabled."""
     import vnpy_akshare_gateway.gateway as gateway_module
@@ -79,9 +109,9 @@ def test_akshare_gateway_subscribe_adds_symbol_and_rejects_trading(monkeypatch):
         pd.DataFrame(
             [
                 {
-                    "代码": "000001",
-                    "名称": "平安银行",
-                    "最新价": 10.5,
+                    "代码": "001267",
+                    "名称": "汇绿生态",
+                    "最新价": 56.71,
                     "成交量": 2000,
                     "成交额": 21000,
                     "今开": 10.2,
@@ -110,11 +140,11 @@ def test_akshare_gateway_subscribe_adds_symbol_and_rejects_trading(monkeypatch):
             "订阅全市场行情": "否",
         }
     )
-    gateway.subscribe(SubscribeRequest(symbol="000001", exchange=Exchange.SZSE))
-    gateway.poll_once()
+    gateway.subscribe(SubscribeRequest(symbol="SZ001267", exchange=Exchange.SZSE))
 
-    assert [contract.vt_symbol for contract in contracts] == ["000001.SZSE"]
-    assert [tick.vt_symbol for tick in ticks] == ["000001.SZSE"]
+    assert [contract.vt_symbol for contract in contracts] == ["001267.SZSE"]
+    assert [tick.vt_symbol for tick in ticks] == ["001267.SZSE"]
+    assert ticks[0].last_price == 56.71
     assert gateway.send_order(SimpleNamespace()) == ""
     assert any("只读" in message for message in logs)
 
@@ -148,7 +178,6 @@ def test_akshare_gateway_connect_subscription_pushes_only_matching_contracts(mon
             "订阅全市场行情": "否",
         }
     )
-    gateway.poll_once()
 
     assert [contract.vt_symbol for contract in contracts] == ["600519.SSE"]
     assert [tick.vt_symbol for tick in ticks] == ["600519.SSE"]
@@ -212,11 +241,8 @@ def test_akshare_gateway_falls_back_and_normalizes_prefixed_codes(monkeypatch):
             "快照接口顺序": "stock_zh_a_spot_em,stock_zh_a_spot",
         }
     )
-    gateway.poll_once()
 
     assert fake_akshare.calls == [
-        "stock_zh_a_spot_em",
-        "stock_zh_a_spot",
         "stock_zh_a_spot_em",
         "stock_zh_a_spot",
     ]
