@@ -31,13 +31,18 @@
 ]
 ```
 
-AKShare 在本 fork 中是历史 Datafeed provider，不是 Gateway：
+AKShare 在本 fork 中有两条不同用途的接入线：
 
 - 支持当前实现覆盖 A 股日线/周线研究数据。
 - 日线默认按 `stock_zh_a_hist`、`stock_zh_a_hist_tx`、`stock_zh_a_daily` 顺序降级；单个公开网页源失败、空数据或字段不合格时，会继续尝试下一个 endpoint。
-- 不作为分钟线、tick、实时盘口或交易接口。
-- 不会自动填充主界面的实时行情表；实时行情仍需要 QMT/XT、XTP、TORA、CTP 等 Gateway 连接和订阅。
 - 回测、数据管理或脚本查询历史 K 线时，可以通过 `datafeed.name=router` 和 `router.providers=akshare` 使用。
+- 主界面临时看 A 股快照行情时，可以通过 **系统 -> 连接AKSHARE** 使用 `vnpy_akshare_gateway.AkshareGateway`。它会把 AKShare 全市场快照转换为 vn.py `ContractData/TickData`，但仍是只读行情接口，不支持委托、撤单、账户和持仓。
+
+因此：
+
+- 历史 K 线、回测、数据管理走 `datafeed.name=router`。
+- 主界面行情表、订阅窗口走 `AKSHARE Gateway`。
+- 生产实盘交易仍需要 QMT/XT、XTP、TORA 等真实股票 Gateway；AKShare 只能作为无账号阶段的低成本研究和临时行情方案。
 
 如果要查看回测，请启动 Trader 后进入 **功能 -> CTA回测**。当前示例启动脚本已经自动加载 `CtaStrategyApp` 和 `CtaBacktesterApp`；回测数据来自 vn.py Database 或 Datafeed，而不是主交易窗口的实时行情表。
 

@@ -11,7 +11,7 @@ from .runtime import (
 from .config import TradingAgentsWorkerConfig, WorkerConfigError, WorkerConfigValidation
 from .app import TradingAgentsApp
 from .engine import TradingAgentsEngine
-from .toolkit import MarketDataToolkit, SnapshotQuery
+from .toolkit import MarketDataToolkit, NewsContextFilter, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 from .worker_adapter import TradingAgentsContextPayload, TradingAgentsWorkerAdapter
 from .prompts import (
@@ -150,6 +150,7 @@ __all__ = [
     "MarketDataToolkit",
     "MetricsCollector",
     "MetricsSnapshot",
+    "NewsContextFilter",
     "NewsIngestionSummary",
     "OrderBridge",
     "OrderBridgeResult",

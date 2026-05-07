@@ -9,12 +9,15 @@ from .local_file import LocalFileProvider
 from .news_external import (
     AkshareGlobalNewsProvider,
     AkshareStockNewsProvider,
+    CninfoAnnouncementProvider,
     ExternalNewsProvider,
     FetchedNews,
+    GdeltGlobalNewsProvider,
     LocalFileExternalNewsProvider,
     NewsFetchRequest,
     NewsFetchResult,
     NewsProviderChain,
+    SseAnnouncementProvider,
 )
 from .qmt import QmtProvider
 from .social import SocialProvider
@@ -27,9 +30,11 @@ __all__ = [
     "AkshareProvider",
     "AkshareGlobalNewsProvider",
     "AkshareStockNewsProvider",
+    "CninfoAnnouncementProvider",
     "BaseProvider",
     "ExternalNewsProvider",
     "FetchedNews",
+    "GdeltGlobalNewsProvider",
     "LocalFileExternalNewsProvider",
     "LocalFileProvider",
     "NewsFetchRequest",
@@ -38,6 +43,7 @@ __all__ = [
     "ProviderCapability",
     "ProviderCostLevel",
     "QmtProvider",
+    "SseAnnouncementProvider",
     "SocialProvider",
     "TuShareProvider",
     "VnpyDatafeedProvider",

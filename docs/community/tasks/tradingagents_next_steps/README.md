@@ -53,6 +53,8 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 - [x] TradingAgentsApp 需要真正接入 vn.py EventEngine、worker lifecycle、状态持久化和 UI 控制。
 - [x] 回测、Paper 和仿真需要接入 vn.py 真实链路，现有 bridge 只按 smoke 或过渡层处理。
 - [x] 生产路径中的 direct provider、placeholder、fake runner、paper-only bridge 等多余代码需要删除或标记为 smoke-only。
+- [x] 新闻增强第二版代码级链路已补官方公告主源、GDELT 宏观补充、股票实体识别、多标的 `event_symbol_link`、分类评分去重和 TradingAgents 高可信上下文过滤。
+- [ ] P25 真实公网 smoke、连续运行和实体识别误链率抽样仍未完成，不能宣称新闻源生产 SLA。
 
 ## 阶段文档
 
@@ -82,11 +84,13 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 | P22 | [22-ui-usability-fixes.md](22-ui-usability-fixes.md) | 修复配置、交易面板和回测入口的 UI 可用性问题 |
 | P23 | [23-docs-dependency-consistency.md](23-docs-dependency-consistency.md) | 清理文档、依赖和阶段状态之间的不一致 |
 | P24 | [24-news-ingestion-scheduler.md](24-news-ingestion-scheduler.md) | 补外部新闻入库 provider、定时任务、readiness 和验证落档 |
+| P25 | [25-production-news-source-entity-filtering.md](25-production-news-source-entity-filtering.md) | 接入官方公告/GDELT/AKShare 第二版数据源，补实体识别、多标的关联、分类、评分、去重和 TradingAgents 高可信上下文过滤 |
+| P26 | [26-llm-message-classifier.md](26-llm-message-classifier.md) | 增加可选 LLM 消息语义分类器，让行业/板块/宏观消息自由提名股票并经过本地实体目录校验后入库 |
 
 ## 下一步推荐
 
 1. 先完成 P19，用本地 fixture 和 vn.py BacktestingEngine 跑通回测闭环，并把验证结果落档。
 2. 再完成 P20/P21，把真实数据源、股票 Gateway、仿真和 live gate 分别验证清楚。
-3. 若要补新闻增强，按 P24 先做外部新闻入库定时任务；社媒情绪继续后置。
+3. 若要补新闻增强，P24/P25/P26 已完成代码级链路和一次真实公网/GLM smoke；下一步是连续运行和实体误链率抽样。
 4. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
 5. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。

@@ -198,3 +198,7 @@ Toolkit --> Worker : context.news.events
 - 已有稳定生产级新闻服务。
 - 已覆盖社媒情绪。
 - 新闻可以直接驱动实盘下单。
+
+## 后续阶段
+
+生产级新闻增强继续按 [P25 生产级新闻/公告数据源与实体过滤](25-production-news-source-entity-filtering.md) 推进。P25 会接入 CNINFO/巨潮公告、上交所公告、GDELT GlobalNews，并补股票实体识别、行业/板块/概念映射、多标的 `event_symbol_link`、分类、评分、去重和 TradingAgents 高可信上下文过滤。

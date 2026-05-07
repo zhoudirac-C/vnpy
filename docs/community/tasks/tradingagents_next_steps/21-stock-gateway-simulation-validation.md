@@ -21,6 +21,10 @@
   - 目标：验证行情订阅、合约缓存、手工下单、策略下单、AI 只读信号。
   - 验收：联调结果落档，失败项标为 Blocked 或 Failed。
 
+- [x] **P21-T05: AKShare 只读行情 Gateway**
+  - 目标：在未开通 QMT/XT 前，通过 vn.py Gateway UI 临时查看 A 股快照行情和全市场合约，后续可在 UI 中切换到真实股票 Gateway。
+  - 验收：启动脚本默认注册 `AkshareGateway`；连接配置支持订阅代码、加载全市场合约、订阅全市场行情和快照接口顺序；交易方法全部拒绝。
+
 ## 完成记录
 
 | 任务 | 日期 | 提交 | 验证 |
@@ -29,6 +33,7 @@
 | P21-T02 | 2026-05-05 | 未提交 | `uv run --with pytest pytest tests/test_tradingagents_gray_release.py::test_paper_bridge_enables_only_simulation_and_writes_trade_feedback -q` |
 | P21-T03 | 2026-05-05 | 未提交 | `uv run --with pytest pytest tests/test_tradingagents_gray_release.py::test_live_gate_blocks_high_failure_rate_and_missing_manual_takeover -q` |
 | P21-T04 | Blocked | 未提交 | 等待真实 QMT/XT 环境 |
+| P21-T05 | 2026-05-07 | 未提交 | `docs/community/ops/validation_results/2026-05-07-akshare-gateway-smoke.md` |
 
 ## P21-T01 股票 Gateway 选择清单
 
@@ -37,6 +42,7 @@
 | CTA Backtesting | BacktestingEngine/App | 本地验证、策略回测 | 历史 K 线、策略参数 | 不连接券商，不代表实盘可用；P19 已跑通 AI 信号回测闭环 |
 | Paper/Simulation | PaperAccount 或仿真 Gateway profile | 连续演练、灰度前验证 | 仿真账户、回放数据、审计导出 | AI 只能在 `PAPER_ONLY` 或 simulation profile 下消费信号 |
 | QMT/XT | vn.py Gateway/Datafeed 插件 | A 股实盘候选 | QMT 账号、券商权限、`vnpy_xt` 等插件 | 实时行情、合约、委托、成交都走 vn.py 插件；本 fork 不直连 `xtquant` |
+| AKShare Gateway | 本 fork 只读 Gateway | 无账号阶段临时看行情 | `akshare` 依赖、公开网络可用 | 只推送合约和快照 Tick；不能交易、无 SLA、不能替代 QMT/XT |
 | XTP | vn.py Gateway 插件 | A 股实盘候选 | XTP 账号、柜台权限、插件安装 | 适合已有 XTP 环境的股票/ETF 交易 |
 | TORA | vn.py Gateway 插件 | A 股实盘候选 | TORA 账号、柜台权限、插件安装 | 适合机构或券商柜台环境 |
 

@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS news_raw (
     provider_version TEXT,
     source_quality TEXT,
     trust_score DOUBLE PRECISION,
+    relevance_score DOUBLE PRECISION,
     spam_score DOUBLE PRECISION,
+    cluster_id TEXT,
     dedup_window_seconds INTEGER,
     review_status TEXT,
     pulled_at TIMESTAMPTZ DEFAULT now(),
@@ -38,7 +40,9 @@ CREATE TABLE IF NOT EXISTS news_event (
     raw_hash TEXT,
     source_quality TEXT,
     trust_score DOUBLE PRECISION,
+    relevance_score DOUBLE PRECISION,
     spam_score DOUBLE PRECISION,
+    cluster_id TEXT,
     dedup_window_seconds INTEGER,
     review_status TEXT,
     pulled_at TIMESTAMPTZ DEFAULT now()
@@ -78,6 +82,8 @@ CREATE TABLE IF NOT EXISTS event_symbol_link (
     sector TEXT,
     topic TEXT,
     confidence DOUBLE PRECISION,
+    relevance_score DOUBLE PRECISION,
+    link_reason TEXT,
     provider_name TEXT NOT NULL,
     provider_version TEXT,
     pulled_at TIMESTAMPTZ DEFAULT now(),
@@ -98,6 +104,32 @@ CREATE TABLE IF NOT EXISTS event_quality_report (
     payload JSONB,
     pulled_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS security_entity (
+    vt_symbol TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    exchange TEXT NOT NULL,
+    name TEXT NOT NULL,
+    short_name TEXT,
+    industry TEXT,
+    sector TEXT,
+    concept_tags JSONB,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS security_alias (
+    alias TEXT NOT NULL,
+    vt_symbol TEXT NOT NULL,
+    alias_type TEXT,
+    confidence DOUBLE PRECISION,
+    is_ambiguous BOOLEAN DEFAULT false,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (alias, vt_symbol)
+);
 """
 
 
@@ -113,7 +145,9 @@ INSERT INTO news_raw (
     provider_version,
     source_quality,
     trust_score,
+    relevance_score,
     spam_score,
+    cluster_id,
     dedup_window_seconds,
     review_status,
     raw_payload
@@ -128,7 +162,9 @@ INSERT INTO news_raw (
     %(provider_version)s,
     %(source_quality)s,
     %(trust_score)s,
+    %(relevance_score)s,
     %(spam_score)s,
+    %(cluster_id)s,
     %(dedup_window_seconds)s,
     %(review_status)s,
     %(raw_payload)s
@@ -188,7 +224,9 @@ INSERT INTO news_event (
     raw_hash,
     source_quality,
     trust_score,
+    relevance_score,
     spam_score,
+    cluster_id,
     dedup_window_seconds,
     review_status
 ) VALUES (
@@ -205,7 +243,9 @@ INSERT INTO news_event (
     %(raw_hash)s,
     %(source_quality)s,
     %(trust_score)s,
+    %(relevance_score)s,
     %(spam_score)s,
+    %(cluster_id)s,
     %(dedup_window_seconds)s,
     %(review_status)s
 )
@@ -223,7 +263,9 @@ DO UPDATE SET
     raw_hash = EXCLUDED.raw_hash,
     source_quality = EXCLUDED.source_quality,
     trust_score = EXCLUDED.trust_score,
+    relevance_score = EXCLUDED.relevance_score,
     spam_score = EXCLUDED.spam_score,
+    cluster_id = EXCLUDED.cluster_id,
     dedup_window_seconds = EXCLUDED.dedup_window_seconds,
     review_status = EXCLUDED.review_status,
     pulled_at = now();
@@ -259,6 +301,8 @@ INSERT INTO event_symbol_link (
     sector,
     topic,
     confidence,
+    relevance_score,
+    link_reason,
     provider_name,
     provider_version
 ) VALUES (
@@ -267,6 +311,8 @@ INSERT INTO event_symbol_link (
     %(sector)s,
     %(topic)s,
     %(confidence)s,
+    %(relevance_score)s,
+    %(link_reason)s,
     %(provider_name)s,
     %(provider_version)s
 )
@@ -275,37 +321,90 @@ DO UPDATE SET
     sector = EXCLUDED.sector,
     topic = EXCLUDED.topic,
     confidence = EXCLUDED.confidence,
+    relevance_score = EXCLUDED.relevance_score,
+    link_reason = EXCLUDED.link_reason,
     provider_name = EXCLUDED.provider_name,
     provider_version = EXCLUDED.provider_version,
     pulled_at = now();
 """
 
 
-SELECT_NEWS_EVENTS_SQL: str = """
-SELECT
-    event_id,
-    vt_symbol,
-    title,
-    summary,
-    event_type,
-    occurred_at,
+UPSERT_EVENT_QUALITY_REPORT_SQL: str = """
+INSERT INTO event_quality_report (
+    report_id,
     source,
-    url,
     provider_name,
-    provider_version,
-    raw_hash,
+    as_of,
     source_quality,
     trust_score,
     spam_score,
-    dedup_window_seconds,
-    review_status
-FROM news_event
-WHERE vt_symbol = %(vt_symbol)s
-  AND occurred_at >= %(start)s
-  AND occurred_at <= %(end)s
-  AND (%(source)s = '' OR source = %(source)s)
-  AND (%(quality_status)s = '' OR review_status = %(quality_status)s OR source_quality = %(quality_status)s)
-ORDER BY occurred_at DESC
+    duplicate_count,
+    reviewed_count,
+    blocked_count,
+    payload
+) VALUES (
+    %(report_id)s,
+    %(source)s,
+    %(provider_name)s,
+    %(as_of)s,
+    %(source_quality)s,
+    %(trust_score)s,
+    %(spam_score)s,
+    %(duplicate_count)s,
+    %(reviewed_count)s,
+    %(blocked_count)s,
+    %(payload)s
+)
+ON CONFLICT (report_id)
+DO UPDATE SET
+    source = EXCLUDED.source,
+    provider_name = EXCLUDED.provider_name,
+    as_of = EXCLUDED.as_of,
+    source_quality = EXCLUDED.source_quality,
+    trust_score = EXCLUDED.trust_score,
+    spam_score = EXCLUDED.spam_score,
+    duplicate_count = EXCLUDED.duplicate_count,
+    reviewed_count = EXCLUDED.reviewed_count,
+    blocked_count = EXCLUDED.blocked_count,
+    payload = EXCLUDED.payload,
+    pulled_at = now();
+"""
+
+
+SELECT_NEWS_EVENTS_SQL: str = """
+SELECT
+    e.event_id,
+    e.vt_symbol,
+    e.title,
+    e.summary,
+    e.event_type,
+    e.occurred_at,
+    e.source,
+    e.url,
+    e.provider_name,
+    e.provider_version,
+    e.raw_hash,
+    e.source_quality,
+    e.trust_score,
+    e.relevance_score,
+    e.spam_score,
+    e.cluster_id,
+    e.dedup_window_seconds,
+    e.review_status,
+    l.confidence AS link_confidence,
+    l.link_reason,
+    l.sector,
+    l.topic
+FROM news_event e
+LEFT JOIN event_symbol_link l
+  ON e.event_id = l.event_id
+ AND e.vt_symbol = l.vt_symbol
+WHERE e.vt_symbol = %(vt_symbol)s
+  AND e.occurred_at >= %(start)s
+  AND e.occurred_at <= %(end)s
+  AND (%(source)s = '' OR e.source = %(source)s)
+  AND (%(quality_status)s = '' OR e.review_status = %(quality_status)s OR e.source_quality = %(quality_status)s)
+ORDER BY e.occurred_at DESC
 LIMIT %(limit)s;
 """
 
@@ -328,15 +427,22 @@ LIMIT 1;
 EVENT_SOURCE_QUALITY_MIGRATION_SQL: str = """
 ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS source_quality TEXT;
 ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS trust_score DOUBLE PRECISION;
+ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS relevance_score DOUBLE PRECISION;
 ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS spam_score DOUBLE PRECISION;
+ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS cluster_id TEXT;
 ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS dedup_window_seconds INTEGER;
 ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS review_status TEXT;
 
 ALTER TABLE news_event ADD COLUMN IF NOT EXISTS source_quality TEXT;
 ALTER TABLE news_event ADD COLUMN IF NOT EXISTS trust_score DOUBLE PRECISION;
+ALTER TABLE news_event ADD COLUMN IF NOT EXISTS relevance_score DOUBLE PRECISION;
 ALTER TABLE news_event ADD COLUMN IF NOT EXISTS spam_score DOUBLE PRECISION;
+ALTER TABLE news_event ADD COLUMN IF NOT EXISTS cluster_id TEXT;
 ALTER TABLE news_event ADD COLUMN IF NOT EXISTS dedup_window_seconds INTEGER;
 ALTER TABLE news_event ADD COLUMN IF NOT EXISTS review_status TEXT;
+
+ALTER TABLE event_symbol_link ADD COLUMN IF NOT EXISTS relevance_score DOUBLE PRECISION;
+ALTER TABLE event_symbol_link ADD COLUMN IF NOT EXISTS link_reason TEXT;
 
 ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS source_quality TEXT;
 ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS trust_score DOUBLE PRECISION;
@@ -357,6 +463,32 @@ CREATE TABLE IF NOT EXISTS event_quality_report (
     blocked_count INTEGER DEFAULT 0,
     payload JSONB,
     pulled_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS security_entity (
+    vt_symbol TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    exchange TEXT NOT NULL,
+    name TEXT NOT NULL,
+    short_name TEXT,
+    industry TEXT,
+    sector TEXT,
+    concept_tags JSONB,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS security_alias (
+    alias TEXT NOT NULL,
+    vt_symbol TEXT NOT NULL,
+    alias_type TEXT,
+    confidence DOUBLE PRECISION,
+    is_ambiguous BOOLEAN DEFAULT false,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (alias, vt_symbol)
 );
 
 INSERT INTO schema_version (
@@ -389,7 +521,9 @@ class NewsRaw:
     raw_payload: dict[str, Any] = field(default_factory=dict)
     source_quality: str = "unverified"
     trust_score: float = 0
+    relevance_score: float = 0
     spam_score: float = 0
+    cluster_id: str = ""
     dedup_window_seconds: int = 86400
     review_status: str = "pending"
 
@@ -421,7 +555,13 @@ class NewsEvent:
     sentiment_score: float | None = None
     source_quality: str = "unverified"
     trust_score: float = 0
+    relevance_score: float = 0
     spam_score: float = 0
+    cluster_id: str = ""
+    link_confidence: float = 0
+    link_reason: str = ""
+    sector: str = ""
+    topic: str = ""
     dedup_window_seconds: int = 86400
     review_status: str = "pending"
 
@@ -482,7 +622,28 @@ class EventSymbolLink:
     sector: str = ""
     topic: str = ""
     confidence: float = 0
+    relevance_score: float = 0
+    link_reason: str = ""
     provider_version: str = ""
+
+
+@dataclass(frozen=True)
+class EventQualityReport:
+    """
+    Quality report for one provider run or event cluster.
+    """
+
+    report_id: str
+    source: str
+    provider_name: str
+    as_of: datetime
+    source_quality: str
+    trust_score: float = 0
+    spam_score: float = 0
+    duplicate_count: int = 0
+    reviewed_count: int = 0
+    blocked_count: int = 0
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 class Cursor(Protocol):
@@ -595,6 +756,18 @@ class PostgresEventStorage:
         finally:
             cursor.close()
 
+    def save_event_quality_report(self, report: EventQualityReport) -> None:
+        """
+        Persist one event quality report.
+        """
+        validate_source_trace(report.source, report.provider_name)
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(UPSERT_EVENT_QUALITY_REPORT_SQL, _event_quality_report_params(report))
+            self.connection.commit()
+        finally:
+            cursor.close()
+
     def load_news_events(
         self,
         vt_symbol: str,
@@ -664,7 +837,9 @@ def _news_raw_params(news: NewsRaw) -> dict[str, Any]:
         "provider_version": news.provider_version,
         "source_quality": news.source_quality,
         "trust_score": news.trust_score,
+        "relevance_score": news.relevance_score,
         "spam_score": news.spam_score,
+        "cluster_id": news.cluster_id,
         "dedup_window_seconds": news.dedup_window_seconds,
         "review_status": news.review_status,
         "raw_payload": json.dumps(news.raw_payload, ensure_ascii=False, sort_keys=True),
@@ -711,7 +886,9 @@ def _news_event_params(event: NewsEvent) -> dict[str, Any]:
         "raw_hash": event.raw_hash,
         "source_quality": event.source_quality,
         "trust_score": event.trust_score,
+        "relevance_score": event.relevance_score,
         "spam_score": event.spam_score,
+        "cluster_id": event.cluster_id,
         "dedup_window_seconds": event.dedup_window_seconds,
         "review_status": event.review_status,
     }
@@ -740,8 +917,29 @@ def _event_symbol_link_params(link: EventSymbolLink) -> dict[str, Any]:
         "sector": link.sector,
         "topic": link.topic,
         "confidence": link.confidence,
+        "relevance_score": link.relevance_score,
+        "link_reason": link.link_reason,
         "provider_name": link.provider_name,
         "provider_version": link.provider_version,
+    }
+
+
+def _event_quality_report_params(report: EventQualityReport) -> dict[str, Any]:
+    """
+    Convert event quality report to SQL params.
+    """
+    return {
+        "report_id": report.report_id,
+        "source": report.source,
+        "provider_name": report.provider_name,
+        "as_of": report.as_of,
+        "source_quality": report.source_quality,
+        "trust_score": report.trust_score,
+        "spam_score": report.spam_score,
+        "duplicate_count": report.duplicate_count,
+        "reviewed_count": report.reviewed_count,
+        "blocked_count": report.blocked_count,
+        "payload": json.dumps(report.payload, ensure_ascii=False, sort_keys=True),
     }
 
 
@@ -763,7 +961,13 @@ def _news_event_from_row(row: dict[str, Any]) -> NewsEvent:
         raw_hash=str(row.get("raw_hash") or ""),
         source_quality=str(row.get("source_quality") or "unverified"),
         trust_score=float(row.get("trust_score") or 0),
+        relevance_score=float(row.get("relevance_score") or 0),
         spam_score=float(row.get("spam_score") or 0),
+        cluster_id=str(row.get("cluster_id") or ""),
+        link_confidence=float(row.get("link_confidence") or 0),
+        link_reason=str(row.get("link_reason") or ""),
+        sector=str(row.get("sector") or ""),
+        topic=str(row.get("topic") or ""),
         dedup_window_seconds=int(row.get("dedup_window_seconds") or 86400),
         review_status=str(row.get("review_status") or "pending"),
     )

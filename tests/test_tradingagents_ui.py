@@ -42,6 +42,29 @@ def test_veighna_trader_example_registers_tradingagents_app():
     assert registers_app
 
 
+def test_veighna_trader_example_registers_akshare_gateway():
+    """The local startup example should expose AKShare read-only quotes in the vn.py UI."""
+    tree = ast.parse(Path("examples/veighna_trader/run.py").read_text(encoding="utf-8"))
+
+    registers_gateway = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "add_optional_gateway"
+        and len(node.args) == 2
+        and isinstance(node.args[1], ast.Call)
+        and isinstance(node.args[1].func, ast.Name)
+        and node.args[1].func.id == "optional_class"
+        and len(node.args[1].args) == 2
+        and isinstance(node.args[1].args[0], ast.Constant)
+        and node.args[1].args[0].value == "vnpy_akshare_gateway"
+        and isinstance(node.args[1].args[1], ast.Constant)
+        and node.args[1].args[1].value == "AkshareGateway"
+        for node in ast.walk(tree)
+    )
+
+    assert registers_gateway
+
+
 def test_ui_control_state_disables_runtime():
     """Frontend switch off should disable AI runtime cleanly."""
     from vnpy_tradingagents.ui.widget import TradingAgentsControlState, apply_control_state

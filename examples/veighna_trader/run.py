@@ -76,6 +76,7 @@ def main():
 
     main_engine = MainEngine(event_engine)
 
+    add_optional_gateway(main_engine, optional_class("vnpy_akshare_gateway", "AkshareGateway"))
     add_optional_gateway(main_engine, optional_class("vnpy_ctp", "CtpGateway"))
     # main_engine.add_gateway(CtptestGateway)
     # main_engine.add_gateway(MiniGateway)

@@ -16,6 +16,27 @@ def test_schema_init_uses_peewee_create_tables():
     assert "schema_migration" not in result.created_or_existing_tables
 
 
+def test_schema_init_applies_idempotent_column_upgrades_for_existing_tables():
+    """Existing extension tables should receive additive P25 columns during schema init."""
+    from vnpy_tradingagents.schema_init import initialize_postgres_schema
+
+    database = FakePeeweeDatabase(
+        existing_tables=[
+            "news_raw",
+            "news_event",
+            "event_symbol_link",
+            "social_post_raw",
+        ]
+    )
+
+    initialize_postgres_schema(database)
+
+    sql = "\n".join(database.executed_sql)
+    assert "ALTER TABLE news_raw ADD COLUMN IF NOT EXISTS relevance_score" in sql
+    assert "ALTER TABLE news_event ADD COLUMN IF NOT EXISTS relevance_score" in sql
+    assert "ALTER TABLE event_symbol_link ADD COLUMN IF NOT EXISTS link_reason" in sql
+
+
 def test_schema_status_reports_extension_table_presence():
     """schema status should inspect extension tables instead of schema_migration."""
     from vnpy_tradingagents.schema_init import schema_status
@@ -183,6 +204,7 @@ class FakePeeweeDatabase:
     def __init__(self, existing_tables=None) -> None:
         self.existing_tables = set(existing_tables or [])
         self.created_models = []
+        self.executed_sql = []
         self.safe = None
         self.connected = False
 
@@ -194,6 +216,9 @@ class FakePeeweeDatabase:
         self.safe = safe
         for model in models:
             self.existing_tables.add(model._meta.table_name)
+
+    def execute_sql(self, sql, params=None):
+        self.executed_sql.append(sql)
 
     def get_tables(self):
         return sorted(self.existing_tables)

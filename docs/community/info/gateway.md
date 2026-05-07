@@ -45,6 +45,23 @@ main_engine.add_gateway(CtpGateway)
 
 ![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/gateway/4.png)
 
+### AKShare 只读行情接口
+
+本 fork 在 `examples/veighna_trader/run.py` 中默认注册 `vnpy_akshare_gateway.AkshareGateway`。在没有开通 QMT/XT、XTP、TORA 等股票 Gateway 前，可以先用它把 AKShare A 股快照行情推送到 vn.py 主界面：
+
+1. 启动 Trader。
+2. 点击 **系统 -> 连接AKSHARE**。
+3. `订阅代码` 可填写 `600519.SSE,000001.SZSE`，也兼容 `600519.SH`、`SH600519`、`sz000001`。
+4. `连接后加载全市场合约` 默认选 `是`，连接成功后可在 **帮助 -> 查询合约** 查看股票合约。
+5. `订阅全市场行情` 默认选 `否`。个人电脑上建议只订阅关注标的，避免公开接口慢或不稳定时拖慢界面。
+6. `快照接口顺序` 默认 `stock_zh_a_spot_em,stock_zh_a_spot`。前一个接口失败时会自动尝试后一个接口；后一个接口通常更慢，但能作为临时兜底。
+
+限制：
+
+- AKShare Gateway 只读，不支持委托、撤单、账户、持仓。
+- 它读取公开网页数据，无 SLA，可能慢、限流或字段变化。
+- 它不是 QMT 的替代品。后续开通 QMT/XT 后，主界面实时行情和交易应切换到对应 vn.py Gateway，AKShare 保留作研究和低成本 fallback。
+
 
 ## 接口分类
 

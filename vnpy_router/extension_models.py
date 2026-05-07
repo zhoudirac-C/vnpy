@@ -19,6 +19,8 @@ ROUTER_EXTENSION_TABLE_NAMES: tuple[str, ...] = (
     "sentiment_snapshot",
     "event_symbol_link",
     "event_quality_report",
+    "security_entity",
+    "security_alias",
 )
 
 
@@ -28,6 +30,7 @@ def build_router_extension_models(database: Any) -> list[type]:
     """
     from peewee import (
         CompositeKey,
+        BooleanField,
         DateTimeField,
         FloatField,
         IntegerField,
@@ -122,7 +125,9 @@ def build_router_extension_models(database: Any) -> list[type]:
         provider_version = TextField(null=True)
         source_quality = TextField(null=True)
         trust_score = FloatField(null=True)
+        relevance_score = FloatField(null=True)
         spam_score = FloatField(null=True)
+        cluster_id = TextField(null=True)
         dedup_window_seconds = IntegerField(null=True)
         review_status = TextField(null=True)
         pulled_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
@@ -145,7 +150,9 @@ def build_router_extension_models(database: Any) -> list[type]:
         raw_hash = TextField(null=True)
         source_quality = TextField(null=True)
         trust_score = FloatField(null=True)
+        relevance_score = FloatField(null=True)
         spam_score = FloatField(null=True)
+        cluster_id = TextField(null=True)
         dedup_window_seconds = IntegerField(null=True)
         review_status = TextField(null=True)
         pulled_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
@@ -191,6 +198,8 @@ def build_router_extension_models(database: Any) -> list[type]:
         sector = TextField(null=True)
         topic = TextField(null=True)
         confidence = FloatField(null=True)
+        relevance_score = FloatField(null=True)
+        link_reason = TextField(null=True)
         provider_name = TextField()
         provider_version = TextField(null=True)
         pulled_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
@@ -216,6 +225,36 @@ def build_router_extension_models(database: Any) -> list[type]:
         class Meta:
             table_name = "event_quality_report"
 
+    class SecurityEntity(BaseExtensionModel):
+        vt_symbol = TextField(primary_key=True)
+        symbol = TextField()
+        exchange = TextField()
+        name = TextField()
+        short_name = TextField(null=True)
+        industry = TextField(null=True)
+        sector = TextField(null=True)
+        concept_tags = BinaryJSONField(null=True)
+        provider_name = TextField()
+        provider_version = TextField(null=True)
+        updated_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
+
+        class Meta:
+            table_name = "security_entity"
+
+    class SecurityAlias(BaseExtensionModel):
+        alias = TextField()
+        vt_symbol = TextField()
+        alias_type = TextField(null=True)
+        confidence = FloatField(null=True)
+        is_ambiguous = BooleanField(default=False)
+        provider_name = TextField()
+        provider_version = TextField(null=True)
+        updated_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
+
+        class Meta:
+            table_name = "security_alias"
+            primary_key = CompositeKey("alias", "vt_symbol")
+
     return [
         MarketBarSnapshot,
         FundamentalSnapshot,
@@ -230,4 +269,6 @@ def build_router_extension_models(database: Any) -> list[type]:
         SentimentSnapshot,
         EventSymbolLink,
         EventQualityReport,
+        SecurityEntity,
+        SecurityAlias,
     ]

@@ -15,6 +15,28 @@ class SnapshotQuery:
     end: datetime
 
 
+@dataclass(frozen=True)
+class NewsContextFilter:
+    """
+    Filtering rules for TradingAgents news context.
+    """
+
+    min_trust_score: float = 0.70
+    min_link_confidence: float = 0.75
+    max_items: int = 20
+    allowed_event_types: frozenset[str] = frozenset(
+        {
+            "announcement",
+            "earnings",
+            "regulatory",
+            "buyback",
+            "holding_change",
+            "industry",
+            "macro",
+        }
+    )
+
+
 class SnapshotReader(Protocol):
     """
     Read-only snapshot source for MarketDataToolkit.
@@ -70,9 +92,14 @@ class MarketDataToolkit:
         "alpha_factor": "alpha_factors",
     }
 
-    def __init__(self, reader: SnapshotReader) -> None:
+    def __init__(
+        self,
+        reader: SnapshotReader,
+        news_filter: NewsContextFilter | None = None,
+    ) -> None:
         """"""
         self.reader: SnapshotReader = reader
+        self.news_filter: NewsContextFilter = news_filter or NewsContextFilter()
 
     def build_context(self, query: SnapshotQuery) -> dict[str, Any]:
         """
@@ -111,7 +138,7 @@ class MarketDataToolkit:
             if snapshot is None:
                 degraded_sources.append(snapshot_type)
 
-        news = _load_news(self.reader, query)
+        news = _load_news(self.reader, query, self.news_filter)
         context["news"] = news
         if not news.get("events"):
             degraded_sources.append("news")
@@ -126,17 +153,81 @@ class MarketDataToolkit:
         return context
 
 
-def _load_news(reader: SnapshotReader, query: SnapshotQuery) -> dict[str, Any]:
+def _load_news(
+    reader: SnapshotReader,
+    query: SnapshotQuery,
+    news_filter: NewsContextFilter,
+) -> dict[str, Any]:
     """
     Load normalized event window when the reader supports it.
     """
     load_news_events = getattr(reader, "load_news_events", None)
     if callable(load_news_events):
-        events = load_news_events(query.vt_symbol, query.start, query.end)
-        return {"events": [_event_to_context(event) for event in events]}
+        events = list(load_news_events(query.vt_symbol, query.start, query.end))
+        filtered, stats = _filter_news_events(events, news_filter)
+        return {
+            "events": [_event_to_context(event) for event in filtered],
+            "filter": stats,
+        }
 
     snapshot = reader.load_latest_snapshot("news", query.vt_symbol, query.end)
     return dict(snapshot or {})
+
+
+def _filter_news_events(
+    events: Sequence[Any],
+    news_filter: NewsContextFilter,
+) -> tuple[list[Any], dict[str, int]]:
+    """
+    Filter events before they enter LLM context.
+    """
+    accepted: list[Any] = []
+    stats = {
+        "input_count": len(events),
+        "output_count": 0,
+        "dropped_low_trust": 0,
+        "dropped_low_link_confidence": 0,
+        "dropped_event_type": 0,
+        "dropped_review_status": 0,
+        "dropped_spam": 0,
+        "dropped_limit": 0,
+    }
+
+    for event in events:
+        event_type = str(_event_value(event, "event_type", ""))
+        if str(_event_value(event, "review_status", "")).lower() == "blocked":
+            stats["dropped_review_status"] += 1
+            continue
+        if float(_event_value(event, "spam_score", 0) or 0) >= 0.70:
+            stats["dropped_spam"] += 1
+            continue
+        source_quality = str(_event_value(event, "source_quality", ""))
+        trust_score = float(_event_value(event, "trust_score", 0) or 0)
+        if trust_score < news_filter.min_trust_score and source_quality != "official_disclosure":
+            stats["dropped_low_trust"] += 1
+            continue
+        if event_type not in news_filter.allowed_event_types:
+            stats["dropped_event_type"] += 1
+            continue
+        link_confidence = float(_event_value(event, "link_confidence", 0) or 0)
+        if link_confidence and link_confidence < news_filter.min_link_confidence:
+            stats["dropped_low_link_confidence"] += 1
+            continue
+        accepted.append(event)
+
+    accepted.sort(
+        key=lambda event: (
+            str(_event_value(event, "source_quality", "")) == "official_disclosure",
+            float(_event_value(event, "trust_score", 0) or 0),
+            _event_value(event, "occurred_at", ""),
+        ),
+        reverse=True,
+    )
+    if len(accepted) > news_filter.max_items:
+        stats["dropped_limit"] = len(accepted) - news_filter.max_items
+        accepted = accepted[: news_filter.max_items]
+    stats["output_count"] = len(accepted)
+    return accepted, stats
 
 
 def _load_sentiment(reader: SnapshotReader, query: SnapshotQuery) -> dict[str, Any]:
@@ -208,8 +299,23 @@ def _event_to_context(event: Any) -> dict[str, Any]:
         "provider_name": getattr(event, "provider_name", ""),
         "source_quality": getattr(event, "source_quality", ""),
         "trust_score": getattr(event, "trust_score", 0),
+        "relevance_score": getattr(event, "relevance_score", 0),
+        "link_confidence": getattr(event, "link_confidence", 0),
+        "link_reason": getattr(event, "link_reason", ""),
+        "sector": getattr(event, "sector", ""),
+        "topic": getattr(event, "topic", ""),
+        "cluster_id": getattr(event, "cluster_id", ""),
         "review_status": getattr(event, "review_status", ""),
     }
+
+
+def _event_value(event: Any, key: str, default: Any = None) -> Any:
+    """
+    Read an event field from dict or dataclass-like objects.
+    """
+    if isinstance(event, dict):
+        return event.get(key, default)
+    return getattr(event, key, default)
 
 
 def _data_quality_summary(

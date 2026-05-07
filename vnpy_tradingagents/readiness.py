@@ -301,8 +301,28 @@ class ProductionReadinessChecker:
             elif provider in {"akshare_stock_news", "akshare_global_news"}:
                 if not self.module_available("akshare"):
                     warnings.append(f"{provider} requires akshare")
+            elif provider in {"cninfo_announcement", "sse_announcement", "gdelt_global_news"}:
+                continue
             else:
                 warnings.append(f"provider has no news ingestion readiness checker: {provider}")
+
+        official_enabled = any(
+            provider in {"cninfo_announcement", "sse_announcement"}
+            for provider in provider_names
+        )
+        catalog_path = str(self.settings.get("news.entity.catalog_path", "")).strip()
+        if official_enabled:
+            if not catalog_path:
+                warnings.append("news.entity.catalog_path is required for production entity linking")
+            elif not self.path_exists(catalog_path):
+                warnings.append(f"news.entity.catalog_path does not exist: {catalog_path}")
+
+        if _to_bool(self.settings.get("news.llm_classifier.enabled", False)):
+            env_var = str(self.settings.get("news.llm_classifier.api_key_env_var", "ZHIPU_API_KEY"))
+            if not resolve_llm_api_key(env_var, environ=self.environ if self._environ_supplied else None):
+                warnings.append(f"news.llm_classifier API key is missing: {env_var}")
+            if not catalog_path:
+                warnings.append("news.entity.catalog_path is required for LLM stock-link validation")
 
         if warnings:
             return _warning("news_ingestion", "; ".join(warnings))
