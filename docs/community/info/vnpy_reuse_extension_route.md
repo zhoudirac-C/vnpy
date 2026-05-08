@@ -14,6 +14,8 @@
 4. 本 fork 的 PostgreSQL 扩展表只保存 provider trace、研究快照、TradingAgents 输出、审计、事件和运维状态。
 5. TradingAgents 作为 vn.py App 内的同进程 context-only Worker 接入，只产出报告、评级、日内建议和交易意图，不直接持有 Gateway、账号、订单接口。
 6. AKShare、TuShare、QMT、XT、RQData、本地 CSV/Parquet 都只是 provider 或 vn.py datafeed 的来源，不写死到策略和 TradingAgents 中。
+7. 传统规则策略和 TradingAgents 独立 AI 策略分开实现：`DoubleMaStrategy` 等规则策略默认不消费 AI 信号，TradingAgents 通过手动分析页、`TradingAgentsSignalStrategy` 和 `TradingAgentsBacktestStrategy` 独立落地。
+8. AI 过滤传统策略是后续显式混合策略路线，例如 `DoubleMaWithAIFilter`；不能在用户无感的情况下改变原有规则策略语义。
 
 ## 2. 需要修改的技术路线
 
@@ -24,6 +26,7 @@
 | PostgreSQL bar snapshot 作为行情主缓存 | 可能绕过 vn.py Database，形成第二套行情库 | 标准 bar/tick 优先走 vn.py Database；AI 所需 provider trace、quality、研究快照单独进扩展表 |
 | TradingAgents Runner 兼容裸 `propagate(symbol, date)` | 裸调用可能走 TradingAgents 默认 yfinance/Alpha Vantage 工具 | 只允许 context-only runner；如使用原生 TradingAgentsGraph，必须先替换数据工具 |
 | TradingAgentsEngine 只做内存开关 | 无法跨重启恢复，UI 也不能真正停止任务或禁用信号 | 接入 PostgreSQL `ai_runtime_state`，并由 vn.py App 管理 Worker lifecycle、任务、状态和手工接管 |
+| 把 TradingAgents 默认接到传统 CTA 策略 | 会让规则策略、AI 策略和回测含义混在一起，用户难以判断交易来自规则还是 AI | 传统策略保持纯规则；新增独立 AI 策略、AI 回测策略和显式混合过滤策略 |
 | PaperAccountBridge 独立模拟成交 | 容易和 vn.py 回测/Paper/Gateway 的成交状态不一致 | Paper bridge 仅做 smoke；真实模拟盘优先接 vn.py 回测引擎、仿真 Gateway 或已有 paper 体系 |
 | Event/news/sentiment schema 与 Toolkit 分离 | 数据入库后无法进入 TradingAgents 上下文 | 补 normalized event reader、sentiment snapshot reader，并由 `MarketDataToolkit` 按时间窗口读取 |
 | 文档把 P1-P11 标记为完成 | 当前更多是骨架完成，不是生产完成 | 改为“骨架完成 / 生产待完成 / 阻塞项”，后续任务按 vn.py 复用路线重排 |
@@ -149,6 +152,53 @@ TradingAgents 继续接入，但边界要更硬：
 3. 不能在 vn.py 主事件线程里跑 LLM。
 4. 输入必须来自 `MarketDataToolkit` 构造的本地快照上下文。
 5. 输出必须先落库，再由策略、风控或人工 UI 读取。
+6. 传统规则策略默认不读取 TradingAgents 输出；独立 AI 策略和 AI 回测策略单独实现。
+7. 混合策略必须显式命名、显式开关、显式回测，不能悄悄改变原有策略行为。
+
+### 5.0 策略定位
+
+```plantuml
+@startuml
+title TradingAgents 策略定位：三类策略分离
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+package "传统规则策略\n保持纯规则" {
+  component "DoubleMaStrategy" as DoubleMa
+  component "TurtleSignalStrategy" as Turtle
+  component "AtrRsiStrategy" as AtrRsi
+}
+
+package "TradingAgents 独立AI策略" {
+  component "TradingAgentsManualAnalysis\n手动分析页" as Manual
+  component "TradingAgentsSignalStrategy\n实时/定时AI策略" as AIStrategy
+  component "TradingAgentsBacktestStrategy\n历史AI信号回测" as AIBacktest
+}
+
+package "显式混合策略\n后续增强" {
+  component "DoubleMaWithAIFilter" as Hybrid
+}
+
+database "PostgreSQL\n快照/AI信号/审计" as PG
+component "TradingAgents Worker\ncontext-only" as Worker
+component "Risk App\n硬风控" as Risk
+
+Manual --> Worker : 构造上下文并运行
+Worker --> PG : report/rating/trade_intent
+AIStrategy --> PG : 读取有效TradeIntent
+AIBacktest --> PG : 读取历史时点AI信号
+Hybrid --> PG : 读取AI确认/否决
+DoubleMa --> Risk : 规则交易意图
+Turtle --> Risk : 规则交易意图
+AtrRsi --> Risk : 规则交易意图
+AIStrategy --> Risk : AI交易意图
+Hybrid --> Risk : 规则+AI过滤后的交易意图
+
+@enduml
+```
+
+这次路线调整的核心是：TradingAgents 可以做买卖判断，但要作为独立 AI 策略出现；传统策略继续承担 vn.py 主链路验证和规则策略实盘职责。
 
 ### 5.1 日内接入
 
@@ -216,6 +266,9 @@ Strategy -> Risk : 转换为交易计划前先风控
 | P0 | `vnpy_router.providers.qmt/xt` | 废弃直接 provider，替换为 vn.py datafeed wrapper 或标为 blocked |
 | P0 | `vnpy_tradingagents.real_runner` | 移除生产路径中的裸 `propagate(symbol, date)`；只允许 context-only runner |
 | P0 | `vnpy_tradingagents.worker_process` | 增加可配置真实 runner 加载入口，而不是默认 `runner_not_configured` |
+| P0 | `vnpy_tradingagents.ui` | 增加手动分析入口，用户输入标的后展示报告、评级、动作、置信度和风险点 |
+| P0 | `vnpy_tradingagents.strategies` | 新增 `TradingAgentsSignalStrategy`，作为独立 AI 策略读取已落库意图，不改造传统 CTA 策略 |
+| P0 | `vnpy_tradingagents.backtesting` | 新增 `TradingAgentsBacktestStrategy`，回测仅读取历史时点固化 AI 信号，不在每根 K 线上调用 LLM |
 | P1 | `vnpy_tradingagents.engine/ui` | 状态持久化到 PostgreSQL，UI 真正控制 worker/scheduler/signal status |
 | P1 | `vnpy_router.event_storage` | 补 normalized event、sentiment snapshot、entity link 的 save/read 接口 |
 | P1 | `vnpy_router.storage` | 补通用 payload snapshot 保存入口，Alpha 因子落 `alpha_factor_snapshot` |
@@ -251,7 +304,7 @@ Strategy -> Risk : 转换为交易计划前先风控
 
 ## 8. 新阶段建议
 
-建议新增 P12-P15，按 vn.py 复用路线生产化：
+建议新增 P12-P15，按 vn.py 复用路线生产化；P27 专门处理 TradingAgents 策略定位纠偏：
 
 | 阶段 | 名称 | 目标 |
 | --- | --- | --- |
@@ -259,6 +312,7 @@ Strategy -> Risk : 转换为交易计划前先风控
 | P13 | TradingAgents 真实 Worker | context-only runner、替换数据工具、worker 配置、smoke |
 | P14 | 事件和 Toolkit 生产化 | 新闻/公告/社媒 normalized pipeline、Toolkit 窗口上下文 |
 | P15 | vn.py 真实运行链路 | EventEngine 接入、Backtesting/Paper 接入、UI 状态持久化、readiness 完整检查 |
+| P27 | TradingAgents 独立 AI 策略定位 | 已代码级落地手动分析页、独立 AI 策略、AI 回测策略、混合过滤策略边界，传统策略默认不接 AI |
 
 ## 9. 验收标准
 
@@ -270,5 +324,6 @@ Strategy -> Risk : 转换为交易计划前先风控
 4. TradingAgents Worker 无法拿到 Gateway、MainEngine、账号、密钥或外部 provider handle。
 5. AKShare 不再写死；切换 provider 不需要改策略或 TradingAgents prompt。
 6. QMT/XT 接入优先复用 vn.py 插件，不重复实现交易和实时行情。
-7. 日内建议和长期评级都必须先落 PostgreSQL，再由策略或人工界面读取。
+7. 日内建议和长期评级都必须先落 PostgreSQL，再由独立 AI 策略、显式混合策略或人工界面读取。
 8. readiness 能发现 DB、schema、provider、worker、secret、paper smoke 的真实问题。
+9. `DoubleMaStrategy`、`TurtleSignalStrategy` 等传统策略在未显式创建混合版本时，不读取 TradingAgents 输出。

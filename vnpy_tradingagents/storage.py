@@ -280,6 +280,23 @@ ORDER BY vt_symbol, created_at DESC;
 """
 
 
+SELECT_LATEST_TRADE_INTENT_SQL: str = """
+SELECT
+    vt_symbol,
+    trade_date,
+    action,
+    target_weight_hint,
+    holding_period_hint,
+    risk_notes,
+    run_id
+FROM trade_intent
+WHERE vt_symbol = %(vt_symbol)s
+  AND trade_date <= %(trade_date)s
+ORDER BY trade_date DESC, created_at DESC
+LIMIT 1;
+"""
+
+
 UPSERT_AI_RUNTIME_STATE_SQL: str = """
 INSERT INTO ai_runtime_state (
     state_id,
@@ -493,6 +510,31 @@ class PostgresSignalReader:
                 },
             )
             return [_portfolio_intent_from_row(row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+    def load_latest_trade_intent(
+        self,
+        vt_symbol: str,
+        trade_date: str,
+    ) -> PortfolioIntent | None:
+        """
+        Load the latest AI trade intent at or before trade_date for one symbol.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                SELECT_LATEST_TRADE_INTENT_SQL,
+                {
+                    "vt_symbol": vt_symbol,
+                    "trade_date": trade_date,
+                },
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return _portfolio_intent_from_row(row)
         finally:
             cursor.close()
 

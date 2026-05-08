@@ -375,7 +375,7 @@ def _contract_from_row(row: dict[str, Any], gateway_name: str) -> ContractData |
         size=1,
         pricetick=0.01,
         min_volume=100,
-        history_data=True,
+        history_data=False,
         gateway_name=gateway_name,
     )
 

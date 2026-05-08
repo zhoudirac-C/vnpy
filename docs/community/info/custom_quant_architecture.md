@@ -145,7 +145,7 @@ actor "Strategy/App" as Strategy
 component "Risk Check\n风控检查" as Risk
 component "MainEngine" as Main
 component "Gateway" as Gateway
-cloud "Broker/QMT/XTP/TORA" as Broker
+component "Broker/QMT/XTP/TORA" as Broker
 queue "EventEngine" as Event
 database "OmsEngine\n内存状态缓存" as Oms
 
@@ -365,18 +365,21 @@ skinparam packageStyle rectangle
 database "PostgreSQL\nA股研究快照" as PG
 component "TradingAgents Worker\n研究 + 买卖观点 + 评级" as TA
 database "PostgreSQL\nAI报告 + TradeIntent + RatingSignal" as SignalStore
-component "自定义 Research App\n读取AI信号" as ResearchApp
-component "Strategy App\n规则/ML/AI辅助策略" as Strategy
+component "TradingAgents App\n手动分析/任务控制" as TAApp
+component "TradingAgentsSignalStrategy\n独立AI策略" as AIStrategy
+component "Hybrid Strategy\n显式AI过滤策略" as Hybrid
 component "Risk App\n风控" as Risk
 component "MainEngine" as Main
 component "Gateway" as Gateway
-cloud "Broker" as Broker
+component "Broker/Sim" as Broker
 
 PG --> TA : 读取行情/财务/新闻/板块快照
 TA --> SignalStore : 写报告、买卖观点和评级
-SignalStore --> ResearchApp : 查询AI信号
-ResearchApp --> Strategy : 推送或查询信号
-Strategy --> Risk : 生成交易意图
+SignalStore --> TAApp : 展示报告/评级/意图
+SignalStore --> AIStrategy : 读取AI交易意图
+SignalStore --> Hybrid : 读取AI确认/否决
+AIStrategy --> Risk : 生成AI交易意图
+Hybrid --> Risk : 规则+AI过滤后的交易意图
 Risk --> Main : 通过后才生成OrderRequest
 Main --> Gateway : send_order()
 Gateway --> Broker : 实盘/仿真委托
@@ -543,7 +546,7 @@ component "Research Manager\n汇总多空辩论" as ResearchManager
 component "Trader Agent\n生成交易计划\n时机 + 方向 + 仓位倾向" as Trader
 component "Risk Team\nAggressive / Neutral\nConservative" as RiskTeam
 component "Portfolio Manager\nApprove / Reject\nBuy / Overweight / Hold\nUnderweight / Sell" as PM
-cloud "Simulated Exchange\n原项目示例可模拟执行" as Sim
+component "Simulated Exchange\n原项目示例可模拟执行" as Sim
 database "Decision Log / Memory\n历史决策和反思" as Memory
 
 Analysts --> Researchers : 分析报告
@@ -622,7 +625,19 @@ stop
 
 ### 8.1 TradingAgents 在系统里的角色
 
-TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed。它可以参与买卖策略，但更准确地说，它应该是 **AI 策略决策模块**，而不是 **交易执行模块**。
+TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed，也不应该默认塞进 `DoubleMaStrategy`、`TurtleSignalStrategy` 这类传统规则策略里。
+
+最新定位是：TradingAgents 是 **独立 AI 投研和 AI 交易意图生成模块**。它可以自己判断买入、卖出、减仓、持有，但它的输出仍然只是 `TradeIntent` 或 `RatingSignal`，不是订单。真正下单必须继续走 vn.py 的策略实例、Risk App、MainEngine 和 Gateway。
+
+这里要把三个概念分开：
+
+| 类型 | 决策来源 | 是否默认接 TradingAgents | 适合用途 |
+| --- | --- | --- | --- |
+| 传统规则策略 | 均线、突破、RSI、ATR、固定参数 | 否 | 验证 vn.py 策略、回测、仿真和实盘链路是否稳定 |
+| 独立 AI 策略 | TradingAgents 基于上下文直接产出 `TradeIntent` | 是，但必须显式创建 AI 策略 | 研究驱动的买卖建议、低频/中频 AI 策略、人工确认或模拟盘 |
+| 混合 AI 过滤器 | 规则策略先出信号，TradingAgents 只确认/否决/降权 | 否，后续单独命名实现 | 在成熟规则策略上增加 AI 风险过滤，不改变原策略语义 |
+
+所以第一版不改造 `DoubleMaStrategy` 这类已有策略。它们仍然按规则自动买卖，方便对照测试；TradingAgents 另起 `TradingAgentsSignalStrategy` 和 `TradingAgentsBacktestStrategy`。
 
 它在本项目里的角色是：
 
@@ -639,9 +654,10 @@ TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed。它可以参与买
 
 | 等级 | TradingAgents 可以做什么 | 是否允许直接下单 |
 | --- | --- | --- |
-| 研究模式 | 生成报告、风险点、评级 | 不允许 |
-| AI 信号模式 | 输出 `RatingSignal`，参与策略排序和过滤 | 不允许 |
-| AI 策略模式 | 输出 `TradeIntent`，例如买入、卖出、减仓、持有 | 仍然不允许，必须经过 Risk App 和 MainEngine |
+| 手动分析模式 | 用户在 TradingAgents 页面输入标的，生成报告、风险点、评级 | 不允许 |
+| 独立 AI 策略模式 | `TradingAgentsSignalStrategy` 定时读取上下文，生成 `TradeIntent` | 仍然不允许，必须经过 Risk App 和 MainEngine |
+| AI 回测模式 | `TradingAgentsBacktestStrategy` 读取历史时点已固化的 AI 信号 | 不允许连接真实 Gateway |
+| 混合过滤模式 | `DoubleMaWithAIFilter` 这类显式混合策略读取 AI 确认/否决 | 仍然不允许绕过原策略和风控 |
 
 ### 8.2 同进程 context-only Worker
 
@@ -722,38 +738,65 @@ source_run_id
 
 ### 8.5 从 TradingAgents 到 vn.py 策略的具体接入方式
 
-接入分三步，不要一步到位直接实盘：
+接入不再按“把 AI 融进所有策略”推进，而是按三条互相隔离的路线推进：
 
 ```plantuml
 @startuml
-title TradingAgents 到 vn.py 策略的三步接入
+title TradingAgents 策略定位：传统规则、独立AI、混合过滤分开
 
 skinparam shadowing false
+skinparam packageStyle rectangle
 
-start
-:Step 1\nTradingAgents 读取PostgreSQL研究快照;
-:生成 report + rating;
-:保存到PostgreSQL;
-:Step 2\nResearch App 读取 rating + trade intent;
-:转换为 RatingSignal + TradeIntent;
-:Strategy App 把AI意图\n和规则/ML信号融合;
-:Step 3\nRisk App 检查仓位/金额/频率/黑名单;
-if (风控通过?) then (yes)
-  :MainEngine.send_order();
-  :Gateway 发给券商或仿真接口;
-else (no)
-  :记录拒绝原因;
-endif
-stop
+package "传统规则策略\n默认不接AI" {
+  component "DoubleMaStrategy\nTurtle/AtrRsi/..." as RuleStrategy
+}
+
+package "独立AI策略\n显式创建" {
+  component "TradingAgentsManualAnalysis\n手动分析页" as Manual
+  component "TradingAgentsSignalStrategy\n实时/定时AI策略" as AIStrategy
+  component "TradingAgentsBacktestStrategy\n读取历史AI信号回测" as AIBacktest
+}
+
+package "后续可选混合策略\n显式命名" {
+  component "DoubleMaWithAIFilter\n规则信号 + AI确认" as Hybrid
+}
+
+database "PostgreSQL\n快照/报告/评级/意图/审计" as PG
+component "TradingAgents Worker\ncontext-only" as Worker
+component "Risk App\n硬风控" as Risk
+component "MainEngine" as Main
+component "Gateway\nQMT/XTP/TORA/仿真" as Gateway
+
+RuleStrategy --> Risk : 规则交易意图
+Manual --> Worker : 手动分析请求
+Worker --> PG : report/rating/trade_intent
+AIStrategy --> PG : 读取最新有效AI意图
+AIBacktest --> PG : 读取历史时点AI信号
+Hybrid --> PG : 读取AI确认/否决
+AIStrategy --> Risk : AI交易意图
+Hybrid --> Risk : 规则+AI过滤后的交易意图
+Risk --> Main : 风控通过后发单
+Main --> Gateway : 委托/撤单
+
+note right of RuleStrategy
+传统策略用于稳定性和对照测试，
+不要默认读AI信号。
+end note
+
+note bottom of AIBacktest
+回测不在每根K线同步调用LLM，
+只读取事先按历史时点固化的AI信号。
+end note
 
 @enduml
 ```
 
-建议第一版只实现 Step 1 和 Step 2：
+分阶段建议：
 
-- Step 1：跑出报告、买卖观点和评级，落 PostgreSQL。
-- Step 2：写一个 Research App 或服务，把输出转换成可查询的 `RatingSignal` 和 `TradeIntent`。
-- Step 3：等回测和模拟盘验证后再接交易链路。
+1. 先做 `TradingAgentsManualAnalysis`：用户输入 `vt_symbol`，系统构造上下文，调用 TradingAgents，展示报告、评级、建议动作和风险点。
+2. 再做 `TradingAgentsSignalStrategy`：独立 CTA/Portfolio 策略实例，定时读取已落库的 AI 意图，经过 Risk App 后才允许模拟盘或实盘。
+3. 再做 `TradingAgentsBacktestStrategy`：回测只读取历史时点已固化的 AI 信号，避免回测过程中实时调用 LLM 造成不可重复、成本失控和未来函数。
+4. 最后才做 `DoubleMaWithAIFilter` 这类混合策略；它必须单独命名，不改变传统策略默认行为。
 
 任何版本都不允许：
 
@@ -761,6 +804,7 @@ stop
 - TradingAgents 调用 Gateway。
 - TradingAgents 直接改持仓或订单。
 - TradingAgents 输出绕过风控。
+- 传统规则策略在用户无感的情况下自动消费 AI 信号。
 
 ### 8.6 TradingAgents 能不能做日内分时操作建议
 
@@ -839,7 +883,9 @@ package "数据与研究层" {
 package "事件与策略层" {
   queue "EventEngine\nEVENT_TIMER/TICK/ORDER/TRADE" as Event
   component "TradingAgentsApp\nAgentResearchEngine" as TAApp
-  component "CTA / PortfolioStrategy\non_tick/on_bar/on_bars" as Strategy
+  component "Rule Strategy\nCTA/Portfolio传统策略" as RuleStrategy
+  component "AI Strategy\nTradingAgentsSignalStrategy" as AIStrategy
+  component "Hybrid Strategy\n显式AI过滤策略" as HybridStrategy
   component "Alpha BacktestingEngine\n长期组合回测" as Backtest
 }
 
@@ -859,10 +905,13 @@ TA --> PG : RatingSignal/TradeIntent/IntradayAdvice
 TAApp --> Event : 订阅定时/行情/成交事件
 Event --> TAApp : 状态变化
 TAApp --> TA : 异步触发Worker
-PG --> Strategy : 读取AI信号
+RuleStrategy --> Risk : 规则交易意图
+PG --> AIStrategy : 读取AI信号
+PG --> HybridStrategy : 读取AI确认/否决
 AlphaLab --> Backtest : 信号DataFrame
 Backtest --> PG : 回测结果/采纳记录
-Strategy --> Risk : TradeIntent转OrderRequest前检查
+AIStrategy --> Risk : TradeIntent转OrderRequest前检查
+HybridStrategy --> Risk : 规则+AI过滤后的交易意图
 Risk --> Algo : 可选拆单执行
 Algo --> Main : 风控后发单
 Risk --> Main : 或直接发单
@@ -888,7 +937,8 @@ TA -[#red,dashed]-> Event : 禁止阻塞事件线程
 | P1 | `EventEngine` | 监听 `EVENT_TIMER`、`EVENT_TICK`、`EVENT_ORDER`、`EVENT_TRADE`，触发快照构建 | 只投递任务，耗时分析放 Worker |
 | P1 | `OmsEngine` 查询接口 | 读取最新 tick、活动委托、持仓、资金，作为 AI 上下文 | 只读，不改 OMS 状态 |
 | P1 | `vnpy.alpha` | 长期选股、评级、组合意图、模型信号、长期回测 | TradingAgents 作为信号源，不替代回测 |
-| P1 | CTA / PortfolioStrategy | 日内读取 `IntradayAdvice`，长期读取 `RatingSignal/PortfolioIntent` | 策略仍要有规则确认 |
+| P1 | `TradingAgentsSignalStrategy` / `TradingAgentsBacktestStrategy` | 作为独立 AI 策略读取 `TradeIntent`、`IntradayAdvice`、历史 AI 信号 | 不改造传统规则策略；必须先风控 |
+| P1 | 显式混合策略 | 例如 `DoubleMaWithAIFilter` 读取 AI 确认/否决 | 单独命名、单独回测，不影响 `DoubleMaStrategy` 原语义 |
 | P1 | RiskManager | 对 AI 信号加硬规则：仓位、金额、频率、黑名单、回撤、有效期 | AI 风险评论不能替代硬风控 |
 | P2 | AlgoTrading | 把已经批准的调仓意图拆成 TWAP、冰山、追价等执行算法 | AI 不决定每一笔子单 |
 | P2 | PaperAccount | 先用真实行情做 AI 策略仿真 | 实盘前必须经过模拟盘 |
@@ -1090,14 +1140,15 @@ top_events:
 
 ### 8.10 TradingAgents 开关和降级运行
 
-TradingAgents 必须能被前端开关控制。关闭后，数据、策略、风控、下单和手工交易都要继续正常运行，只是不再使用 AI 报告、评级和日内建议。
+TradingAgents 必须能被前端开关控制。关闭后，数据、传统规则策略、风控、下单和手工交易都要继续正常运行。独立 AI 策略停止读取 AI 信号；传统策略原本就不依赖 AI，因此不受影响。
 
 推荐做三层开关：
 
 | 开关 | 作用 | 默认值 |
 | --- | --- | --- |
 | 全局开关 `tradingagents.enabled` | 是否启动 TradingAgents Worker 和自定义 App 任务 | `false` |
-| 策略开关 `strategy.use_ai_signal` | 某个策略是否读取 AI 信号 | `false` |
+| 独立 AI 策略开关 `tradingagents.signal_strategy_enabled` | 是否允许 `TradingAgentsSignalStrategy` 读取有效 AI 意图 | `false` |
+| 混合过滤开关 `strategy.use_ai_filter` | 仅显式混合策略是否读取 AI 确认/否决 | `false` |
 | 实盘开关 `tradingagents.live_enabled` | AI 信号是否允许影响实盘交易意图 | `false` |
 
 前端建议在自定义 `TradingAgentsApp` 界面提供：
@@ -1122,7 +1173,8 @@ participant "TradingAgentsApp\n控制面" as App
 database "PostgreSQL\nai_runtime_state" as State
 participant "TradingAgents Worker" as Worker
 database "PostgreSQL\nAI Signal Store" as SignalStore
-participant "Strategy App\n规则/ML策略" as Strategy
+participant "Rule Strategy\n传统规则策略" as RuleStrategy
+participant "TradingAgentsSignalStrategy\n独立AI策略" as AIStrategy
 participant "RiskManager\n硬风控" as Risk
 participant "MainEngine" as Main
 
@@ -1130,13 +1182,13 @@ User -> App : 关闭TradingAgents
 App -> State : enabled=false\nsignal_status=disabled
 App -> Worker : stop/pause jobs
 App -> SignalStore : 标记未过期AI信号为disabled
-Strategy -> State : 查询AI状态
+RuleStrategy -> Risk : 继续按规则运行
+AIStrategy -> State : 查询AI状态
 alt AI关闭
-  Strategy -> Strategy : 只使用规则/ML/人工配置
-  Strategy -> Risk : 非AI交易意图
+  AIStrategy -> AIStrategy : 不产生AI交易意图
 else AI开启且信号有效
-  Strategy -> SignalStore : 读取RatingSignal/IntradayAdvice
-  Strategy -> Risk : 融合后的交易意图
+  AIStrategy -> SignalStore : 读取TradeIntent/IntradayAdvice
+  AIStrategy -> Risk : AI交易意图
 end
 Risk -> Main : 风控通过后才发单
 
@@ -1149,7 +1201,9 @@ Risk -> Main : 风控通过后才发单
 - DataRecorder/DataManager 仍正常工作。
 - CTA、PortfolioStrategy、Alpha 回测仍可按规则/ML 信号运行。
 - RiskManager、AlgoTrading、PaperAccount、Gateway、MainEngine 不依赖 TradingAgents。
-- 策略读取 AI 状态为 disabled 时，必须忽略 `RatingSignal`、`TradeIntent`、`IntradayAdvice`。
+- `TradingAgentsSignalStrategy` 读取 AI 状态为 disabled 时，必须停止产生 AI 交易意图。
+- 传统规则策略不读取 AI 状态，也不因为 TradingAgents 关闭而改变行为。
+- 显式混合策略读取 AI 状态为 disabled 时，必须退回纯规则或停止，退回方式写在策略参数里。
 - 已生成但未使用的 AI 信号要标记为 disabled 或 expired，避免开关关闭后被延迟采纳。
 
 需要记录的运行状态：
@@ -1169,7 +1223,7 @@ Risk -> Main : 风控通过后才发单
 - Worker 超时：本轮 AI 信号缺失，策略按非 AI 逻辑继续。
 - 新闻/社媒管线失败：TradingAgents 使用行情、财务、benchmark 和持仓上下文继续，报告标记 `degraded`。
 - 数据 provider 失败：`vnpy_router` 尝试 fallback；fallback 失败则快照不更新，策略使用已有缓存或跳过。
-- 前端关闭开关：所有策略立即进入非 AI 模式。
+- 前端关闭开关：独立 AI 策略停止产生新意图，混合策略退回预设模式，传统策略不受影响。
 - 风控触发熔断：即使前端开关打开，也禁止 AI 信号影响新订单。
 
 ### 8.11 TradingAgents Worker 部署和 smoke
@@ -1190,7 +1244,7 @@ vn.py main process
 - API key 可以在 vn.py 全局配置界面的 `tradingagents.api_key <secret>` 安全输入框中填写；该字段不会保存到 `vt_setting.json`。运行期会写入当前进程环境变量，安装可选 `keyring` 时可保存到系统钥匙串。生产部署仍建议通过环境变量或 Secret Manager 注入，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DASHSCOPE_API_KEY`、`ZHIPU_API_KEY`，不写入 PostgreSQL、日志和 `raw_state`。
 - `tradingagents.llm_provider`、`tradingagents.model`、`tradingagents.backend_url`、`tradingagents.timeout_seconds`、`tradingagents.max_retries`、`tradingagents.checkpoint_dir` 从 vn.py 全局配置或部署配置读取；BigModel Coding Plan 可通过 `tradingagents.backend_url=https://open.bigmodel.cn/api/coding/paas/v4` 指定 Coding 专用端点。
 - Worker 按 request mode 自动切换 thinking 和超时：日内/分时默认 `tradingagents.intraday_thinking_type=disabled`、`tradingagents.intraday_timeout_seconds=360`；长期研究和组合评级默认 `tradingagents.long_horizon_thinking_type=enabled`、`tradingagents.long_horizon_timeout_seconds=2700`；复盘/回测默认 `tradingagents.replay_thinking_type=enabled`、`tradingagents.replay_timeout_seconds=2700`。
-- 生产和回测链路默认隔离：`TradingAgentsStrategyMixin` 和 `OrderBridge` 默认按 `live=True` 检查，未进入 `LIVE_ALLOWED + live_enabled` 时不消费 AI 信号、不生成 live OrderRequest；回测、复盘、paper 路径必须显式传 `live=False`。
+- 生产和回测链路默认隔离：只有 `TradingAgentsSignalStrategy`、`TradingAgentsBacktestStrategy` 和显式混合策略允许消费 AI 信号；传统规则策略不默认继承 AI mixin。AI 策略 live 路径必须通过 `LIVE_ALLOWED + live_enabled`，回测、复盘、paper 路径必须显式传 `live=False`。
 - 默认 factory 是 `TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build`。它返回 `AShareContextOnlyRunner`，内部用 `TradingAgentsContextOnlyGraphRunner` 创建上游 `TradingAgentsGraph`，并把 market/news/fundamental/social 工具替换为只读 `native_input["context"]` 的工具。
 - native runner 必须被包装成 context-only runner。它只能使用 `native_input["context"]` 中的 PostgreSQL 快照，不允许直接访问 yfinance、Alpha Vantage、AKShare、TuShare、QMT 或 Gateway。
 - 裸的上游 `TradingAgentsGraph.propagate(symbol, date)` 只能在 legacy/test 模式显式启用；生产 A 股路径使用默认 context-only factory 或等价 wrapper。
@@ -1199,12 +1253,13 @@ vn.py main process
 
 ## 9. 开发阶段
 
-开发阶段不再只按“先报告、再信号、最后交易”一条线推进，而是拆成一个公共底座和两条 TradingAgents 接入链路：
+开发阶段不再只按“先报告、再信号、最后交易”一条线推进，而是拆成一个公共底座、两条 TradingAgents 上下文链路，以及一个定位纠偏阶段：
 
 ```text
 公共底座：可切换数据源 + PostgreSQL + vn.py Datafeed + TradingAgents Worker
 日内链路：IntradaySnapshot -> TradingAgents -> IntradayAdvice -> Strategy/Risk
 长期链路：ResearchSnapshot -> TradingAgents -> RatingSignal/PortfolioIntent -> PortfolioStrategy/Risk
+定位纠偏：传统规则策略不默认接 AI；TradingAgents 独立成为手动分析、AI 策略和 AI 回测入口
 ```
 
 ```plantuml
@@ -1225,6 +1280,7 @@ component "Phase 8\n真实Runner边界" as P8
 component "Phase 9\n生产数据源" as P9
 component "Phase 10\n回测/Paper/UI" as P10
 component "Phase 11\n运维/上线" as P11
+component "Phase 27\nTradingAgents独立AI策略定位" as P27
 
 P1 --> P2
 P2 --> P3A
@@ -1237,6 +1293,8 @@ P7 --> P8
 P8 --> P9
 P9 --> P10
 P10 --> P11
+P8 --> P27
+P10 --> P27
 
 @enduml
 ```
@@ -1256,6 +1314,7 @@ P10 --> P11
 | Phase 9 | 骨架完成 | `ProviderCapability`、`TuShareProvider`、QMT/XT 边界、`SocialProvider`、事件源生产规则 |
 | Phase 10 | 骨架完成 | `BacktestingAppBridge`、`PaperAccountSnapshot`、UI 手工接管、状态查询、`TradingAgentsPaperSmoke` |
 | Phase 11 | 骨架完成 | `PostgresOpsStorage`、`MetricsCollector`、`secrets_policy`、备份恢复文档、小资金上线 Runbook |
+| Phase 27 | 代码级完成 | `TradingAgentsManualAnalysisService`、手动分析 UI 入口、`TradingAgentsSignalStrategy`、`HistoricalAiSignalJob`、`TradingAgentsBacktestStrategy`、传统策略隔离测试 |
 
 ### Phase 1：公共数据底座
 
@@ -1363,20 +1422,22 @@ P10 --> P11
 
 目标：
 
-- 把日内 `IntradayAdvice` 和长期 `RatingSignal/PortfolioIntent` 接入 vn.py 策略层。
+- 把日内 `IntradayAdvice` 和长期 `RatingSignal/PortfolioIntent` 接入 vn.py 策略层，但第一目标是独立 AI 策略，不是默认改造所有传统规则策略。
 - 明确日内和长期信号的优先级，避免 AI 日内建议破坏长期仓位纪律。
 - 所有交易意图必须经过确定性 Risk App，再走 `MainEngine -> Gateway`。
 
 交付：
 
-- `SignalFusionService`：融合规则策略、ML 信号、长期 AI 评级和日内 AI 建议；第一版以规则信号为主，AI 只能确认或拦截，不能把 `hold` 单独变成 `buy`。
+- `TradingAgentsSignalStrategy`：独立 AI 策略实例，读取已落库的 AI 意图后产生受控 `OrderIntent`；不依赖均线突破等固定触发规则。
+- `SignalFusionService`：保留给显式混合策略使用，例如 `DoubleMaWithAIFilter`；第一版以规则信号为主，AI 只能确认或拦截，不能把 `hold` 单独变成 `buy`。
 - `AiSignalPolicy`：定义 AI 信号强度上限、有效期、冲突处理和禁用开关；第一版已覆盖关闭开关、日内建议过期、长期 `Sell/Underweight` 拦截日内买入。
 - `RiskRuleSet`：仓位上限、单笔金额、撤单频率、涨跌停、黑名单、最大日内成交额和最大回撤；第一版已提供 `OrderIntent -> RiskCheckResult` 的确定性检查，不生成订单。
 - `DecisionAudit`：记录每笔订单前的规则信号、AI 信号、风控输入和风控结论；第一版由 `DecisionAuditRecord` 和 `PostgresDecisionAuditStorage` 写入 `decision_audit` 表，并由 `PreOrderDecisionService` 统一完成风控检查和审计落库。
 
 验收：
 
-- AI 信号可以参与排序、过滤、加减仓提示，但不能绕过策略和风控。
+- 独立 AI 策略可以把 `TradeIntent` 转成受控交易意图，但不能绕过风控。
+- 传统规则策略默认不读取 AI 信号；只有显式混合策略才使用 AI 确认或过滤。
 - 长期信号为 `Sell/Underweight` 时，日内建议不能触发新增买入。
 - 风控拒绝时不会下单，并记录拒绝原因。
 - 所有 AI 影响过的决策可以按 `source_run_id` 回放。
@@ -1535,7 +1596,8 @@ P10 --> P11
 | TradingAgents 美股默认假设 | 替换数据工具、替换 benchmark、注入 A 股交易规则 |
 | LLM 幻觉 | 结构化输出、人工审核、报告落盘、信号强度上限 |
 | Prompt injection | 外部文本清洗、来源记录、工具权限隔离 |
-| 依赖冲突 | TradingAgents Worker 独立环境 |
+| 依赖冲突 | 部署/构建阶段安装并锁定 TradingAgents 依赖；vn.py 启动时同进程懒加载，未启用不加载 |
+| AI 定位混乱 | 传统规则策略、独立 AI 策略、混合 AI 过滤策略分开命名、分开回测、分开开关 |
 | 策略绕过风控 | 所有订单必须经过 MainEngine/OmsEngine 和风控规则 |
 | 实盘误触发 | 默认关闭实盘开关、模拟盘灰度、小资金验证、一键暂停 |
 
@@ -1545,7 +1607,7 @@ P10 --> P11
 2. 运行 `vnpy-tradingagents-schema readiness --json`，先把 PostgreSQL、API key、provider 依赖和本地文件路径检查到 ready。
 3. 在部署/构建阶段确认 TradingAgents 依赖已随项目环境安装，并设置 `tradingagents.worker_factory=vnpy_tradingagents.tradingagents_factory:build` 后跑 `TradingAgentsRunnerSmoke`。
 4. 用本地 CSV/JSON、AKShare 和 TuShare provider 跑通 `vnpy_router` 快照写入；QMT/XT 优先通过 vn.py 既有 datafeed/gateway 插件接入。
-5. 用真实 PostgreSQL 跑 `TradingAgentsRunnerSmoke` 和 `TradingAgentsPaperSmoke`，检查 `decision_audit`、`replay_run_status`、feedback 和 `ops_heartbeat`。
+5. 用真实 PostgreSQL 跑 `TradingAgentsRunnerSmoke`、`TradingAgentsManualAnalysis` 和独立 AI 策略 paper smoke，检查 `decision_audit`、`replay_run_status`、feedback 和 `ops_heartbeat`。
 6. 开通 QMT/XT 后，验证 vn.py 插件包装层、Gateway 行情订阅和本 fork provider trace 的协同关系。
 7. 模拟盘连续稳定后，严格按 `docs/community/ops/live_gray_runbook.md` 和 `LiveGate` 做小资金实盘准入检查。
 

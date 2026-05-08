@@ -26,14 +26,15 @@
 [
   {
     "name": "akshare",
-    "endpoints": ["stock_zh_a_hist", "stock_zh_a_hist_tx", "stock_zh_a_daily"]
+    "endpoints": ["stock_zh_a_hist_min_em", "stock_zh_a_hist", "stock_zh_a_hist_tx", "stock_zh_a_daily"]
   }
 ]
 ```
 
 AKShare 在本 fork 中有两条不同用途的接入线：
 
-- 支持当前实现覆盖 A 股日线/周线研究数据。
+- 支持当前实现覆盖 A 股分钟线、小时线、日线、周线研究/回测数据。
+- 分钟线/小时线通过 `stock_zh_a_hist_min_em` 获取，适合 CTA 回测前下载历史 K 线，不等同于券商级实时行情；公开分钟接口可用窗口可能较短，长周期回测建议优先使用日线，分钟回测建议先用较短日期范围验证。
 - 日线默认按 `stock_zh_a_hist`、`stock_zh_a_hist_tx`、`stock_zh_a_daily` 顺序降级；单个公开网页源失败、空数据或字段不合格时，会继续尝试下一个 endpoint。
 - 回测、数据管理或脚本查询历史 K 线时，可以通过 `datafeed.name=router` 和 `router.providers=akshare` 使用。
 - 主界面临时看 A 股快照行情时，可以通过 **系统 -> 连接AKSHARE** 使用 `vnpy_akshare_gateway.AkshareGateway`。它会把 AKShare 全市场快照转换为 vn.py `ContractData/TickData`，但仍是只读行情接口，不支持委托、撤单、账户和持仓。
@@ -45,6 +46,15 @@ AKShare 在本 fork 中有两条不同用途的接入线：
 - 生产实盘交易仍需要 QMT/XT、XTP、TORA 等真实股票 Gateway；AKShare 只能作为无账号阶段的低成本研究和临时行情方案。
 
 如果要查看回测，请启动 Trader 后进入 **功能 -> CTA回测**。当前示例启动脚本已经自动加载 `CtaStrategyApp` 和 `CtaBacktesterApp`；回测数据来自 vn.py Database 或 Datafeed，而不是主交易窗口的实时行情表。
+
+CTA 回测的正确顺序是：
+
+1. 在 **配置 -> 全局配置** 中确认 `database.*` 指向可用数据库，`datafeed.name=router`，`router.providers=akshare`。
+2. 在 **CTA回测** 中填写 `本地代码`、`K线周期`、起止日期和手续费参数。
+3. 先点击 **下载数据**，让 Backtester 通过 router/AKShare 拉取历史 K 线并写入 vn.py Database。
+4. 再点击 **开始回测**，此时 Backtester 会从 Database 读取 K 线运行策略。
+
+如果日志显示“历史数据加载完成，数据量：0”，通常表示当前数据库里还没有该 `本地代码 + K线周期 + 日期范围` 的 K 线，或者下载数据阶段没有成功写入数据库。
 
 ## 迅投研
 

@@ -50,6 +50,8 @@ SETTING_HELP_TEXT: dict[str, str] = {
     "router.local_path": "local_file provider 的本地 K 线路径；router.providers=local_file 时使用 router.local_path，而不是 local_file:/path 写法。",
     "tradingagents.api_key_env_var": "环境变量名，例如 OPENAI_API_KEY、ZHIPU_API_KEY；真实 API key 请填下面的安全输入框。",
     "tradingagents.worker_factory": "TradingAgents Worker 工厂，默认等同于环境变量 TRADINGAGENTS_WORKER_FACTORY=vnpy_tradingagents.tradingagents_factory:build。",
+    "tradingagents.signal_strategy_enabled": "是否允许独立 AI 策略读取 TradingAgents 已落库意图；传统 CTA 策略默认不受影响。",
+    "tradingagents.live_enabled": "是否允许 AI 意图进入实盘链路；默认 false，必须配合 live_allowed、风控和小资金灰度。",
     "tradingagents.llm_provider": (
         "TradingAgents 支持：openai、anthropic、google、azure、xai、deepseek、"
         "qwen、glm、openrouter、ollama。国内常用 OpenAI 兼容 provider："

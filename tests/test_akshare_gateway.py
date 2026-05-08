@@ -57,9 +57,12 @@ def test_akshare_gateway_loads_contracts_and_polls_subscribed_ticks(monkeypatch)
         }
     )
 
-    assert [(contract.vt_symbol, contract.name, contract.product) for contract in contracts] == [
-        ("600519.SSE", "贵州茅台", Product.EQUITY),
-        ("000001.SZSE", "平安银行", Product.EQUITY),
+    assert [
+        (contract.vt_symbol, contract.name, contract.product, contract.history_data)
+        for contract in contracts
+    ] == [
+        ("600519.SSE", "贵州茅台", Product.EQUITY, False),
+        ("000001.SZSE", "平安银行", Product.EQUITY, False),
     ]
     assert [tick.vt_symbol for tick in ticks] == ["600519.SSE"]
     assert ticks[0].last_price == 1688.0

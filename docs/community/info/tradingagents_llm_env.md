@@ -72,12 +72,13 @@ Worker 会根据 `TradingAgentsWorkerRequest.mode` 自动选择配置：
 
 当前实现把生产和回测按调用边界分开：
 
-- 真实生产策略侧的 `TradingAgentsStrategyMixin` 默认按 `live=True` 检查，只有 `LIVE_ALLOWED` 且 `live_enabled=True` 时才会消费 AI 信号。
+- 真实生产策略侧只有 `TradingAgentsSignalStrategy` 和显式混合策略允许消费 AI 信号；传统规则策略默认不继承 AI mixin、不读取 AI 信号。
+- AI 策略默认按 `live=True` 检查，只有 `LIVE_ALLOWED` 且 `live_enabled=True` 时才允许把 AI 意图交给真实交易链路。
 - `OrderBridge` 默认也按 live scope 处理，未通过 live gate 时只写审计并返回 `order_request=None`。
 - 回测、复盘、paper 路径必须显式传 `live=False`，才能消费已落库的 `RatingSignal`、`IntradayAdvice` 或组合意图。
 - `BacktestingBridge`、`IntradayReplayEngine`、`PortfolioReplayEngine` 不持有 Gateway/MainEngine，不会触发真实下单。
 
-换成大白话：生产默认不让 AI 直接影响下单；回测/复盘可以拿 AI 信号做验证。以后真要让 AI 进入实盘，需要明确打开 `LIVE_ALLOWED + live_enabled`，并通过 live gate、小资金灰度和审计检查。
+换成大白话：普通规则策略不吃 AI；独立 AI 策略也默认不能进实盘。回测/复盘可以拿 AI 信号做验证。以后真要让 AI 进入实盘，需要明确打开 `LIVE_ALLOWED + live_enabled`，并通过 live gate、小资金灰度和审计检查。
 
 ## vn.py 界面配置方式
 

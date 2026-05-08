@@ -77,7 +77,7 @@ PG --> "MarketDataToolkit\nTradingAgents context"
 第一阶段，无 QMT、TuShare 积分不足：
 
 - 默认 `router.providers=local_file,akshare`。
-- AKShare 内部先做 endpoint 降级，默认顺序为 `stock_zh_a_hist -> stock_zh_a_hist_tx -> stock_zh_a_daily`，先降低“单个公开网页源失效导致日线完全拉不到”的概率。
+- AKShare 内部先做 endpoint 降级，默认顺序为 `stock_zh_a_hist_min_em -> stock_zh_a_hist -> stock_zh_a_hist_tx -> stock_zh_a_daily`；分钟线/小时线用于回测数据下载，日线多 endpoint 降低“单个公开网页源失效导致日线完全拉不到”的概率。
 - 增加 `baostock` 和 `efinance` provider 作为 A 股日线 fallback 候选。
 - 对同一标的同一日期的 OHLCV 做二源交叉校验，字段不一致时写 `quality_report`，不直接喂给 TradingAgents 执行链路。
 

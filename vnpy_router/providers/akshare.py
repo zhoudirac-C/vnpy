@@ -14,16 +14,21 @@ from .capability import ProviderCapability, ProviderCostLevel
 
 
 DEFAULT_ENDPOINTS: tuple[str, ...] = (
+    "stock_zh_a_hist_min_em",
     "stock_zh_a_hist",
     "stock_zh_a_hist_tx",
     "stock_zh_a_daily",
 )
 
 ENDPOINT_INTERVALS: dict[str, frozenset[Interval]] = {
+    "stock_zh_a_hist_min_em": frozenset({Interval.MINUTE, Interval.HOUR}),
     "stock_zh_a_hist": frozenset({Interval.DAILY, Interval.WEEKLY}),
     "stock_zh_a_hist_tx": frozenset({Interval.DAILY}),
     "stock_zh_a_daily": frozenset({Interval.DAILY}),
 }
+SUPPORTED_INTERVALS: frozenset[Interval] = frozenset(
+    {Interval.MINUTE, Interval.HOUR, Interval.DAILY, Interval.WEEKLY}
+)
 
 
 class AkshareProvider(BaseProvider):
@@ -34,7 +39,7 @@ class AkshareProvider(BaseProvider):
     name: str = "akshare"
     capability: ProviderCapability = ProviderCapability(
         name=name,
-        intervals=frozenset({Interval.DAILY, Interval.WEEKLY}),
+        intervals=SUPPORTED_INTERVALS,
         fields=frozenset({"open", "high", "low", "close", "volume", "turnover"}),
         adjustments=frozenset({"none", "qfq", "hfq"}),
         supports_tick=False,
@@ -45,9 +50,9 @@ class AkshareProvider(BaseProvider):
         metadata={
             "production_scope": "research_history",
             "supported_market": "A-share",
-            "supported_intervals": ["daily", "weekly"],
+            "supported_intervals": ["minute", "hour", "daily", "weekly"],
             "endpoints": list(DEFAULT_ENDPOINTS),
-            "unsupported_intervals": ["minute", "hour", "tick"],
+            "unsupported_intervals": ["tick"],
             "unsupported_realtime": ["tick", "orderbook", "broker_position", "trading"],
         },
     )
@@ -89,7 +94,7 @@ class AkshareProvider(BaseProvider):
         """
         Query A-share bar history from AKShare.
         """
-        if req.interval not in {Interval.DAILY, Interval.WEEKLY}:
+        if req.interval not in SUPPORTED_INTERVALS:
             output(f"AkshareProvider does not support interval: {req.interval}")
             return []
 
@@ -99,7 +104,7 @@ class AkshareProvider(BaseProvider):
         if not self.akshare:
             return []
 
-        period: str = "weekly" if req.interval == Interval.WEEKLY else "daily"
+        period: str = _period_from_interval(req.interval)
         start: str = req.start.strftime("%Y%m%d")
         end_dt: datetime = req.end or datetime.now()
         end: str = end_dt.strftime("%Y%m%d")
@@ -156,6 +161,16 @@ class AkshareProvider(BaseProvider):
         if not self.akshare:
             return pd.DataFrame()
 
+        if endpoint == "stock_zh_a_hist_min_em":
+            end_dt: datetime = req.end or datetime.now()
+            return self.akshare.stock_zh_a_hist_min_em(
+                symbol=req.symbol,
+                start_date=req.start.strftime("%Y-%m-%d %H:%M:%S"),
+                end_date=end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                period=period,
+                adjust=self.adjustment,
+            )
+
         if endpoint == "stock_zh_a_hist":
             return self.akshare.stock_zh_a_hist(
                 symbol=req.symbol,
@@ -198,6 +213,7 @@ class AkshareProvider(BaseProvider):
         if _datetime_column_missing(df):
             df = df.reset_index()
         rename_map: dict[str, str] = {
+            "时间": "datetime",
             "日期": "datetime",
             "date": "datetime",
             "index": "datetime",
@@ -232,6 +248,7 @@ class AkshareProvider(BaseProvider):
             return []
 
         df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
+        df["datetime"] = df["datetime"].apply(_to_naive_datetime)
         for column in ("open", "high", "low", "close", "volume", "turnover"):
             df[column] = pd.to_numeric(df[column], errors="coerce")
 
@@ -239,10 +256,11 @@ class AkshareProvider(BaseProvider):
         if df.empty:
             return []
 
-        end_dt: datetime = req.end or datetime.now()
+        start_ts: pd.Timestamp = _to_naive_timestamp(req.start)
+        end_ts: pd.Timestamp = _to_naive_timestamp(req.end or datetime.now())
         df = df[
-            (df["datetime"] >= pd.Timestamp(req.start))
-            & (df["datetime"] <= pd.Timestamp(end_dt))
+            (df["datetime"] >= start_ts)
+            & (df["datetime"] <= end_ts)
         ]
         if df.empty:
             return []
@@ -298,6 +316,41 @@ def _to_akshare_adjustment(adjustment: str) -> str:
     if normalized in {"qfq", "hfq"}:
         return normalized
     return ""
+
+
+def _period_from_interval(interval: Interval) -> str:
+    """
+    Convert vn.py interval to AKShare period argument.
+    """
+    if interval == Interval.MINUTE:
+        return "1"
+    if interval == Interval.HOUR:
+        return "60"
+    if interval == Interval.WEEKLY:
+        return "weekly"
+    return "daily"
+
+
+def _to_naive_timestamp(value: datetime) -> pd.Timestamp:
+    """
+    Convert timezone-aware UI datetimes to local naive timestamps for AKShare rows.
+    """
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo:
+        return timestamp.tz_localize(None)
+    return timestamp
+
+
+def _to_naive_datetime(value: Any) -> pd.Timestamp:
+    """
+    Normalize dataframe datetime values to timezone-naive timestamps.
+    """
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return pd.NaT
+    if timestamp.tzinfo:
+        return timestamp.tz_localize(None)
+    return timestamp
 
 
 def _to_market_symbol(symbol: str, exchange: Exchange) -> str:

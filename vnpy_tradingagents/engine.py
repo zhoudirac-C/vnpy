@@ -1,3 +1,5 @@
+from typing import Any
+
 from vnpy.event import EventEngine
 from vnpy.trader.engine import BaseEngine, MainEngine
 
@@ -30,6 +32,7 @@ class TradingAgentsEngine(BaseEngine):
         super().__init__(main_engine, event_engine, "TradingAgents")
         self.runtime: TradingAgentsRuntimeController = TradingAgentsRuntimeController()
         self.state_storage: RuntimeStateStorage | None = None
+        self.manual_analysis_service: Any | None = None
 
     def set_state_storage(self, storage: RuntimeStateStorage) -> None:
         """
@@ -70,6 +73,20 @@ class TradingAgentsEngine(BaseEngine):
         Return current runtime state.
         """
         return self.runtime.state
+
+    def set_manual_analysis_service(self, service: Any) -> None:
+        """
+        Attach the user-triggered manual analysis service used by the UI.
+        """
+        self.manual_analysis_service = service
+
+    def run_manual_analysis(self, request: Any) -> Any:
+        """
+        Run TradingAgents manual analysis through the configured service.
+        """
+        if self.manual_analysis_service is None:
+            raise RuntimeError("TradingAgents manual analysis service is not configured")
+        return self.manual_analysis_service.run(request)
 
     def _persist_state(self) -> None:
         """

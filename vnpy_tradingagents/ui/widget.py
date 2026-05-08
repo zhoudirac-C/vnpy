@@ -1,10 +1,12 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from vnpy.trader.engine import MainEngine
 from vnpy.trader.ui import QtWidgets
 from vnpy.event import EventEngine
 
 from ..engine import TradingAgentsEngine
+from ..manual_analysis import ManualAnalysisRequest, ManualAnalysisResult
 from ..monitoring import ReplayRunStatus
 from ..runtime import TradingAgentsMode, TradingAgentsRuntimeState
 
@@ -81,6 +83,25 @@ def load_replay_status_panel_text(storage, run_id: str) -> str:
     return build_status_panel_text(status)
 
 
+def build_manual_analysis_summary_text(result: ManualAnalysisResult) -> str:
+    """
+    Render manual analysis result without implying that an order was submitted.
+    """
+    if result.response is None:
+        return f"status={result.status} error={result.error_message}"
+
+    response = result.response
+    return "\n".join(
+        [
+            f"status={result.status} run={response.run_id} symbol={response.vt_symbol}",
+            f"rating={response.rating} confidence={response.confidence:.2f}",
+            f"action={response.action} target_weight={response.target_weight_hint}",
+            f"holding_period={response.holding_period_hint} risk={response.risk_notes}",
+            response.report,
+        ]
+    )
+
+
 class TradingAgentsWidget(QtWidgets.QWidget):
     """
     Minimal TradingAgents runtime control widget.
@@ -100,6 +121,15 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.status_label = QtWidgets.QLabel()
         self.replay_status_text = QtWidgets.QPlainTextEdit()
         self.replay_status_text.setReadOnly(True)
+        self.manual_symbol_edit = QtWidgets.QLineEdit()
+        self.manual_symbol_edit.setPlaceholderText("600519.SSE")
+        self.manual_window_days_spin = QtWidgets.QSpinBox()
+        self.manual_window_days_spin.setRange(1, 3650)
+        self.manual_window_days_spin.setValue(60)
+        self.manual_result_text = QtWidgets.QPlainTextEdit()
+        self.manual_result_text.setReadOnly(True)
+        self.manual_analysis_button = QtWidgets.QPushButton("运行手动分析")
+        self.manual_analysis_button.clicked.connect(self.run_manual_analysis)
         self.apply_button = QtWidgets.QPushButton("应用")
         self.apply_button.clicked.connect(self.apply_settings)
         self.manual_takeover_button = QtWidgets.QPushButton("手工接管")
@@ -111,6 +141,10 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         form.addRow("Live", self.live_confirm_checkbox)
         form.addRow("状态", self.status_label)
         form.addRow("Replay/Gray", self.replay_status_text)
+        form.addRow("手动分析标的", self.manual_symbol_edit)
+        form.addRow("分析窗口天数", self.manual_window_days_spin)
+        form.addRow("手动分析结果", self.manual_result_text)
+        form.addRow(self.manual_analysis_button)
         form.addRow(self.apply_button)
         form.addRow(self.manual_takeover_button)
         self.setLayout(form)
@@ -163,6 +197,31 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         """
         state = apply_manual_takeover(self.engine)
         self.set_status_text(state)
+
+    def run_manual_analysis(self) -> None:
+        """
+        Trigger report-only TradingAgents analysis from the UI.
+        """
+        vt_symbol = self.manual_symbol_edit.text().strip()
+        if not vt_symbol:
+            self.manual_result_text.setPlainText("status=invalid error=missing vt_symbol")
+            return
+
+        end = datetime.now()
+        start = end - timedelta(days=self.manual_window_days_spin.value())
+        try:
+            result = self.engine.run_manual_analysis(
+                ManualAnalysisRequest(
+                    vt_symbol=vt_symbol,
+                    start=start,
+                    end=end,
+                )
+            )
+        except Exception as exc:
+            self.manual_result_text.setPlainText(f"status=failed error={exc}")
+            return
+
+        self.manual_result_text.setPlainText(build_manual_analysis_summary_text(result))
 
     def load_replay_status(self, storage, run_id: str) -> None:
         """

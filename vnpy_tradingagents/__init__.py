@@ -26,6 +26,23 @@ from .scheduler import TradingAgentsIntradayScheduler
 from .strategy_mixin import TradingAgentsStrategyMixin
 from .order_bridge import OrderBridge, OrderBridgeResult
 from .service import TradingAgentsService
+from .manual_analysis import (
+    ManualAnalysisRequest,
+    ManualAnalysisResult,
+    TradingAgentsManualAnalysisService,
+)
+from .strategies import (
+    AiStrategyDecisionContext,
+    TradingAgentsSignalStrategy,
+    TradingAgentsStrategyDecision,
+)
+from .backtesting import (
+    AiBacktestDecisionContext,
+    HistoricalAiSignalJob,
+    HistoricalAiSignalRequest,
+    HistoricalAiSignalSummary,
+    TradingAgentsBacktestStrategy,
+)
 from .storage import PostgresAgentStorage, PostgresRuntimeStateStorage, PostgresSignalReader
 from .intraday import IntradayAgentJob, IntradaySnapshot, IntradaySnapshotBuilder
 from .intraday_collector import (
@@ -113,7 +130,9 @@ from .policy import AiSignalPolicy, SignalDecision
 
 
 __all__ = [
+    "AiBacktestDecisionContext",
     "AiSignalPolicy",
+    "AiStrategyDecisionContext",
     "ASHARE_RULES_PROMPT",
     "AuditExportRecord",
     "AShareContextOnlyRunner",
@@ -132,6 +151,9 @@ __all__ = [
     "GatewayAccountMode",
     "GatewayAiPolicy",
     "GatewayProfile",
+    "HistoricalAiSignalJob",
+    "HistoricalAiSignalRequest",
+    "HistoricalAiSignalSummary",
     "IntradayAdvice",
     "IntradayAgentJob",
     "IntradaySnapshotCollector",
@@ -147,6 +169,8 @@ __all__ = [
     "LiveGateConfig",
     "LiveGateMetrics",
     "LiveGateResult",
+    "ManualAnalysisRequest",
+    "ManualAnalysisResult",
     "MarketDataToolkit",
     "MetricsCollector",
     "MetricsSnapshot",
@@ -212,6 +236,7 @@ __all__ = [
     "SnapshotSourcePolicyResult",
     "SubprocessTradingAgentsWorker",
     "TradingAgentsApp",
+    "TradingAgentsBacktestStrategy",
     "TradingAgentsContextPayload",
     "TradingAgentsWorkerConfig",
     "TradingAgentsWorkerAdapter",
@@ -224,7 +249,10 @@ __all__ = [
     "TradingAgentsRunnerAdapter",
     "TradingAgentsRunnerSmoke",
     "TradingAgentsPaperSmoke",
+    "TradingAgentsManualAnalysisService",
     "TradingAgentsService",
+    "TradingAgentsSignalStrategy",
+    "TradingAgentsStrategyDecision",
     "TradingAgentsWorkerRequest",
     "TradingAgentsWorkerResponse",
     "TradeFeedback",

@@ -32,6 +32,8 @@ SETTINGS: dict = {
     "tradingagents.llm_provider": "openai",
     "tradingagents.api_key_env_var": "OPENAI_API_KEY",
     "tradingagents.worker_factory": "vnpy_tradingagents.tradingagents_factory:build",
+    "tradingagents.signal_strategy_enabled": False,
+    "tradingagents.live_enabled": False,
     "tradingagents.model": "gpt-4o-mini",
     "tradingagents.backend_url": "",
     "tradingagents.thinking_type": "auto",

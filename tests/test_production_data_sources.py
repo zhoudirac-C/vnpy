@@ -1,5 +1,6 @@
 from datetime import datetime
 from types import ModuleType
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -85,15 +86,72 @@ def test_akshare_provider_declares_research_only_boundaries(monkeypatch):
     metadata = provider.capability.to_metadata()
     messages: list[str] = []
     req = _history_request()
-    req.interval = Interval.MINUTE
+    req.interval = Interval.TICK
 
     assert provider.query_bar_history(req, output=messages.append) == []
     assert metadata["supports_tick"] is False
     assert metadata["realtime"] is False
     assert metadata["metadata"]["production_scope"] == "research_history"
-    assert "minute" in metadata["metadata"]["unsupported_intervals"]
+    assert "minute" in metadata["metadata"]["supported_intervals"]
+    assert "tick" in metadata["metadata"]["unsupported_intervals"]
     assert "Gateway" in metadata["realtime_notes"]
     assert any("does not support interval" in message for message in messages)
+
+
+def test_akshare_provider_supports_minute_history(monkeypatch):
+    """AKShare provider should download minute bars for CTA Backtester."""
+    from vnpy_router.providers import akshare as akshare_module
+    from vnpy_router.providers.akshare import AkshareProvider
+
+    fake_akshare = FakeMinuteAkshareModule()
+    monkeypatch.setattr(akshare_module, "import_module", lambda name: fake_akshare)
+
+    req = _history_request()
+    req.interval = Interval.MINUTE
+    req.start = datetime(2024, 1, 3, 9, 30)
+    req.end = datetime(2024, 1, 3, 9, 32)
+    messages: list[str] = []
+
+    provider = AkshareProvider(endpoints=["stock_zh_a_hist_min_em"])
+    bars = provider.query_bar_history(req, output=messages.append)
+
+    assert fake_akshare.hist_min_kwargs == {
+        "symbol": "600519",
+        "start_date": "2024-01-03 09:30:00",
+        "end_date": "2024-01-03 09:32:00",
+        "period": "1",
+        "adjust": "",
+    }
+    assert [bar.datetime for bar in bars] == [
+        datetime(2024, 1, 3, 9, 30),
+        datetime(2024, 1, 3, 9, 31),
+    ]
+    assert [bar.interval for bar in bars] == [Interval.MINUTE, Interval.MINUTE]
+    assert bars[0].open_price == 1688
+    assert bars[1].close_price == 1698
+    assert bars[0].extra["provider_endpoint"] == "stock_zh_a_hist_min_em"
+
+
+def test_akshare_provider_accepts_timezone_aware_backtester_dates(monkeypatch):
+    """AKShare provider should compare UI timezone-aware dates with naive AKShare rows."""
+    from vnpy_router.providers import akshare as akshare_module
+    from vnpy_router.providers.akshare import AkshareProvider
+
+    fake_akshare = FakeMinuteAkshareModule()
+    monkeypatch.setattr(akshare_module, "import_module", lambda name: fake_akshare)
+
+    tz = ZoneInfo("Asia/Shanghai")
+    req = _history_request()
+    req.interval = Interval.MINUTE
+    req.start = datetime(2024, 1, 3, 9, 30, tzinfo=tz)
+    req.end = datetime(2024, 1, 3, 9, 32, tzinfo=tz)
+
+    bars = AkshareProvider(endpoints=["stock_zh_a_hist_min_em"]).query_bar_history(req)
+
+    assert [bar.datetime for bar in bars] == [
+        datetime(2024, 1, 3, 9, 30),
+        datetime(2024, 1, 3, 9, 31),
+    ]
 
 
 def test_akshare_provider_falls_back_between_internal_endpoints(monkeypatch):
@@ -408,6 +466,38 @@ class FakeAkshareModule:
                     "close": 1695,
                     "amount": 1200,
                 }
+            ]
+        )
+
+
+class FakeMinuteAkshareModule:
+    """Tiny AKShare module that returns minute history."""
+
+    def __init__(self) -> None:
+        self.hist_min_kwargs = {}
+
+    def stock_zh_a_hist_min_em(self, **kwargs):
+        self.hist_min_kwargs = kwargs
+        return pd.DataFrame(
+            [
+                {
+                    "时间": "2024-01-03 09:30:00",
+                    "开盘": 1688,
+                    "最高": 1700,
+                    "最低": 1680,
+                    "收盘": 1695,
+                    "成交量": 12,
+                    "成交额": 2034,
+                },
+                {
+                    "时间": "2024-01-03 09:31:00",
+                    "开盘": 1695,
+                    "最高": 1702,
+                    "最低": 1690,
+                    "收盘": 1698,
+                    "成交量": 10,
+                    "成交额": 16980,
+                },
             ]
         )
 
