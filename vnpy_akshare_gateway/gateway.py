@@ -24,7 +24,10 @@ SETTING_SYMBOLS: str = "订阅代码"
 SETTING_LOAD_CONTRACTS: str = "连接后加载全市场合约"
 SETTING_SUBSCRIBE_ALL: str = "订阅全市场行情"
 SETTING_SNAPSHOT_ENDPOINTS: str = "快照接口顺序"
+SETTING_INDIVIDUAL_QUOTE_ENDPOINT: str = "单票行情接口"
 DEFAULT_SNAPSHOT_ENDPOINTS: tuple[str, ...] = ("stock_zh_a_spot_em", "stock_zh_a_spot")
+DEFAULT_INDIVIDUAL_QUOTE_ENDPOINT: str = "stock_bid_ask_em"
+MAX_INDIVIDUAL_QUOTE_SYMBOLS: int = 50
 
 
 class AkshareGateway(BaseGateway):
@@ -39,6 +42,7 @@ class AkshareGateway(BaseGateway):
         SETTING_LOAD_CONTRACTS: ["是", "否"],
         SETTING_SUBSCRIBE_ALL: ["否", "是"],
         SETTING_SNAPSHOT_ENDPOINTS: ",".join(DEFAULT_SNAPSHOT_ENDPOINTS),
+        SETTING_INDIVIDUAL_QUOTE_ENDPOINT: DEFAULT_INDIVIDUAL_QUOTE_ENDPOINT,
     }
     exchanges: list[Exchange] = [Exchange.SSE, Exchange.SZSE, Exchange.BSE]
 
@@ -52,6 +56,8 @@ class AkshareGateway(BaseGateway):
         self.latest_snapshot: pd.DataFrame = pd.DataFrame()
         self.poll_interval_seconds: int = 15
         self.snapshot_endpoints: list[str] = list(DEFAULT_SNAPSHOT_ENDPOINTS)
+        self.individual_quote_endpoint: str = DEFAULT_INDIVIDUAL_QUOTE_ENDPOINT
+        self.subscribe_all: bool = False
         self._elapsed_seconds: int = 0
         self._timer_registered: bool = False
 
@@ -63,6 +69,10 @@ class AkshareGateway(BaseGateway):
         self.snapshot_endpoints = _parse_snapshot_endpoints(
             setting.get(SETTING_SNAPSHOT_ENDPOINTS), DEFAULT_SNAPSHOT_ENDPOINTS
         )
+        self.individual_quote_endpoint = str(
+            setting.get(SETTING_INDIVIDUAL_QUOTE_ENDPOINT) or DEFAULT_INDIVIDUAL_QUOTE_ENDPOINT
+        ).strip()
+        self.subscribe_all = _is_enabled(setting.get(SETTING_SUBSCRIBE_ALL, "否"))
         self.subscribed.update(_split_symbols(str(setting.get(SETTING_SYMBOLS) or "")))
 
         if not self._init_akshare():
@@ -75,7 +85,7 @@ class AkshareGateway(BaseGateway):
         elif self.subscribed:
             self._push_missing_contracts(snapshot)
 
-        if _is_enabled(setting.get(SETTING_SUBSCRIBE_ALL, "否")):
+        if self.subscribe_all:
             if not self.contracts:
                 self._push_contracts(snapshot)
             self.subscribed.update(self.contracts)
@@ -174,10 +184,63 @@ class AkshareGateway(BaseGateway):
         if not self.akshare or not self.subscribed:
             return
 
+        if len(self.subscribed) <= MAX_INDIVIDUAL_QUOTE_SYMBOLS and not self.subscribe_all:
+            pushed = self._push_individual_quote_ticks()
+            missing = self.subscribed.difference(pushed)
+            if not missing:
+                return
+        else:
+            missing = self.subscribed
+
         snapshot = self._query_snapshot()
         self.latest_snapshot = snapshot
         self._push_missing_contracts(snapshot)
-        self._push_subscribed_ticks(snapshot)
+        self._push_subscribed_ticks(snapshot, subscribed=missing)
+
+    def _push_individual_quote_ticks(self) -> set[str]:
+        """
+        Query fast per-symbol quotes and push ticks for subscribed symbols.
+        """
+        pushed: set[str] = set()
+        for vt_symbol in sorted(self.subscribed):
+            tick = self._query_individual_quote_tick(vt_symbol)
+            if not tick:
+                continue
+            self.on_tick(tick)
+            pushed.add(vt_symbol)
+        return pushed
+
+    def _query_individual_quote_tick(self, vt_symbol: str) -> TickData | None:
+        """
+        Query one subscribed symbol using AKShare's single-stock bid/ask endpoint.
+        """
+        if not self.akshare or not self.individual_quote_endpoint:
+            return None
+
+        query = getattr(self.akshare, self.individual_quote_endpoint, None)
+        if not callable(query):
+            return None
+
+        symbol, exchange = _symbol_exchange_from_value(vt_symbol)
+        if not symbol:
+            return None
+
+        try:
+            data = query(symbol=symbol)
+        except Exception as exc:
+            self.write_log(f"AKShare单票行情接口 {self.individual_quote_endpoint} 查询失败：{vt_symbol} {exc}")
+            return None
+
+        quote = data if isinstance(data, pd.DataFrame) else pd.DataFrame(data)
+        if quote.empty:
+            return None
+
+        name = self.contracts.get(vt_symbol).name if vt_symbol in self.contracts else symbol
+        row = _row_from_individual_quote(quote, symbol=symbol, name=name)
+        if not row:
+            return None
+
+        return _tick_from_row(row, gateway_name=self.gateway_name, timestamp=datetime.now())
 
     def _init_akshare(self) -> bool:
         """
@@ -327,18 +390,61 @@ def _tick_from_row(row: dict[str, Any], gateway_name: str, timestamp: datetime) 
         exchange=exchange,
         datetime=timestamp,
         name=_first_text(row, "名称", "name") or symbol,
-        volume=_float(row, "成交量", "volume"),
-        turnover=_float(row, "成交额", "turnover", "amount"),
-        last_price=_float(row, "最新价", "last_price", "price"),
+        volume=_float(row, "成交量", "volume", "总手"),
+        turnover=_float(row, "成交额", "turnover", "amount", "金额"),
+        last_price=_float(row, "最新价", "最新", "last_price", "price"),
+        limit_up=_float(row, "涨停", "limit_up"),
+        limit_down=_float(row, "跌停", "limit_down"),
         open_price=_float(row, "今开", "open", "open_price"),
         high_price=_float(row, "最高", "high", "high_price"),
         low_price=_float(row, "最低", "low", "low_price"),
         pre_close=_float(row, "昨收", "pre_close", "pre_close_price"),
-        bid_price_1=_float(row, "买入", "bid_price_1", "bid"),
-        ask_price_1=_float(row, "卖出", "ask_price_1", "ask"),
+        bid_price_1=_float(row, "买入", "bid_price_1", "bid", "buy_1"),
+        bid_price_2=_float(row, "bid_price_2", "buy_2"),
+        bid_price_3=_float(row, "bid_price_3", "buy_3"),
+        bid_price_4=_float(row, "bid_price_4", "buy_4"),
+        bid_price_5=_float(row, "bid_price_5", "buy_5"),
+        ask_price_1=_float(row, "卖出", "ask_price_1", "ask", "sell_1"),
+        ask_price_2=_float(row, "ask_price_2", "sell_2"),
+        ask_price_3=_float(row, "ask_price_3", "sell_3"),
+        ask_price_4=_float(row, "ask_price_4", "sell_4"),
+        ask_price_5=_float(row, "ask_price_5", "sell_5"),
+        bid_volume_1=_float(row, "bid_volume_1", "buy_1_vol"),
+        bid_volume_2=_float(row, "bid_volume_2", "buy_2_vol"),
+        bid_volume_3=_float(row, "bid_volume_3", "buy_3_vol"),
+        bid_volume_4=_float(row, "bid_volume_4", "buy_4_vol"),
+        bid_volume_5=_float(row, "bid_volume_5", "buy_5_vol"),
+        ask_volume_1=_float(row, "ask_volume_1", "sell_1_vol"),
+        ask_volume_2=_float(row, "ask_volume_2", "sell_2_vol"),
+        ask_volume_3=_float(row, "ask_volume_3", "sell_3_vol"),
+        ask_volume_4=_float(row, "ask_volume_4", "sell_4_vol"),
+        ask_volume_5=_float(row, "ask_volume_5", "sell_5_vol"),
         gateway_name=gateway_name,
     )
     return tick
+
+
+def _row_from_individual_quote(quote: pd.DataFrame, symbol: str, name: str) -> dict[str, Any]:
+    """
+    Convert AKShare stock_bid_ask_em item/value data into the common row shape.
+    """
+    if {"item", "value"}.issubset(quote.columns):
+        row = {
+            str(item).strip(): value
+            for item, value in zip(quote["item"], quote["value"], strict=False)
+            if str(item).strip()
+        }
+    elif not quote.empty:
+        row = dict(quote.iloc[0])
+    else:
+        row = {}
+
+    if not row:
+        return {}
+
+    row["代码"] = symbol
+    row["名称"] = name
+    return row
 
 
 def _split_symbols(raw: str) -> set[str]:

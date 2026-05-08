@@ -257,6 +257,69 @@ def test_akshare_gateway_falls_back_and_normalizes_prefixed_codes(monkeypatch):
     assert any("stock_zh_a_spot_em 查询失败" in message for message in logs)
 
 
+def test_akshare_gateway_poll_once_prefers_single_symbol_quote(monkeypatch):
+    """Polling CTA subscriptions should use fast single-symbol quote instead of full snapshots."""
+    import vnpy_akshare_gateway.gateway as gateway_module
+    from vnpy_akshare_gateway import AkshareGateway
+
+    fake_akshare = FakeAkshare(
+        pd.DataFrame(
+            [
+                {"代码": "600519", "名称": "贵州茅台", "最新价": 1688.0},
+                {"代码": "000001", "名称": "平安银行", "最新价": 10.5},
+            ]
+        ),
+        individual_quotes={
+            "600519": pd.DataFrame(
+                [
+                    ("sell_1", 1690.2),
+                    ("sell_1_vol", 300),
+                    ("buy_1", 1690.0),
+                    ("buy_1_vol", 200),
+                    ("最新", 1690.1),
+                    ("总手", 12345),
+                    ("金额", 208654845),
+                    ("最高", 1692.0),
+                    ("最低", 1680.0),
+                    ("今开", 1688.0),
+                    ("昨收", 1670.0),
+                    ("涨停", 1837.0),
+                    ("跌停", 1503.0),
+                ],
+                columns=["item", "value"],
+            )
+        },
+    )
+    monkeypatch.setattr(gateway_module, "import_module", lambda name: fake_akshare)
+
+    gateway = AkshareGateway(FakeEventEngine(), "AKSHARE")
+    ticks = []
+    gateway.on_tick = ticks.append
+
+    gateway.connect(
+        {
+            "轮询间隔秒数": 5,
+            "订阅代码": "600519.SSE",
+            "连接后加载全市场合约": "是",
+            "订阅全市场行情": "否",
+        }
+    )
+
+    fake_akshare.calls.clear()
+    ticks.clear()
+
+    gateway.poll_once()
+
+    assert fake_akshare.calls == [("stock_bid_ask_em", "600519")]
+    assert [tick.vt_symbol for tick in ticks] == ["600519.SSE"]
+    assert ticks[0].name == "贵州茅台"
+    assert ticks[0].last_price == 1690.1
+    assert ticks[0].bid_price_1 == 1690.0
+    assert ticks[0].ask_price_1 == 1690.2
+    assert ticks[0].limit_up == 1837.0
+    assert ticks[0].limit_down == 1503.0
+
+
 class FakeEventEngine:
     """Small event engine fake with timer registration tracking."""
 
@@ -277,9 +340,15 @@ class FakeEventEngine:
 class FakeAkshare:
     """AKShare module fake."""
 
-    def __init__(self, snapshot: pd.DataFrame, primary_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        snapshot: pd.DataFrame,
+        primary_error: Exception | None = None,
+        individual_quotes: dict[str, pd.DataFrame] | None = None,
+    ) -> None:
         self.snapshot = snapshot
         self.primary_error = primary_error
+        self.individual_quotes = individual_quotes or {}
         self.calls = []
 
     def stock_zh_a_spot_em(self) -> pd.DataFrame:
@@ -291,3 +360,7 @@ class FakeAkshare:
     def stock_zh_a_spot(self) -> pd.DataFrame:
         self.calls.append("stock_zh_a_spot")
         return self.snapshot
+
+    def stock_bid_ask_em(self, symbol: str) -> pd.DataFrame:
+        self.calls.append(("stock_bid_ask_em", symbol))
+        return self.individual_quotes[symbol]
