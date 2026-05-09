@@ -14,6 +14,13 @@ _CURRENT_CONTEXT: ContextVar[Mapping[str, Any] | None] = ContextVar(
     default=None,
 )
 
+FINANCIAL_STATEMENT_ALIASES: dict[str, tuple[str, ...]] = {
+    "balance_sheet": ("balance_sheet",),
+    "cashflow": ("cash_flow", "cashflow"),
+    "cash_flow": ("cash_flow", "cashflow"),
+    "income_statement": ("income_statement",),
+}
+
 OPENAI_COMPATIBLE_PROVIDER_CONFIG: dict[str, tuple[str, str]] = {
     "glm": ("https://open.bigmodel.cn/api/paas/v4/", "ZHIPU_API_KEY"),
     "qwen": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY"),
@@ -29,6 +36,8 @@ OPENAI_COMPATIBLE_PROVIDER_CONFIG: dict[str, tuple[str, str]] = {
     "modelscope": ("https://api-inference.modelscope.cn/v1", "MODELSCOPE_API_KEY"),
     "openai_compatible": ("https://api.openai.com/v1", "OPENAI_API_KEY"),
 }
+
+DEFAULT_TIMEOUT_SECONDS: float = 1800.0
 
 
 class TradingAgentsContextOnlyGraphRunner:
@@ -96,7 +105,11 @@ class TradingAgentsContextOnlyGraphRunner:
                 "quick_think_llm": str(native_input.get("model") or "gpt-4o-mini"),
                 "backend_url": str(native_input.get("backend_url") or "") or None,
                 "thinking_type": str(native_input.get("thinking_type") or "auto"),
-                "timeout": float(native_input.get("timeout_seconds") or 120),
+                "timeout": float(
+                    native_input.get("timeout_seconds")
+                    or native_input.get("timeout")
+                    or DEFAULT_TIMEOUT_SECONDS
+                ),
                 "max_retries": _int_config(native_input, "max_retries", 1),
                 "max_completion_tokens": int(native_input.get("max_completion_tokens") or 1536),
                 "data_cache_dir": str(checkpoint_dir / "cache"),
@@ -330,7 +343,11 @@ def _context_financial_statement(
         return "No context snapshot is active; external financial fallback is disabled."
 
     financials = _lookup(context, "financials", "fundamental", "fundamentals", default={})
-    statement = _lookup(financials, statement_name, default={})
+    statement_keys = FINANCIAL_STATEMENT_ALIASES.get(statement_name, (statement_name,))
+    statements = _lookup(financials, "statements", default={})
+    statement = _lookup(statements, *statement_keys, default={})
+    if not statement:
+        statement = _lookup(financials, *statement_keys, default={})
     return _format_tool_payload(
         statement_name,
         {

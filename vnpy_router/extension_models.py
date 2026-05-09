@@ -21,6 +21,9 @@ ROUTER_EXTENSION_TABLE_NAMES: tuple[str, ...] = (
     "event_quality_report",
     "security_entity",
     "security_alias",
+    "financial_statement_snapshot",
+    "financial_indicator_snapshot",
+    "financial_report_document",
 )
 
 
@@ -255,6 +258,65 @@ def build_router_extension_models(database: Any) -> list[type]:
             table_name = "security_alias"
             primary_key = CompositeKey("alias", "vt_symbol")
 
+    class FinancialStatementSnapshot(BaseExtensionModel):
+        vt_symbol = TextField()
+        report_period = DateTimeField()
+        statement_type = TextField()
+        report_type = TextField()
+        announcement_date = DateTimeField()
+        provider_name = TextField()
+        provider_version = TextField(null=True)
+        currency = TextField(default="CNY")
+        unit = TextField(default="yuan")
+        payload = BinaryJSONField()
+        source_document_id = TextField(null=True)
+        quality_status = TextField(null=True)
+        quality_report = BinaryJSONField(null=True)
+        pulled_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
+
+        class Meta:
+            table_name = "financial_statement_snapshot"
+            primary_key = CompositeKey(
+                "vt_symbol",
+                "report_period",
+                "statement_type",
+                "provider_name",
+            )
+
+    class FinancialIndicatorSnapshot(BaseExtensionModel):
+        vt_symbol = TextField()
+        report_period = DateTimeField()
+        announcement_date = DateTimeField()
+        provider_name = TextField()
+        provider_version = TextField(null=True)
+        payload = BinaryJSONField()
+        quality_status = TextField(null=True)
+        quality_report = BinaryJSONField(null=True)
+        pulled_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
+
+        class Meta:
+            table_name = "financial_indicator_snapshot"
+            primary_key = CompositeKey("vt_symbol", "report_period", "provider_name")
+
+    class FinancialReportDocument(BaseExtensionModel):
+        document_id = TextField(primary_key=True)
+        vt_symbol = TextField()
+        report_period = DateTimeField()
+        report_type = TextField()
+        announcement_date = DateTimeField()
+        title = TextField()
+        source = TextField()
+        provider_name = TextField()
+        url = TextField(null=True)
+        pdf_url = TextField(null=True)
+        file_hash = TextField(null=True)
+        provider_version = TextField(null=True)
+        raw_payload = BinaryJSONField(null=True)
+        pulled_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
+
+        class Meta:
+            table_name = "financial_report_document"
+
     return [
         MarketBarSnapshot,
         FundamentalSnapshot,
@@ -271,4 +333,7 @@ def build_router_extension_models(database: Any) -> list[type]:
         EventQualityReport,
         SecurityEntity,
         SecurityAlias,
+        FinancialStatementSnapshot,
+        FinancialIndicatorSnapshot,
+        FinancialReportDocument,
     ]

@@ -130,15 +130,19 @@ class ExternalNewsIngestionJob:
         event_count: int = 0
         errors: dict[str, str] = dict(result.errors)
         degraded_sources: list[str] = list(result.degraded_sources)
+        items = _dedup_fetched_news_items(result.items)
+        saved_raw_hashes: set[str] = set()
 
-        for item in result.items:
-            try:
-                self.storage.save_news_raw(item.news)
-                raw_count += 1
-            except Exception as exc:
-                degraded_sources.append("news_raw_storage")
-                errors[f"news_raw:{item.news.raw_hash}"] = str(exc)
-                continue
+        for item in items:
+            if item.news.raw_hash not in saved_raw_hashes:
+                try:
+                    self.storage.save_news_raw(item.news)
+                    raw_count += 1
+                    saved_raw_hashes.add(item.news.raw_hash)
+                except Exception as exc:
+                    degraded_sources.append("news_raw_storage")
+                    errors[f"news_raw:{item.news.raw_hash}"] = str(exc)
+                    continue
 
             event_type = self.classifier.classify(item.news)
             if item.event_type and item.event_type not in {"news", "global_news"}:
@@ -331,6 +335,7 @@ class ExternalNewsIngestionScheduler:
         symbols: Sequence[str],
         interval_seconds: int = 900,
         lookback_minutes: int = 1440,
+        symbol_batch_size: int = 0,
         clock: Callable[[], float] | None = None,
         datetime_clock: Callable[[], datetime] = datetime.now,
     ) -> None:
@@ -342,9 +347,11 @@ class ExternalNewsIngestionScheduler:
         self.symbols: tuple[str, ...] = tuple(symbols)
         self.interval_seconds: int = interval_seconds
         self.lookback_minutes: int = lookback_minutes
+        self.symbol_batch_size: int = max(0, symbol_batch_size)
         self.clock: Callable[[], float] = clock or monotonic
         self.datetime_clock: Callable[[], datetime] = datetime_clock
         self.last_run_at: float | None = None
+        self.symbol_cursor: int = 0
         self.executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
         self.future: Future | None = None
         self.active: bool = False
@@ -390,7 +397,7 @@ class ExternalNewsIngestionScheduler:
         start_dt: datetime = end_dt - timedelta(minutes=self.lookback_minutes)
         self.future = self.executor.submit(
             self.job.run,
-            self.symbols,
+            self._next_symbol_batch(),
             start_dt,
             end_dt,
         )
@@ -400,6 +407,24 @@ class ExternalNewsIngestionScheduler:
         Manually trigger using the same async boundary.
         """
         self.process_timer_event(Event(EVENT_TIMER))
+
+    def _next_symbol_batch(self) -> tuple[str, ...]:
+        """
+        Return the next rotating symbol batch for slow full-universe ingestion.
+        """
+        if not self.symbols:
+            return ()
+        if self.symbol_batch_size <= 0 or self.symbol_batch_size >= len(self.symbols):
+            return self.symbols
+
+        start = self.symbol_cursor % len(self.symbols)
+        end = start + self.symbol_batch_size
+        if end <= len(self.symbols):
+            batch = self.symbols[start:end]
+        else:
+            batch = self.symbols[start:] + self.symbols[: end - len(self.symbols)]
+        self.symbol_cursor = end % len(self.symbols)
+        return batch
 
 
 def build_news_ingestion_provider(
@@ -534,6 +559,21 @@ def _links_for_item(
         )
 
     return sorted(links.values(), key=lambda link: link.vt_symbol)
+
+
+def _dedup_fetched_news_items(items: Sequence[FetchedNews]) -> list[FetchedNews]:
+    """
+    Deduplicate provider rows before any storage write.
+    """
+    result: list[FetchedNews] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in items:
+        key = (item.news.raw_hash, item.vt_symbol, item.event_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
 
 
 def _normalize_llm_event_type(event_type: str, fallback: str) -> str:

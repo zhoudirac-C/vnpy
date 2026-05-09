@@ -80,6 +80,53 @@ def test_agent_storage_saves_model_metadata_and_snapshot_ids():
     assert agent_report_params["error_message"] == "timeout"
 
 
+def test_agent_storage_loads_analysis_history_with_params_and_report():
+    """Analysis history should join run metadata, report and signal outputs."""
+    connection = FakeConnection()
+    connection.cursor_obj.fetchall_rows = [
+        {
+            "run_id": "manual-1",
+            "vt_symbol": "600519.SSE",
+            "trade_date": "2026-05-08",
+            "mode": "manual_analysis",
+            "model_provider": "zhipu",
+            "model_name": "glm-4.7",
+            "prompt_version": "ashare-context-v1",
+            "snapshot_ids": '["bar:600519.SSE:20260508"]',
+            "context": '{"manual_analysis": {"window_days": 7}}',
+            "created_at": "2026-05-08 11:00:00",
+            "report": "## 多智能体报告\n结论",
+            "raw_state": '{"status": "completed"}',
+            "error_message": None,
+            "rating": "Buy",
+            "confidence": 0.82,
+            "action": "buy",
+            "target_weight_hint": 0.15,
+            "holding_period_hint": "20d",
+            "risk_notes": "回撤风险",
+        }
+    ]
+    storage = PostgresAgentStorage(connection)
+
+    records = storage.load_analysis_history("600519.SSE", limit=20)
+
+    assert len(records) == 1
+    record = records[0]
+    assert record.run_id == "manual-1"
+    assert record.vt_symbol == "600519.SSE"
+    assert record.model_provider == "zhipu"
+    assert record.snapshot_ids == ["bar:600519.SSE:20260508"]
+    assert record.context["manual_analysis"]["window_days"] == 7
+    assert record.report.startswith("## 多智能体报告")
+    assert record.rating == "Buy"
+    assert record.action == "buy"
+    assert connection.cursor_obj.executed[-1][1] == {
+        "vt_symbol": "600519.SSE",
+        "limit": 20,
+    }
+    assert "LEFT JOIN agent_report" in connection.cursor_obj.executed[-1][0]
+
+
 def test_service_runs_worker_and_persists_when_runtime_enabled():
     """TradingAgentsService should call worker and persist output when enabled."""
     runtime = TradingAgentsRuntimeController()
@@ -143,9 +190,13 @@ class FakeCursor:
 
     def __init__(self) -> None:
         self.executed: list[tuple[str, dict]] = []
+        self.fetchall_rows: list[dict] = []
 
     def execute(self, sql: str, params: dict | None = None) -> None:
         self.executed.append((sql, params or {}))
+
+    def fetchall(self) -> list[dict]:
+        return self.fetchall_rows
 
     def close(self) -> None:
         return

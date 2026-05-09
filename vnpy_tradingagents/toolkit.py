@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, Any
 
+from vnpy.trader.setting import SETTINGS
+
+from .f10_financial import F10FinancialAnalyzer
+
 
 @dataclass(frozen=True)
 class SnapshotQuery:
@@ -34,6 +38,29 @@ class NewsContextFilter:
             "industry",
             "macro",
         }
+    )
+
+
+def build_news_context_filter(settings: dict[str, Any] | None = None) -> NewsContextFilter:
+    """
+    Build TradingAgents news-context filter from vn.py settings.
+    """
+    source = settings or SETTINGS
+    return NewsContextFilter(
+        min_trust_score=_to_float(source.get("news.filter.min_trust_score", 0.70), 0.70),
+        min_link_confidence=_to_float(
+            source.get("news.filter.min_link_confidence", 0.75),
+            0.75,
+        ),
+        max_items=max(1, _to_int(source.get("news.filter.max_items_per_symbol", 20), 20)),
+        allowed_event_types=frozenset(
+            _split_names(
+                source.get(
+                    "news.filter.allowed_event_types",
+                    "announcement,earnings,regulatory,buyback,holding_change,industry,macro",
+                )
+            )
+        ),
     )
 
 
@@ -73,6 +100,95 @@ class SnapshotReader(Protocol):
     ) -> Any | None:
         pass
 
+    def load_financial_context(
+        self,
+        vt_symbol: str,
+        as_of: datetime,
+        max_periods: int = 4,
+    ) -> dict[str, Any]:
+        pass
+
+
+class CompositeSnapshotReader:
+    """
+    Compose vn.py snapshot storage with normalized event storage.
+    """
+
+    def __init__(
+        self,
+        snapshot_reader: Any,
+        event_reader: Any,
+        financial_reader: Any | None = None,
+    ) -> None:
+        """"""
+        self.snapshot_reader = snapshot_reader
+        self.event_reader = event_reader
+        self.financial_reader = financial_reader
+
+    def load_bar_snapshots(
+        self,
+        vt_symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> Sequence[dict[str, Any]]:
+        """
+        Delegate market bars to the existing snapshot reader.
+        """
+        return self.snapshot_reader.load_bar_snapshots(vt_symbol, start, end)
+
+    def load_latest_snapshot(
+        self,
+        snapshot_type: str,
+        vt_symbol: str,
+        as_of: datetime,
+    ) -> dict[str, Any] | None:
+        """
+        Delegate non-event snapshots to the existing snapshot reader.
+        """
+        return self.snapshot_reader.load_latest_snapshot(snapshot_type, vt_symbol, as_of)
+
+    def load_news_events(
+        self,
+        vt_symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> Sequence[Any]:
+        """
+        Delegate normalized news events to the event reader.
+        """
+        load_news_events = getattr(self.event_reader, "load_news_events", None)
+        if callable(load_news_events):
+            return load_news_events(vt_symbol, start, end)
+        return []
+
+    def load_sentiment_snapshot(
+        self,
+        vt_symbol: str,
+        as_of: datetime,
+    ) -> Any | None:
+        """
+        Delegate sentiment snapshots to the event reader.
+        """
+        load_sentiment_snapshot = getattr(self.event_reader, "load_sentiment_snapshot", None)
+        if callable(load_sentiment_snapshot):
+            return load_sentiment_snapshot(vt_symbol, as_of)
+        return None
+
+    def load_financial_context(
+        self,
+        vt_symbol: str,
+        as_of: datetime,
+        max_periods: int = 4,
+    ) -> dict[str, Any]:
+        """
+        Delegate structured financial report context when configured.
+        """
+        reader = self.financial_reader or self.snapshot_reader
+        load_financial_context = getattr(reader, "load_financial_context", None)
+        if callable(load_financial_context):
+            return load_financial_context(vt_symbol, as_of, max_periods)
+        return {}
+
 
 class MarketDataToolkit:
     """
@@ -96,10 +212,12 @@ class MarketDataToolkit:
         self,
         reader: SnapshotReader,
         news_filter: NewsContextFilter | None = None,
+        f10_analyzer: F10FinancialAnalyzer | None = None,
     ) -> None:
         """"""
         self.reader: SnapshotReader = reader
         self.news_filter: NewsContextFilter = news_filter or NewsContextFilter()
+        self.f10_analyzer: F10FinancialAnalyzer = f10_analyzer or F10FinancialAnalyzer()
 
     def build_context(self, query: SnapshotQuery) -> dict[str, Any]:
         """
@@ -147,6 +265,19 @@ class MarketDataToolkit:
         context["sentiment"] = sentiment
         if not sentiment:
             degraded_sources.append("sentiment")
+
+        financials = _load_financials(self.reader, query)
+        context["financials"] = financials
+        if not financials:
+            degraded_sources.append("financials")
+        else:
+            context["f10_financial_analysis"] = self.f10_analyzer.analyze(
+                vt_symbol=query.vt_symbol,
+                financials=financials,
+                fundamentals=context.get("fundamentals"),
+                valuation=context.get("valuation"),
+                industry=context.get("industry"),
+            )
 
         context["data_quality"] = _data_quality_summary(context, degraded_sources)
         context["degraded_sources"] = degraded_sources
@@ -253,6 +384,18 @@ def _load_sentiment(reader: SnapshotReader, query: SnapshotQuery) -> dict[str, A
     return dict(snapshot or {})
 
 
+def _load_financials(reader: SnapshotReader, query: SnapshotQuery) -> dict[str, Any]:
+    """
+    Load complete financial statement context when the reader supports it.
+    """
+    load_financial_context = getattr(reader, "load_financial_context", None)
+    if callable(load_financial_context):
+        context = load_financial_context(query.vt_symbol, query.end, 4)
+        if isinstance(context, dict):
+            return context
+    return {}
+
+
 def _market_indicators(bars: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """
     Build compact market indicators for TradingAgents context.
@@ -342,3 +485,37 @@ def _iso(value: Any) -> Any:
     if callable(isoformat):
         return isoformat()
     return value
+
+
+def _split_names(value: Any) -> list[str]:
+    """
+    Split comma/semicolon separated config text.
+    """
+    if isinstance(value, Sequence) and not isinstance(value, str):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value or "").strip()
+    if not text:
+        return []
+    for sep in (";", "，", "\n"):
+        text = text.replace(sep, ",")
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _to_float(value: Any, default: float) -> float:
+    """
+    Convert a float setting with fallback.
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value: Any, default: int) -> int:
+    """
+    Convert an integer setting with fallback.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default

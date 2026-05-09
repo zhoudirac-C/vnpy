@@ -637,7 +637,7 @@ TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed，也不应该默认
 | 独立 AI 策略 | TradingAgents 基于上下文直接产出 `TradeIntent` | 是，但必须显式创建 AI 策略 | 研究驱动的买卖建议、低频/中频 AI 策略、人工确认或模拟盘 |
 | 混合 AI 过滤器 | 规则策略先出信号，TradingAgents 只确认/否决/降权 | 否，后续单独命名实现 | 在成熟规则策略上增加 AI 风险过滤，不改变原策略语义 |
 
-所以第一版不改造 `DoubleMaStrategy` 这类已有策略。它们仍然按规则自动买卖，方便对照测试；TradingAgents 另起 `TradingAgentsSignalStrategy` 和 `TradingAgentsBacktestStrategy`。
+所以第一版不改造 `DoubleMaStrategy` 这类已有策略。它们仍然按规则自动买卖，方便对照测试；TradingAgents 另起 `TradingAgentsSignalStrategy` 和 `TradingAgentsBacktestStrategy`。为了让用户能在 vn.py 原生 `CTA策略` 页面直接创建 AI 策略，仓库根目录新增 `strategies/TradingAgentsCtaSignalStrategy` 包装层：它继承 `CtaTemplate`，但核心逻辑仍委托给独立 `TradingAgentsSignalStrategy`，只读取 PostgreSQL 已落库意图，不在 tick/bar 回调里调用 LLM。
 
 它在本项目里的角色是：
 
@@ -655,7 +655,7 @@ TradingAgents 不是 vn.py 的 Gateway，也不是 Datafeed，也不应该默认
 | 等级 | TradingAgents 可以做什么 | 是否允许直接下单 |
 | --- | --- | --- |
 | 手动分析模式 | 用户在 TradingAgents 页面输入标的，生成报告、风险点、评级 | 不允许 |
-| 独立 AI 策略模式 | `TradingAgentsSignalStrategy` 定时读取上下文，生成 `TradeIntent` | 仍然不允许，必须经过 Risk App 和 MainEngine |
+| 独立 AI 策略模式 | `TradingAgentsSignalStrategy` 定时读取上下文，生成 `TradeIntent`；`TradingAgentsCtaSignalStrategy` 只是 CTA UI 可见包装层 | 仍然不允许，必须经过 Risk App 和 MainEngine |
 | AI 回测模式 | `TradingAgentsBacktestStrategy` 读取历史时点已固化的 AI 信号 | 不允许连接真实 Gateway |
 | 混合过滤模式 | `DoubleMaWithAIFilter` 这类显式混合策略读取 AI 确认/否决 | 仍然不允许绕过原策略和风控 |
 
@@ -1314,7 +1314,7 @@ P10 --> P27
 | Phase 9 | 骨架完成 | `ProviderCapability`、`TuShareProvider`、QMT/XT 边界、`SocialProvider`、事件源生产规则 |
 | Phase 10 | 骨架完成 | `BacktestingAppBridge`、`PaperAccountSnapshot`、UI 手工接管、状态查询、`TradingAgentsPaperSmoke` |
 | Phase 11 | 骨架完成 | `PostgresOpsStorage`、`MetricsCollector`、`secrets_policy`、备份恢复文档、小资金上线 Runbook |
-| Phase 27 | 代码级完成 | `TradingAgentsManualAnalysisService`、手动分析 UI 入口、`TradingAgentsSignalStrategy`、`HistoricalAiSignalJob`、`TradingAgentsBacktestStrategy`、传统策略隔离测试 |
+| Phase 27 | 代码级完成 | `TradingAgentsManualAnalysisService`、启动装配 `configure_tradingagents_services`、手动分析 UI 入口、`TradingAgentsSignalStrategy`、CTA 可见包装 `TradingAgentsCtaSignalStrategy`、`HistoricalAiSignalJob`、`TradingAgentsBacktestStrategy`、传统策略隔离测试 |
 
 ### Phase 1：公共数据底座
 

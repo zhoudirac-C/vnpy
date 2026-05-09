@@ -409,6 +409,49 @@ LIMIT %(limit)s;
 """
 
 
+SELECT_SEARCH_NEWS_EVENTS_SQL: str = """
+SELECT
+    e.event_id,
+    e.vt_symbol,
+    e.title,
+    e.summary,
+    e.event_type,
+    e.occurred_at,
+    e.source,
+    e.url,
+    e.provider_name,
+    e.provider_version,
+    e.raw_hash,
+    e.source_quality,
+    e.trust_score,
+    e.relevance_score,
+    e.spam_score,
+    e.cluster_id,
+    e.dedup_window_seconds,
+    e.review_status,
+    l.confidence AS link_confidence,
+    l.link_reason,
+    l.sector,
+    l.topic
+FROM news_event e
+LEFT JOIN event_symbol_link l
+  ON e.event_id = l.event_id
+ AND e.vt_symbol = l.vt_symbol
+WHERE (
+    %(keyword)s = ''
+    OR LOWER(e.vt_symbol) LIKE LOWER(%(keyword_like)s)
+    OR LOWER(e.title) LIKE LOWER(%(keyword_like)s)
+    OR LOWER(e.summary) LIKE LOWER(%(keyword_like)s)
+    OR LOWER(e.source) LIKE LOWER(%(keyword_like)s)
+    OR LOWER(e.provider_name) LIKE LOWER(%(keyword_like)s)
+)
+  AND (%(vt_symbol)s = '' OR LOWER(e.vt_symbol) LIKE LOWER(%(vt_symbol_like)s))
+  AND (%(event_type)s = '' OR e.event_type = %(event_type)s)
+ORDER BY e.occurred_at DESC, e.pulled_at DESC
+LIMIT %(limit)s;
+"""
+
+
 SELECT_SENTIMENT_SNAPSHOT_SQL: str = """
 SELECT
     vt_symbol,
@@ -797,6 +840,33 @@ class PostgresEventStorage:
         finally:
             cursor.close()
 
+    def search_news_events(
+        self,
+        keyword: str = "",
+        vt_symbol: str = "",
+        event_type: str = "",
+        limit: int = 100,
+    ) -> list[NewsEvent]:
+        """
+        Fuzzy-search normalized news events for the TradingAgents UI.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                SELECT_SEARCH_NEWS_EVENTS_SQL,
+                {
+                    "keyword": keyword.strip(),
+                    "keyword_like": _like_pattern(keyword),
+                    "vt_symbol": vt_symbol.strip(),
+                    "vt_symbol_like": _like_pattern(vt_symbol),
+                    "event_type": event_type.strip(),
+                    "limit": max(1, min(int(limit), 1000)),
+                },
+            )
+            return [_news_event_from_row(row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
     def load_sentiment_snapshot(
         self,
         vt_symbol: str,
@@ -971,6 +1041,16 @@ def _news_event_from_row(row: dict[str, Any]) -> NewsEvent:
         dedup_window_seconds=int(row.get("dedup_window_seconds") or 86400),
         review_status=str(row.get("review_status") or "pending"),
     )
+
+
+def _like_pattern(value: str) -> str:
+    """
+    Build a simple SQL LIKE pattern for UI fuzzy search.
+    """
+    text = value.strip()
+    if not text:
+        return "%%"
+    return f"%{text}%"
 
 
 def _sentiment_snapshot_from_row(row: dict[str, Any]) -> SentimentSnapshot:

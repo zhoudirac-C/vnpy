@@ -134,7 +134,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
             func = partial(self.open_widget, widget_class, app.app_name)
 
-            self.add_action(app_menu, app.display_name, app.icon_name, func, True)
+            self.add_action(
+                app_menu,
+                app.display_name,
+                app.icon_name,
+                func,
+                getattr(app, "show_on_toolbar", True),
+            )
 
         # Global setting editor
         action: QtGui.QAction = QtGui.QAction(_("配置"), self)

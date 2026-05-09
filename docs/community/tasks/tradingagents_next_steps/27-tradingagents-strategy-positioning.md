@@ -29,6 +29,7 @@ package "传统规则策略\n保持纯规则" {
 package "TradingAgents 独立AI链路" {
   component "TradingAgentsManualAnalysis\n手动分析页" as Manual
   component "TradingAgentsSignalStrategy\n独立AI策略" as AIStrategy
+  component "TradingAgentsCtaSignalStrategy\nCTA UI包装策略" as CtaAIStrategy
   component "TradingAgentsBacktestStrategy\nAI信号回测策略" as AIBacktest
   component "HistoricalAiSignalJob\n历史时点信号生成" as SignalJob
 }
@@ -49,6 +50,7 @@ SignalJob -> Toolkit : build_point_in_time_context(vt_symbol, trade_time)
 Toolkit -> Worker : native_input.context
 Worker -> PG : report/rating/trade_intent
 AIStrategy -> PG : 读取最新有效AI意图
+CtaAIStrategy -> AIStrategy : CTA tick/bar驱动\n不直接调用LLM
 AIBacktest -> PG : 读取历史时点AI信号
 Hybrid -> PG : 读取AI确认/否决
 
@@ -109,6 +111,21 @@ Main -> Gateway : 委托/撤单
   - 新增：`docs/community/ops/validation_results/<date>-tradingagents-strategy-positioning.md`。
   - 验收：验证文档包含命令、输入参数、结果、失败原因和下一步处理。
 
+- [x] **P27-T10: CTA UI 可见的独立 AI 策略包装**
+  - 目标：让用户能在 vn.py `功能 -> CTA策略` 的策略下拉框里看到 `TradingAgentsCtaSignalStrategy`，同时保持核心 AI 策略仍是独立 `TradingAgentsSignalStrategy`。
+  - 新增：`strategies/tradingagents_cta_signal_strategy.py`、`tests/test_tradingagents_cta_signal_strategy.py`。
+  - 验收：CTA 包装策略继承 `CtaTemplate` 并可被 vn.py 从根目录 `strategies/` 自动扫描；tick/bar 回调只读取 PostgreSQL 已落库 AI 意图，不在策略回调里调用 LLM；传统规则策略仍不受影响。
+
+- [x] **P27-T11: TradingAgents App 启动装配**
+  - 目标：`examples/veighna_trader/run.py` 添加 `TradingAgentsApp` 后，自动把手动分析服务、PostgreSQL 快照读取、Worker Adapter 和运行状态存储挂到 `TradingAgentsEngine`。
+  - 新增：`vnpy_tradingagents/bootstrap.py`、`tests/test_tradingagents_app_bootstrap.py`。
+  - 验收：点击 TradingAgents 页面“运行手动分析”时不再报 `manual analysis service is not configured`；若 PostgreSQL 未配置或不可用，UI 显示明确启动失败原因，而不是服务未配置。
+
+- [x] **P27-T12: TradingAgents 分析管理与分析历史**
+  - 目标：区分 vn.py 原生 `数据管理` 和 TradingAgents AI 分析页。左侧 toolbar 同时保留原生 `DataManagerApp` 和 `TradingAgents分析管理`；TradingAgents 也可从 `功能 -> TradingAgents分析管理` 打开，像 `CTA策略` 一样作为独立大窗口；窗口内部提供“运行控制 / 分析历史 / 分析报告”三个 Tab。
+  - 修改：`vnpy/trader/ui/mainwindow.py`、`vnpy_tradingagents/app.py`、`vnpy_tradingagents/ui/widget.py`、`vnpy_tradingagents/engine.py`、`vnpy_tradingagents/storage.py`。
+  - 验收：每次分析结果从 `agent_run/agent_report/rating_signal/trade_intent` 读取，可按股票过滤；点击历史表最后一列 `分析报告` 后跳转展示完整 Markdown 报告；原生数据管理仍只负责 K 线/历史数据导入下载。
+
 ## 验证计划
 
 ```bash
@@ -116,12 +133,16 @@ uv run --with pytest pytest tests/test_tradingagents_manual_analysis.py -q
 uv run --with pytest pytest tests/test_tradingagents_signal_strategy.py -q
 uv run --with pytest pytest tests/test_tradingagents_backtest_strategy.py -q
 uv run --with pytest pytest tests/test_vnpy_cta_strategy_ai_isolation.py -q
+uv run --with pytest pytest tests/test_tradingagents_cta_signal_strategy.py -q
+uv run --with pytest pytest tests/test_tradingagents_app_bootstrap.py -q
+uv run --with pytest pytest tests/test_tradingagents_ui.py tests/test_tradingagents_storage_service.py -q
 ```
 
 验收重点：
 
 - `DoubleMaStrategy` 等传统策略在默认配置下不访问 TradingAgents。
 - `TradingAgentsSignalStrategy` 只在 AI 开关打开且信号有效时产生意图。
+- `TradingAgentsCtaSignalStrategy` 只作为 CTA UI 包装层，便于用户在 CTA 策略下拉框中创建独立 AI 策略实例。
 - 回测只读历史 AI 信号，不同步调用 LLM。
 - `hold/watch` 不会被当成成交或卖出。
 - 所有 AI 影响过的意图都能按 `source_run_id` 追溯。
@@ -139,3 +160,6 @@ uv run --with pytest pytest tests/test_vnpy_cta_strategy_ai_isolation.py -q
 | P27-T07 | 2026-05-08 | 待本次代码提交后补充 | `tests/test_vnpy_cta_strategy_ai_isolation.py` |
 | P27-T08 | 2026-05-08 | 待本次代码提交后补充 | `tests/test_tradingagents_ui.py`、ruff |
 | P27-T09 | 2026-05-08 | 待本次代码提交后补充 | `docs/community/ops/validation_results/2026-05-08-tradingagents-strategy-positioning.md` |
+| P27-T10 | 2026-05-08 | 待本次代码提交后补充 | `tests/test_tradingagents_cta_signal_strategy.py` |
+| P27-T11 | 2026-05-08 | 待本次代码提交后补充 | `tests/test_tradingagents_app_bootstrap.py` |
+| P27-T12 | 2026-05-08 | 待本次代码提交后补充 | `tests/test_tradingagents_ui.py`、`tests/test_tradingagents_storage_service.py`、ruff |

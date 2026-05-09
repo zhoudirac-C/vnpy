@@ -16,6 +16,19 @@ A 股规则和执行约束：
 """
 
 
+F10_FINANCIAL_ANALYSIS_PROMPT: str = """
+F10财务分析方法论：
+1. 财务分析必须先判断公司类型，再选择 PE / PB / PEG / PS，不能直接套单一估值指标。
+2. 公司类型至少要说明：稳定盈利龙头、资产驱动、强周期、高成长、亏损/利润压低、题材博弈或 unknown。
+3. 三大报表要交叉验证：利润表看收入和利润，资产负债表看家底和杠杆，现金流量表看利润是否变成现金。
+4. ROE 必须做杜邦拆解：销售净利率、总资产周转率、权益乘数，并说明 ROE 来自定价权、运营效率还是杠杆。
+5. 现金流必须和净利润一起看；经营现金流显著弱于净利润时，需要标记纸面利润风险。
+6. PE 适合盈利稳定公司；PB 适合资产驱动或强周期公司；PEG 适合成长股但必须有未来增速；PS 适合利润暂时失真或亏损但收入可验证的公司。
+7. 字段缺失时必须写入字段缺失和 degraded 原因，不得编造财报、行业、估值或预测数据。
+8. 输出财务结论时必须包含：公司类型、三大报表质量、杜邦、现金流质量、估值方法选择、风险点和下一期需要跟踪的字段。
+"""
+
+
 def build_worker_system_prompt(mode: str) -> str:
     """
     Build the system prompt for a context-only TradingAgents worker.
@@ -25,6 +38,7 @@ def build_worker_system_prompt(mode: str) -> str:
             f"prompt_version: {PROMPT_VERSION}",
             f"worker_mode: {mode}",
             ASHARE_RULES_PROMPT.strip(),
+            F10_FINANCIAL_ANALYSIS_PROMPT.strip(),
             "输出必须包含：rating、confidence、action、report、risk_notes。",
             "action 只能是 buy、sell、reduce、hold、watch 之一；不能输出直接下单指令。",
         ]

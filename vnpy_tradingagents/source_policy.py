@@ -30,7 +30,15 @@ class SnapshotSourcePolicy:
         """
         return cls.required(
             "market",
-            degradable_sources=("fundamentals", "news", "sentiment", "benchmark", "portfolio"),
+            degradable_sources=(
+                "fundamentals",
+                "valuation",
+                "financials",
+                "news",
+                "sentiment",
+                "benchmark",
+                "portfolio",
+            ),
         )
 
     @classmethod

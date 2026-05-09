@@ -150,6 +150,32 @@ def test_context_only_graph_runner_passes_llm_runtime_limits():
     assert seen["config"]["max_completion_tokens"] == 512
 
 
+def test_context_only_graph_runner_defaults_timeout_to_ui_default():
+    """Context runner should not fall back to the upstream 120 second default."""
+    from vnpy_tradingagents.tradingagents_factory import (
+        TradingAgentsContextOnlyGraphRunner,
+    )
+
+    seen = {}
+
+    def graph_factory(*, selected_analysts, debug, config):
+        seen["config"] = config
+        return FakeTradingAgentsGraph()
+
+    runner = TradingAgentsContextOnlyGraphRunner(graph_factory=graph_factory)
+
+    runner.run(
+        {
+            "run_id": "run-1",
+            "symbol": "600519.SSE",
+            "trade_date": "2024-01-03",
+            "context": {"market": {"bars": [{"close": 10}]}},
+        }
+    )
+
+    assert seen["config"]["timeout"] == 1800.0
+
+
 def test_context_only_graph_runner_registers_domestic_openai_providers():
     """Domestic provider names should be runnable through upstream TradingAgents."""
     from vnpy_tradingagents.tradingagents_factory import (

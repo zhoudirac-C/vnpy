@@ -219,6 +219,50 @@ def test_external_news_ingestion_job_persists_raw_and_symbol_events():
     assert ops_storage.heartbeats[0].status == "ready"
 
 
+def test_external_news_ingestion_job_deduplicates_before_writing_storage():
+    """Duplicate provider rows should be filtered before raw/event storage writes."""
+    from vnpy_router.event_storage import NewsRaw
+    from vnpy_router.providers.news_external import FetchedNews, NewsFetchResult
+    from vnpy_tradingagents.news_ingestion import ExternalNewsIngestionJob
+
+    raw = NewsRaw(
+        source="fixture",
+        url="local://news/duplicate",
+        title="贵州茅台公告",
+        content="贵州茅台发布经营公告。",
+        published_at=datetime(2024, 1, 2, 10),
+        provider_name="fixture_provider",
+        provider_version="fixture-v1",
+        source_quality="manual",
+        trust_score=0.8,
+        review_status="reviewed",
+    )
+    storage = MemoryEventStorage()
+    job = ExternalNewsIngestionJob(
+        provider=FakeExternalProvider(
+            NewsFetchResult(
+                items=[
+                    FetchedNews(raw, "600519.SSE"),
+                    FetchedNews(raw, "600519.SSE"),
+                ]
+            )
+        ),
+        storage=storage,
+        clock=lambda: datetime(2024, 1, 3, 9),
+    )
+
+    summary = job.run(
+        ["600519.SSE"],
+        start=datetime(2024, 1, 1),
+        end=datetime(2024, 1, 3),
+    )
+
+    assert summary.raw_count == 1
+    assert summary.event_count == 1
+    assert len(storage.raw_news) == 1
+    assert len(storage.news_events) == 1
+
+
 def test_external_news_ingestion_scheduler_throttles_timer_events():
     """ExternalNewsIngestionScheduler should run jobs asynchronously and throttle timers."""
     from vnpy_tradingagents.news_ingestion import ExternalNewsIngestionScheduler
@@ -246,6 +290,37 @@ def test_external_news_ingestion_scheduler_throttles_timer_events():
 
     assert event_engine.handlers[EVENT_TIMER] == []
     assert job.runs == [["600519.SSE"], ["600519.SSE"]]
+
+
+def test_external_news_ingestion_scheduler_rotates_symbol_batches():
+    """Scheduler should slowly rotate a large universe instead of fetching all at once."""
+    from vnpy_tradingagents.news_ingestion import ExternalNewsIngestionScheduler
+
+    event_engine = FakeEventEngine()
+    job = CountingIngestionJob()
+    times = iter([0, 100, 200])
+    scheduler = ExternalNewsIngestionScheduler(
+        event_engine,
+        job,
+        symbols=["600519.SSE", "000001.SZSE", "688008.SSE"],
+        interval_seconds=1,
+        symbol_batch_size=2,
+        clock=lambda: next(times),
+    )
+
+    scheduler.process_timer_event(Event(EVENT_TIMER))
+    scheduler.future.result(timeout=2)
+    scheduler.process_timer_event(Event(EVENT_TIMER))
+    scheduler.future.result(timeout=2)
+    scheduler.process_timer_event(Event(EVENT_TIMER))
+    scheduler.future.result(timeout=2)
+    scheduler.shutdown()
+
+    assert job.runs == [
+        ["600519.SSE", "000001.SZSE"],
+        ["688008.SSE", "600519.SSE"],
+        ["000001.SZSE", "688008.SSE"],
+    ]
 
 
 def test_news_ingestion_provider_builder_uses_global_settings(tmp_path):
@@ -306,10 +381,10 @@ def test_global_setting_ui_documents_news_ingestion_configuration():
     from vnpy.trader.setting import SETTINGS
     from vnpy.trader.ui.widget import SETTING_HELP_TEXT
 
-    assert SETTINGS["news.ingestion.enabled"] is False
+    assert SETTINGS["news.ingestion.enabled"] is True
     assert "news.ingestion.providers" in SETTING_HELP_TEXT["news.ingestion.enabled"]
     assert "AKShare" in SETTING_HELP_TEXT["news.ingestion.providers"]
-    assert "默认关闭" in SETTING_HELP_TEXT["news.ingestion.enabled"]
+    assert "默认开启" in SETTING_HELP_TEXT["news.ingestion.enabled"]
 
 
 class FakeAkshareModule(ModuleType):

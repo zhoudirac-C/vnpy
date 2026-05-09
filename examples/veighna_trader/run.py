@@ -36,6 +36,7 @@ from vnpy_ctabacktester import CtaBacktesterApp
 # from vnpy_webtrader import WebTraderApp
 # from vnpy_portfoliomanager import PortfolioManagerApp
 from vnpy_tradingagents import TradingAgentsApp
+from vnpy_tradingagents.bootstrap import configure_tradingagents_services
 from vnpy_tradingagents.cta_ui_compat import install_cta_strategy_ui_refresh_patch
 
 
@@ -113,6 +114,7 @@ def main():
     # main_engine.add_app(WebTraderApp)
     # main_engine.add_app(PortfolioManagerApp)
     main_engine.add_app(TradingAgentsApp)
+    configure_tradingagents_services(main_engine)
 
     main_window = MainWindow(main_engine, event_engine)
     main_window.showMaximized()

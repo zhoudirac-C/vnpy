@@ -267,7 +267,7 @@ Strategy -> Risk : 转换为交易计划前先风控
 | P0 | `vnpy_tradingagents.real_runner` | 移除生产路径中的裸 `propagate(symbol, date)`；只允许 context-only runner |
 | P0 | `vnpy_tradingagents.worker_process` | 增加可配置真实 runner 加载入口，而不是默认 `runner_not_configured` |
 | P0 | `vnpy_tradingagents.ui` | 增加手动分析入口，用户输入标的后展示报告、评级、动作、置信度和风险点 |
-| P0 | `vnpy_tradingagents.strategies` | 新增 `TradingAgentsSignalStrategy`，作为独立 AI 策略读取已落库意图，不改造传统 CTA 策略 |
+| P0 | `vnpy_tradingagents.strategies` + 根目录 `strategies/` | 新增 `TradingAgentsSignalStrategy`，作为独立 AI 策略读取已落库意图；新增 `TradingAgentsCtaSignalStrategy` 作为 vn.py CTA UI 可见包装层；不改造传统 CTA 策略 |
 | P0 | `vnpy_tradingagents.backtesting` | 新增 `TradingAgentsBacktestStrategy`，回测仅读取历史时点固化 AI 信号，不在每根 K 线上调用 LLM |
 | P1 | `vnpy_tradingagents.engine/ui` | 状态持久化到 PostgreSQL，UI 真正控制 worker/scheduler/signal status |
 | P1 | `vnpy_router.event_storage` | 补 normalized event、sentiment snapshot、entity link 的 save/read 接口 |
@@ -312,7 +312,7 @@ Strategy -> Risk : 转换为交易计划前先风控
 | P13 | TradingAgents 真实 Worker | context-only runner、替换数据工具、worker 配置、smoke |
 | P14 | 事件和 Toolkit 生产化 | 新闻/公告/社媒 normalized pipeline、Toolkit 窗口上下文 |
 | P15 | vn.py 真实运行链路 | EventEngine 接入、Backtesting/Paper 接入、UI 状态持久化、readiness 完整检查 |
-| P27 | TradingAgents 独立 AI 策略定位 | 已代码级落地手动分析页、独立 AI 策略、AI 回测策略、混合过滤策略边界，传统策略默认不接 AI |
+| P27 | TradingAgents 独立 AI 策略定位 | 已代码级落地手动分析页、独立 AI 策略、CTA UI 可见包装、AI 回测策略、混合过滤策略边界，传统策略默认不接 AI |
 
 ## 9. 验收标准
 

@@ -25,3 +25,20 @@ def test_worker_system_prompt_does_not_assume_us_benchmark():
     assert "NASDAQ" not in upper_prompt
     assert "美股" not in prompt
     assert "benchmark 只能来自 request.context" in prompt
+
+
+def test_worker_system_prompt_contains_f10_financial_methodology():
+    """Worker prompt should force financial analysis to follow the local F10 method."""
+    from vnpy_tradingagents.prompts import build_worker_system_prompt
+
+    prompt = build_worker_system_prompt(mode="long_horizon")
+
+    assert "F10财务分析方法论" in prompt
+    assert "公司类型" in prompt
+    assert "PE" in prompt
+    assert "PB" in prompt
+    assert "PEG" in prompt
+    assert "PS" in prompt
+    assert "杜邦" in prompt
+    assert "现金流" in prompt
+    assert "字段缺失" in prompt

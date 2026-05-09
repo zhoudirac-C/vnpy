@@ -56,6 +56,7 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 - [x] 新闻增强第二版代码级链路已补官方公告主源、GDELT 宏观补充、股票实体识别、多标的 `event_symbol_link`、分类评分去重和 TradingAgents 高可信上下文过滤。
 - [ ] P25 真实公网 smoke、连续运行和实体识别误链率抽样仍未完成，不能宣称新闻源生产 SLA。
 - [x] TradingAgents 定位需要从“混入传统策略”调整为“手动分析页 + 独立 AI 策略 + 独立 AI 回测策略”；传统规则策略默认不消费 AI 信号。
+- [ ] 完整财报信息还没有入库任务；`MarketDataToolkit` 已有 `fundamentals/valuation` 读取入口，但缺三大报表、财务指标、官方披露 PDF 元数据和点时防穿越校验。
 
 ## 阶段文档
 
@@ -88,11 +89,13 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 | P25 | [25-production-news-source-entity-filtering.md](25-production-news-source-entity-filtering.md) | 接入官方公告/GDELT/AKShare 第二版数据源，补实体识别、多标的关联、分类、评分、去重和 TradingAgents 高可信上下文过滤 |
 | P26 | [26-llm-message-classifier.md](26-llm-message-classifier.md) | 增加可选 LLM 消息语义分类器，让行业/板块/宏观消息自由提名股票并经过本地实体目录校验后入库 |
 | P27 | [27-tradingagents-strategy-positioning.md](27-tradingagents-strategy-positioning.md) | 收敛 TradingAgents 为手动分析、独立 AI 策略和 AI 回测链路；传统策略默认不接 AI |
+| P28 | [28-financial-report-ingestion.md](28-financial-report-ingestion.md) | 接入完整财报入库：三大报表、财务指标、官方披露文档、质量评分和 TradingAgents 财务上下文 |
 
 ## 下一步推荐
 
-1. P27 已完成代码级定位纠偏；下一步回到 P19，用本地 fixture 和 vn.py BacktestingEngine 跑通 AI 回测闭环，并把验证结果落档。
-2. 再完成 P20/P21，把真实数据源、股票 Gateway、仿真和 live gate 分别验证清楚。
-3. 若要补新闻增强，P24/P25/P26 已完成代码级链路和一次真实公网/GLM smoke；下一步是连续运行和实体误链率抽样。
-4. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
-5. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。
+1. P28 先补完整财报入库，否则 TradingAgents 的基本面分析只能看到行情和新闻，无法稳定读取三大报表和财务指标。
+2. P27 已完成代码级定位纠偏；随后回到 P19，用本地 fixture 和 vn.py BacktestingEngine 跑通 AI 回测闭环，并把验证结果落档。
+3. 再完成 P20/P21，把真实数据源、股票 Gateway、仿真和 live gate 分别验证清楚。
+4. 若要补新闻增强，P24/P25/P26 已完成代码级链路和一次真实公网/GLM smoke；下一步是连续运行和实体误链率抽样。
+5. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
+6. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。

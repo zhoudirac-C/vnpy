@@ -16,7 +16,8 @@ class TradingAgentsApp(BaseApp):
     app_name: str = APP_NAME
     app_module: str = "vnpy_tradingagents"
     app_path: Path = Path(__file__).parent
-    display_name: str = "TradingAgents"
+    display_name: str = "TradingAgents分析管理"
     engine_class: type[TradingAgentsEngine] = TradingAgentsEngine
     widget_name: str = "TradingAgentsWidget"
-    icon_name: str = ""
+    icon_name: str = str(Path(__file__).parent / "ui" / "tradingagents_analysis.svg")
+    show_on_toolbar: bool = True

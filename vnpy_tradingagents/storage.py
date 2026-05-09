@@ -1,5 +1,6 @@
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .output_validation import validate_worker_response
@@ -297,6 +298,40 @@ LIMIT 1;
 """
 
 
+SELECT_ANALYSIS_HISTORY_SQL: str = """
+SELECT
+    ar.run_id,
+    ar.vt_symbol,
+    ar.trade_date,
+    ar.mode,
+    ar.model_provider,
+    ar.model_name,
+    ar.prompt_version,
+    ar.snapshot_ids,
+    ar.context,
+    ar.created_at,
+    rpt.report,
+    rpt.raw_state,
+    rpt.error_message,
+    rs.rating,
+    rs.confidence,
+    ti.action,
+    ti.target_weight_hint,
+    ti.holding_period_hint,
+    ti.risk_notes
+FROM agent_run ar
+LEFT JOIN agent_report rpt
+    ON rpt.run_id = ar.run_id
+LEFT JOIN rating_signal rs
+    ON rs.run_id = ar.run_id
+LEFT JOIN trade_intent ti
+    ON ti.run_id = ar.run_id
+WHERE (%(vt_symbol)s = '' OR ar.vt_symbol = %(vt_symbol)s)
+ORDER BY ar.created_at DESC
+LIMIT %(limit)s;
+"""
+
+
 UPSERT_AI_RUNTIME_STATE_SQL: str = """
 INSERT INTO ai_runtime_state (
     state_id,
@@ -386,6 +421,33 @@ class Connection(Protocol):
         pass
 
 
+@dataclass(frozen=True)
+class AgentAnalysisRecord:
+    """
+    Persisted TradingAgents analysis record shown by the UI history tab.
+    """
+
+    run_id: str
+    vt_symbol: str
+    trade_date: str
+    mode: str
+    model_provider: str
+    model_name: str
+    prompt_version: str
+    snapshot_ids: list[Any]
+    context: dict[str, Any]
+    created_at: Any
+    report: str
+    raw_state: dict[str, Any]
+    error_message: str
+    rating: str
+    confidence: float | None
+    action: str
+    target_weight_hint: float | None
+    holding_period_hint: str
+    risk_notes: str
+
+
 class PostgresAgentStorage:
     """
     PostgreSQL storage for TradingAgents run outputs.
@@ -434,6 +496,27 @@ class PostgresAgentStorage:
         try:
             cursor.execute(INSERT_INTRADAY_ADVICE_SQL, _intraday_advice_params(advice))
             self.connection.commit()
+        finally:
+            cursor.close()
+
+    def load_analysis_history(
+        self,
+        vt_symbol: str = "",
+        limit: int = 100,
+    ) -> list[AgentAnalysisRecord]:
+        """
+        Load persisted TradingAgents analysis history for the UI workspace.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                SELECT_ANALYSIS_HISTORY_SQL,
+                {
+                    "vt_symbol": vt_symbol.strip(),
+                    "limit": max(1, min(int(limit), 1000)),
+                },
+            )
+            return [_analysis_record_from_row(row) for row in cursor.fetchall()]
         finally:
             cursor.close()
 
@@ -591,6 +674,59 @@ def _json_dumps(data: Any) -> str:
     Serialize JSON payloads in a stable, readable format.
     """
     return json.dumps(data, ensure_ascii=False, sort_keys=True)
+
+
+def _json_loads(value: Any, fallback: Any) -> Any:
+    """
+    Decode JSON values from psycopg or the vn.py test adapter.
+    """
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return fallback
+    return value
+
+
+def _analysis_record_from_row(row: Mapping[str, Any]) -> AgentAnalysisRecord:
+    """
+    Convert an analysis-history SQL row into a UI-friendly record.
+    """
+    snapshot_ids = _json_loads(row.get("snapshot_ids"), [])
+    if not isinstance(snapshot_ids, list):
+        snapshot_ids = [snapshot_ids]
+
+    context = _json_loads(row.get("context"), {})
+    if not isinstance(context, dict):
+        context = {}
+
+    raw_state = _json_loads(row.get("raw_state"), {})
+    if not isinstance(raw_state, dict):
+        raw_state = {}
+
+    return AgentAnalysisRecord(
+        run_id=str(row.get("run_id") or ""),
+        vt_symbol=str(row.get("vt_symbol") or ""),
+        trade_date=str(row.get("trade_date") or ""),
+        mode=str(row.get("mode") or ""),
+        model_provider=str(row.get("model_provider") or ""),
+        model_name=str(row.get("model_name") or ""),
+        prompt_version=str(row.get("prompt_version") or ""),
+        snapshot_ids=snapshot_ids,
+        context=context,
+        created_at=row.get("created_at"),
+        report=str(row.get("report") or ""),
+        raw_state=raw_state,
+        error_message=str(row.get("error_message") or ""),
+        rating=str(row.get("rating") or ""),
+        confidence=row.get("confidence"),
+        action=str(row.get("action") or ""),
+        target_weight_hint=row.get("target_weight_hint"),
+        holding_period_hint=str(row.get("holding_period_hint") or ""),
+        risk_notes=str(row.get("risk_notes") or ""),
+    )
 
 
 def _agent_run_params(

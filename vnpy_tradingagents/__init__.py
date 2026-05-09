@@ -10,16 +10,19 @@ from .runtime import (
 )
 from .config import TradingAgentsWorkerConfig, WorkerConfigError, WorkerConfigValidation
 from .app import TradingAgentsApp
+from .bootstrap import UnavailableManualAnalysisService, configure_tradingagents_services
 from .engine import TradingAgentsEngine
 from .toolkit import MarketDataToolkit, NewsContextFilter, SnapshotQuery
 from .worker import TradingAgentsWorkerRequest, TradingAgentsWorkerResponse
 from .worker_adapter import TradingAgentsContextPayload, TradingAgentsWorkerAdapter
 from .prompts import (
     ASHARE_RULES_PROMPT,
+    F10_FINANCIAL_ANALYSIS_PROMPT,
     PROMPT_VERSION,
     build_reflection_context,
     build_worker_system_prompt,
 )
+from .f10_financial import F10FinancialAnalyzer, F10_METHODOLOGY_VERSION
 from .worker_process import SubprocessTradingAgentsWorker
 from .source_policy import SnapshotSourcePolicy, SnapshotSourcePolicyResult
 from .scheduler import TradingAgentsIntradayScheduler
@@ -85,6 +88,15 @@ from .news_ingestion import (
     NewsIngestionSummary,
     build_news_ingestion_provider,
 )
+from .financial_ingestion import (
+    FinancialIngestionJob,
+    FinancialIngestionScheduler,
+    FinancialIngestionSummary,
+    FinancialQualityReport,
+    FinancialQualityScorer,
+    FundamentalSnapshotBuilder,
+    build_financial_ingestion_provider,
+)
 from .output_validation import validate_worker_response
 from .readiness import (
     ProductionReadinessChecker,
@@ -147,7 +159,16 @@ __all__ = [
     "EventEngineIntradayCollector",
     "ExternalNewsIngestionJob",
     "ExternalNewsIngestionScheduler",
+    "F10FinancialAnalyzer",
+    "F10_FINANCIAL_ANALYSIS_PROMPT",
+    "F10_METHODOLOGY_VERSION",
+    "FinancialIngestionJob",
+    "FinancialIngestionScheduler",
+    "FinancialIngestionSummary",
+    "FinancialQualityReport",
+    "FinancialQualityScorer",
     "FusedSignal",
+    "FundamentalSnapshotBuilder",
     "GatewayAccountMode",
     "GatewayAiPolicy",
     "GatewayProfile",
@@ -259,11 +280,14 @@ __all__ = [
     "ContextRunnerError",
     "WorkerConfigError",
     "WorkerConfigValidation",
+    "UnavailableManualAnalysisService",
     "assert_context_has_no_secrets",
     "build_feedback_context",
     "build_reflection_context",
     "build_worker_system_prompt",
     "build_news_ingestion_provider",
+    "build_financial_ingestion_provider",
+    "configure_tradingagents_services",
     "export_audit_csv",
     "export_audit_jsonl",
     "initialize_postgres_schema",
