@@ -2,6 +2,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from .text_output_parser import parse_free_text_worker_output
 from .worker_adapter import TradingAgentsContextPayload
 
 
@@ -160,12 +161,25 @@ def _normalize_mapping(mapping: Mapping[str, Any], original: Any) -> Mapping[str
             or decision_text
         )
 
+    parsed = parse_free_text_worker_output(str(normalized.get("report") or ""))
+    if parsed.get("rating") and "rating" not in mapping:
+        normalized["rating"] = parsed["rating"]
+    if parsed.get("action") and "action" not in mapping:
+        normalized["action"] = parsed["action"]
+    if parsed.get("confidence") is not None and "confidence" not in mapping:
+        normalized["confidence"] = parsed["confidence"]
+    if parsed.get("risk_notes") and "risk_notes" not in mapping:
+        normalized["risk_notes"] = parsed["risk_notes"]
+
     raw_state = _to_mapping(mapping.get("raw_state"))
     if raw_state is None:
         raw_state = {
             "status": "ok",
             "native_output_type": type(original).__name__,
         }
+    if parsed.get("text_output_parsed"):
+        raw_state = dict(raw_state)
+        raw_state["text_output_parsed"] = True
     normalized["raw_state"] = _json_safe(raw_state)
     return normalized
 
@@ -187,13 +201,19 @@ def _mapping_from_decision(
     if state_mapping is not None and state_mapping.get("final_trade_decision"):
         report = str(state_mapping["final_trade_decision"])
 
+    parsed = parse_free_text_worker_output(report)
+    action = str(parsed.get("action") or _action_from_decision(decision_text))
+    raw_state = _state_summary(state)
+    if parsed.get("text_output_parsed"):
+        raw_state["text_output_parsed"] = True
+
     return {
-        "rating": _rating_from_action(_action_from_decision(decision_text)),
-        "confidence": 0,
+        "rating": str(parsed.get("rating") or _rating_from_action(action)),
+        "confidence": parsed.get("confidence", 0),
         "report": report,
-        "action": _action_from_decision(decision_text),
-        "risk_notes": "",
-        "raw_state": _state_summary(state),
+        "action": action,
+        "risk_notes": str(parsed.get("risk_notes") or ""),
+        "raw_state": raw_state,
     }
 
 

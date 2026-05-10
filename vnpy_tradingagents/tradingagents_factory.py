@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .native_context_runner import AShareContextOnlyRunner
+from .text_output_parser import parse_free_text_worker_output
 
 
 GraphFactory = Callable[..., Any]
@@ -577,18 +578,30 @@ def _normalize_graph_result(final_state: Any, decision: Any) -> Mapping[str, Any
         or decision
         or ""
     )
-    normalized_action = _action_from_text(action)
+    parsed = parse_free_text_worker_output(report)
+    normalized_action = str(parsed.get("action") or _action_from_text(action))
+    confidence_value = decision_mapping.get("confidence")
+    if confidence_value is None:
+        confidence_value = parsed.get("confidence", 0)
+    raw_state: dict[str, Any] = {
+        "status": "ok",
+        "native_output_type": type(final_state).__name__,
+        "final_trade_decision": final_mapping.get("final_trade_decision"),
+    }
+    if parsed.get("text_output_parsed"):
+        raw_state["text_output_parsed"] = True
+
     return {
-        "rating": str(decision_mapping.get("rating") or _rating_from_action(normalized_action)),
-        "confidence": float(decision_mapping.get("confidence") or 0),
+        "rating": str(
+            decision_mapping.get("rating")
+            or parsed.get("rating")
+            or _rating_from_action(normalized_action)
+        ),
+        "confidence": float(confidence_value or 0),
         "report": report,
         "action": normalized_action,
-        "risk_notes": str(decision_mapping.get("risk_notes") or ""),
-        "raw_state": {
-            "status": "ok",
-            "native_output_type": type(final_state).__name__,
-            "final_trade_decision": final_mapping.get("final_trade_decision"),
-        },
+        "risk_notes": str(decision_mapping.get("risk_notes") or parsed.get("risk_notes") or ""),
+        "raw_state": raw_state,
     }
 
 

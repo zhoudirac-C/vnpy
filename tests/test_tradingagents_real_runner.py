@@ -67,6 +67,21 @@ def test_real_runner_supports_tradingagents_graph_propagate_shape():
     assert result["raw_state"]["native_state_type"] == "dict"
 
 
+def test_real_runner_extracts_free_text_fallback_fields():
+    """String fallback reports should recover labeled rating/confidence/risk fields."""
+    from vnpy_tradingagents.real_runner import TradingAgentsRunnerAdapter
+
+    runner = TradingAgentsRunnerAdapter(native_runner=FreeTextNativeRunner())
+
+    result = runner.run(make_payload())
+
+    assert result["rating"] == "Hold"
+    assert result["action"] == "hold"
+    assert result["confidence"] == 0.61
+    assert "技术止损" in result["risk_notes"]
+    assert result["raw_state"]["text_output_parsed"] is True
+
+
 def test_real_runner_rejects_propagate_shape_by_default():
     """Production runner should not call propagate(symbol, date) without context."""
     from vnpy_tradingagents.real_runner import TradingAgentsRunnerAdapter
@@ -350,6 +365,18 @@ class PropagateNativeRunner:
             {"final_trade_decision": "BUY: portfolio manager approved a long entry"},
             "BUY",
         )
+
+
+class FreeTextNativeRunner:
+    """Runner fake that returns a markdown report after upstream fallback."""
+
+    def run(self, native_input):
+        return """
+**Rating**: Hold
+**Confidence**: 61%
+
+**Executive Summary**: 维持当前持仓。技术止损设于40.67元，监控现金流和存货风险。
+"""
 
 
 class StructuredDecision:

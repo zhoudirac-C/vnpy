@@ -176,6 +176,34 @@ def test_context_only_graph_runner_defaults_timeout_to_ui_default():
     assert seen["config"]["timeout"] == 1800.0
 
 
+def test_context_only_graph_runner_extracts_free_text_fallback_fields(tmp_path):
+    """Free-text TradingAgents fallback should still produce useful auditable fields."""
+    from vnpy_tradingagents.tradingagents_factory import (
+        TradingAgentsContextOnlyGraphRunner,
+    )
+
+    runner = TradingAgentsContextOnlyGraphRunner(
+        graph_factory=lambda **_: FreeTextFallbackTradingAgentsGraph()
+    )
+
+    result = runner.run(
+        {
+            "run_id": "run-1",
+            "symbol": "002636.SZSE",
+            "trade_date": "2026-05-09",
+            "mode": "manual_analysis",
+            "context": {"market": {"bars": [{"close": 47.5}]}},
+            "checkpoint_dir": str(tmp_path / "checkpoint"),
+        }
+    )
+
+    assert result["rating"] == "Hold"
+    assert result["action"] == "hold"
+    assert result["confidence"] == 0.61
+    assert "技术止损" in result["risk_notes"]
+    assert result["raw_state"]["text_output_parsed"] is True
+
+
 def test_context_only_graph_runner_registers_domestic_openai_providers():
     """Domestic provider names should be runnable through upstream TradingAgents."""
     from vnpy_tradingagents.tradingagents_factory import (
@@ -263,4 +291,21 @@ class FakeTradingAgentsGraph:
                 "report": f"{market_text}\n{news_text}",
                 "risk_notes": "context-only",
             },
+        )
+
+
+class FreeTextFallbackTradingAgentsGraph:
+    """Fake upstream graph that returns markdown after structured output fallback."""
+
+    def propagate(self, symbol, trade_date):
+        return (
+            {"company_of_interest": symbol, "trade_date": trade_date},
+            """
+**Rating**: Hold
+**Confidence**: 61%
+
+**Executive Summary**: 维持当前002636.SZSE持仓，不增加新头寸。技术止损设于40.67元。
+
+**Investment Thesis**: 基本面改善但短期追涨风险仍然偏高。
+""",
         )
