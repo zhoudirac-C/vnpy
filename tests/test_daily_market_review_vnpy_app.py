@@ -111,6 +111,42 @@ def test_daily_market_review_engine_has_safe_not_configured_boundary():
     assert validation.status == "not_configured"
 
 
+def test_daily_market_review_ui_extracts_readable_ai_report_from_json_payload():
+    """AI JSON payloads should be rendered as readable Markdown in the report tab."""
+    from vnpy_daily_review.engine import DailyMarketReviewReportResult
+    from vnpy_daily_review.ui.widget import (
+        extract_report_markdown,
+        extract_watch_items,
+        format_report_result_markdown,
+        format_report_result_raw_text,
+    )
+
+    raw_ai_payload = (
+        '{"report_markdown":"## AI复盘\\n- 明日只观察分歧低吸。",'
+        '"watch_items":[{"symbol":"001267.SZSE","name":"汇绿生态",'
+        '"role":"AI风向标","watch_action":"wait_pullback",'
+        '"entry_condition":"回踩承接","avoid_condition":"缩量追高",'
+        '"position_rule":"轻仓观察","evidence_ids":["EVT-1"]}]}'
+    )
+    result = DailyMarketReviewReportResult(
+        status="completed",
+        trade_date=date(2026, 5, 11),
+        title="2026-05-11 每日市场复盘",
+        markdown=raw_ai_payload,
+        watch_items=[],
+        message="llm_completed",
+    )
+
+    rendered = format_report_result_markdown(result)
+    raw_text = format_report_result_raw_text(result)
+
+    assert extract_report_markdown(raw_ai_payload).startswith("## AI复盘")
+    assert "report_markdown" not in rendered
+    assert "明日只观察分歧低吸" in rendered
+    assert extract_watch_items(raw_ai_payload, [])[0]["symbol"] == "001267.SZSE"
+    assert "report_markdown" in raw_text
+
+
 def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
     """Engine should delegate to the migrated vn.py daily review service."""
     from vnpy.event import EventEngine

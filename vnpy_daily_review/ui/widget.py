@@ -1,4 +1,6 @@
 from datetime import date
+import json
+from re import DOTALL, search
 from typing import Any
 
 from vnpy.event import EventEngine
@@ -27,7 +29,7 @@ def format_report_result_markdown(result: DailyMarketReviewReportResult) -> str:
     """
     Render one report result as Markdown.
     """
-    body = result.markdown or "_暂无每日市场复盘报告。_"
+    body = extract_report_markdown(result.markdown)
     return "\n\n".join(
         [
             f"# {result.title or '每日市场复盘'}",
@@ -36,6 +38,64 @@ def format_report_result_markdown(result: DailyMarketReviewReportResult) -> str:
             body,
         ]
     )
+
+
+def extract_report_markdown(raw_text: str) -> str:
+    """
+    Return human-readable Markdown from an AI result.
+    """
+    payload = _extract_ai_payload(raw_text)
+    if payload:
+        markdown = str(payload.get("report_markdown") or "").strip()
+        if markdown:
+            return markdown
+
+    heuristic_markdown = _extract_report_markdown_field(raw_text)
+    if heuristic_markdown:
+        return heuristic_markdown
+
+    return raw_text or "_暂无每日市场复盘报告。_"
+
+
+def extract_watch_items(
+    raw_text: str,
+    fallback_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Return watch items embedded in raw AI output when available.
+    """
+    payload = _extract_ai_payload(raw_text)
+    if not payload:
+        return fallback_items
+
+    items = payload.get("watch_items")
+    if not isinstance(items, list):
+        return fallback_items
+    normalized = [item for item in items if isinstance(item, dict)]
+    return normalized or fallback_items
+
+
+def format_report_result_raw_text(result: DailyMarketReviewReportResult) -> str:
+    """
+    Render raw report payload for audit/debugging.
+    """
+    payload = _extract_ai_payload(result.markdown)
+    raw_report = (
+        json.dumps(payload, ensure_ascii=False, indent=2)
+        if payload
+        else result.markdown
+    )
+    raw = {
+        "trade_date": result.trade_date.isoformat(),
+        "status": result.status,
+        "title": result.title,
+        "message": result.message,
+        "raw_report": raw_report,
+        "watch_items": result.watch_items,
+        "evidence_count": len(result.evidence),
+        "audit": result.audit,
+    }
+    return json.dumps(raw, ensure_ascii=False, indent=2, default=str)
 
 
 def format_validation_result_text(result: DailyMarketReviewValidationResult) -> str:
@@ -84,6 +144,11 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         self.run_preview_button.clicked.connect(self.run_preview)
         self.report_browser = QtWidgets.QTextBrowser()
         self.report_browser.setOpenExternalLinks(True)
+        self.raw_output_text = QtWidgets.QPlainTextEdit()
+        self.raw_output_text.setReadOnly(True)
+        self.raw_output_text.setLineWrapMode(
+            QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth
+        )
 
         self.watch_table = QtWidgets.QTableWidget(0, 5)
         self.watch_table.setHorizontalHeaderLabels(["股票", "名称", "角色", "动作", "条件"])
@@ -165,7 +230,10 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout()
         layout.addLayout(controls)
-        layout.addWidget(self.report_browser)
+        report_tabs = QtWidgets.QTabWidget()
+        report_tabs.addTab(self.report_browser, "报告正文")
+        report_tabs.addTab(self.raw_output_text, "原始输出")
+        layout.addWidget(report_tabs)
         widget.setLayout(layout)
         return widget
 
@@ -274,7 +342,7 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         if row < 0 or row >= len(self.history_results):
             return
         self.apply_report_result(self.history_results[row])
-        self.tabs.setCurrentWidget(self.report_browser.parentWidget())
+        self.tabs.setCurrentIndex(0)
 
     def validate_next_day(self) -> None:
         """
@@ -290,6 +358,7 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         Render one report result.
         """
         self.report_browser.setMarkdown(format_report_result_markdown(result))
+        self.raw_output_text.setPlainText(format_report_result_raw_text(result))
         self.trade_date_edit.setDate(
             QtCore.QDate(
                 result.trade_date.year,
@@ -297,7 +366,7 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
                 result.trade_date.day,
             )
         )
-        self.update_watch_table(result.watch_items)
+        self.update_watch_table(extract_watch_items(result.markdown, result.watch_items))
         self.update_signal_text(result)
 
     def update_watch_table(self, items: list[dict[str, Any]]) -> None:
@@ -338,3 +407,67 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         Convert QDate to Python date.
         """
         return date(value.year(), value.month(), value.day())
+
+
+def _extract_ai_payload(raw_text: str) -> dict[str, Any] | None:
+    """
+    Parse an AI JSON payload from a full text response.
+    """
+    text = _strip_markdown_fence(raw_text).strip()
+    if not text:
+        return None
+
+    for candidate in (text, _slice_json_object(text)):
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _slice_json_object(text: str) -> str:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return ""
+    return text[start : end + 1]
+
+
+def _strip_markdown_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = [
+        line
+        for line in stripped.splitlines()
+        if not line.strip().startswith("```")
+    ]
+    return "\n".join(lines).strip()
+
+
+def _extract_report_markdown_field(raw_text: str) -> str:
+    """
+    Best-effort fallback for imperfect JSON saved by an LLM response.
+    """
+    match = search(
+        r'"report_markdown"\s*:\s*"(?P<markdown>.*?)"\s*,\s*"watch_items"',
+        raw_text,
+        flags=DOTALL,
+    )
+    if not match:
+        return ""
+
+    value = match.group("markdown")
+    try:
+        return str(json.loads(f'"{value}"')).strip()
+    except Exception:
+        return (
+            value.replace(r"\n", "\n")
+            .replace(r"\"", '"')
+            .replace(r"\\", "\\")
+            .strip()
+        )
