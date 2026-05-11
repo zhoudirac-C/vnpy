@@ -172,6 +172,8 @@ def test_tradingagents_config_tab_collects_related_settings_only():
     help_text = news_symbols_help_text()
     assert "留空" in help_text
     assert "全市场逐股" in help_text
+    assert "vn.py 已缓存合约" in help_text
+    assert "AKShare A 股列表" in help_text
     assert "分批轮询" in help_text
 
 

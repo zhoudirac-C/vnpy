@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from vnpy.trader.constant import Exchange, Product
+from vnpy.trader.object import ContractData
 from vnpy_tradingagents.engine import TradingAgentsEngine
 from vnpy_tradingagents.manual_analysis import ManualAnalysisRequest
 from vnpy_tradingagents.runtime import TradingAgentsMode
@@ -284,8 +286,8 @@ def test_news_ingestion_symbol_plan_uses_catalog_when_manual_symbols_are_empty(t
     assert plan.batch_size == 50
 
 
-def test_news_ingestion_symbol_plan_empty_without_catalog_is_global_only():
-    """No manual symbols and no catalog means only global/non-symbol feeds can run."""
+def test_news_ingestion_symbol_plan_uses_vnpy_contracts_before_akshare_fallback():
+    """No manual/catalog symbols should reuse live vn.py A-share contracts first."""
     from vnpy_tradingagents.bootstrap import build_news_ingestion_symbol_plan
 
     plan = build_news_ingestion_symbol_plan(
@@ -293,7 +295,55 @@ def test_news_ingestion_symbol_plan_empty_without_catalog_is_global_only():
             "news.ingestion.symbols": "",
             "news.entity.catalog_path": "",
             "news.ingestion.symbol_source": "auto",
-        }
+            "news.ingestion.symbol_batch_size": 2,
+        },
+        main_engine=FakeMainEngineWithContracts(
+            [
+                make_contract("600519", Exchange.SSE, Product.EQUITY),
+                make_contract("000001", Exchange.SZSE, Product.EQUITY),
+                make_contract("rb2410", Exchange.SHFE, Product.FUTURES),
+            ]
+        ),
+        akshare_loader=lambda: (_ for _ in ()).throw(
+            AssertionError("AKShare should not be loaded when vn.py contracts exist")
+        ),
+    )
+
+    assert plan.symbols == ("600519.SSE", "000001.SZSE")
+    assert plan.source == "vnpy_contracts"
+    assert plan.batch_size == 2
+
+
+def test_news_ingestion_symbol_plan_falls_back_to_akshare_stock_universe():
+    """No manual/catalog/contracts should lazily build an A-share universe from AKShare."""
+    from vnpy_tradingagents.bootstrap import build_news_ingestion_symbol_plan
+
+    plan = build_news_ingestion_symbol_plan(
+        {
+            "news.ingestion.symbols": "",
+            "news.entity.catalog_path": "",
+            "news.ingestion.symbol_source": "auto",
+        },
+        main_engine=FakeMainEngineWithContracts([]),
+        akshare_loader=lambda: FakeAkshareModule(),
+    )
+
+    assert plan.symbols == ("600519.SSE", "000001.SZSE", "430047.BSE")
+    assert plan.source == "akshare"
+
+
+def test_news_ingestion_symbol_plan_empty_without_contracts_or_akshare_is_global_only():
+    """No manual/catalog/contracts and no AKShare keeps global feeds usable."""
+    from vnpy_tradingagents.bootstrap import build_news_ingestion_symbol_plan
+
+    plan = build_news_ingestion_symbol_plan(
+        {
+            "news.ingestion.symbols": "",
+            "news.entity.catalog_path": "",
+            "news.ingestion.symbol_source": "auto",
+        },
+        main_engine=FakeMainEngineWithContracts([]),
+        akshare_loader=lambda: None,
     )
 
     assert plan.symbols == ()
@@ -308,6 +358,40 @@ class FakeMainEngine:
 
     def get_engine(self, name: str):
         return self.engine if name == "TradingAgents" else None
+
+
+class FakeMainEngineWithContracts:
+    """MainEngine fake exposing cached contracts."""
+
+    def __init__(self, contracts) -> None:
+        self.contracts = contracts
+
+    def get_all_contracts(self):
+        return list(self.contracts)
+
+
+class FakeAkshareModule:
+    """AKShare fake exposing static A-share code/name rows."""
+
+    def stock_info_a_code_name(self):
+        return [
+            {"code": "600519", "name": "贵州茅台"},
+            {"code": "000001", "name": "平安银行"},
+            {"code": "430047", "name": "诺思兰德"},
+        ]
+
+
+def make_contract(symbol: str, exchange: Exchange, product: Product) -> ContractData:
+    """Build a minimal vn.py contract for symbol planning tests."""
+    return ContractData(
+        symbol=symbol,
+        exchange=exchange,
+        name=symbol,
+        product=product,
+        size=1,
+        pricetick=0.01,
+        gateway_name="TEST",
+    )
 
 
 class FakeRuntime:

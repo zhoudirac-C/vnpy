@@ -98,7 +98,9 @@ Toolkit --> Worker : context.news.events
 | `news.ingestion.interval_seconds` | `900` | 定时触发间隔，默认 15 分钟 |
 | `news.ingestion.lookback_minutes` | `1440` | 每次抓取回看窗口，默认 1 天 |
 | `news.ingestion.max_items_per_symbol` | `50` | 单标的单次最多入库条数 |
-| `news.ingestion.symbols` | 空 | 为空时从关注股票池/配置读取 |
+| `news.ingestion.symbols` | 空 | 手工关注股票池；为空时按 `news.entity.catalog_path` -> vn.py 已缓存 A 股合约 -> AKShare A 股列表 -> global-only 的顺序自动生成 |
+| `news.ingestion.symbol_source` | `auto` | 股票池来源；`auto` 自动兜底，`global_only` 只跑不需要个股列表的全局新闻源 |
+| `news.ingestion.symbol_batch_size` | `50` | 全市场股票池分批轮询数量，避免一次请求过多 |
 | `news.ingestion.local_path` | 空 | local_file provider 的本地事件目录 |
 | `news.ingestion.akshare.endpoints` | `stock_news_em,stock_info_global_cls` | AKShare 新闻 endpoint 顺序 |
 | `news.ingestion.timeout_seconds` | `30` | 单 provider 超时 |
@@ -153,6 +155,14 @@ Toolkit --> Worker : context.news.events
     - AKShare fake provider 成功入库通过。
     - `MarketDataToolkit` 能读取新入库 `news_event`。
 
+- [x] **P24-T11: 空 symbols 自动生成新闻股票池**
+  - 目标：`news.ingestion.symbols` 为空时，不再直接退化为 global-only；优先复用 vn.py `MainEngine.get_all_contracts()` 中已缓存的 A 股合约，若没有合约再懒加载 AKShare 股票列表。
+  - 验收：
+    - 手工 `symbols` 和 `news.entity.catalog_path` 仍然优先。
+    - QMT/AKShare Gateway 推送到 vn.py 的 A 股 `ContractData` 会被新闻定时任务复用。
+    - 没有合约且 AKShare 不可用时，仍保持 global-only，不影响 vn.py 启动。
+  - 实现说明：AKShare fallback 只用于生成股票池，不替代 provider 的新闻抓取逻辑；公开源限流时继续通过 degraded/heartbeat 暴露。
+
 ## 完成记录
 
 | 任务 | 日期 | 提交 | 验证 |
@@ -167,6 +177,7 @@ Toolkit --> Worker : context.news.events
 | P24-T08 | 2026-05-06 | 未提交 | `uv run --with pytest pytest tests/test_news_ingestion_scheduler.py::test_global_setting_ui_documents_news_ingestion_configuration -q` |
 | P24-T09 | 2026-05-06 | 未提交 | `uv run --with pytest pytest tests/test_news_ingestion_scheduler.py::test_readiness_checker_reports_news_ingestion_dependency_warning -q` |
 | P24-T10 | 2026-05-06 | 未提交 | `uv run --with pytest pytest tests/test_news_ingestion_scheduler.py tests/test_event_pipeline.py tests/test_tradingagents_production_readiness.py tests/test_tradingagents_llm_secret_ui.py -q` |
+| P24-T11 | 2026-05-11 | 待提交 | `uv run --with pytest python -m pytest tests/test_tradingagents_ui.py::test_tradingagents_config_tab_collects_related_settings_only tests/test_tradingagents_app_bootstrap.py tests/test_news_ingestion_scheduler.py tests/test_production_news_sources.py tests/test_news_entity_filtering.py -q`; `uv run --with ruff ruff check vnpy_tradingagents/bootstrap.py vnpy_tradingagents/ui/widget.py vnpy/trader/ui/widget.py tests/test_tradingagents_app_bootstrap.py tests/test_tradingagents_ui.py` |
 
 ## 当前实现说明
 

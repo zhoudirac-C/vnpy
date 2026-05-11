@@ -1,7 +1,9 @@
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any
 
+from vnpy.trader.constant import Exchange, Product
 from vnpy.trader.setting import SETTINGS
 from vnpy_router.event_storage import PostgresEventStorage
 from vnpy_router.financial_storage import PostgresFinancialStorage
@@ -35,6 +37,14 @@ NewsProviderFactory = Callable[[Mapping[str, Any]], Any]
 NewsSchedulerFactory = Callable[..., Any]
 FinancialProviderFactory = Callable[[Mapping[str, Any]], Any]
 FinancialSchedulerFactory = Callable[..., Any]
+AkshareLoader = Callable[[], Any | None]
+
+A_SHARE_EXCHANGES: set[Exchange] = {Exchange.SSE, Exchange.SZSE, Exchange.BSE}
+AKSHARE_STOCK_UNIVERSE_ENDPOINTS: tuple[str, ...] = (
+    "stock_info_a_code_name",
+    "stock_zh_a_spot_em",
+    "stock_zh_a_spot",
+)
 
 
 @dataclass(frozen=True)
@@ -178,13 +188,17 @@ def configure_tradingagents_services(
 
 def build_news_ingestion_symbol_plan(
     settings: Mapping[str, Any] | None = None,
+    main_engine: Any | None = None,
+    akshare_loader: AkshareLoader | None = None,
 ) -> NewsIngestionSymbolPlan:
     """
     Resolve the symbol list for optional external news ingestion.
 
     ``news.ingestion.symbols`` is the explicit watch list. When it is empty,
     ``news.entity.catalog_path`` can be used as a slowly-rotated full-universe
-    source. If neither is configured, only global/non-symbol providers can
+    source. If neither is configured, the live vn.py contract cache is reused
+    first, then AKShare is used as a no-account A-share universe fallback.
+    If all symbol sources are empty, only global/non-symbol providers can
     produce rows.
     """
     source: Mapping[str, Any] = settings or SETTINGS
@@ -210,6 +224,24 @@ def build_news_ingestion_symbol_plan(
             return NewsIngestionSymbolPlan(
                 symbols=symbols,
                 source="catalog",
+                batch_size=batch_size,
+            )
+
+    if symbol_source in {"auto", "vnpy", "vnpy_contracts", "contracts"}:
+        symbols = tuple(_symbols_from_vnpy_contracts(main_engine))
+        if symbols:
+            return NewsIngestionSymbolPlan(
+                symbols=symbols,
+                source="vnpy_contracts",
+                batch_size=batch_size,
+            )
+
+    if symbol_source in {"auto", "akshare", "akshare_universe"}:
+        symbols = tuple(_symbols_from_akshare_universe(akshare_loader))
+        if symbols:
+            return NewsIngestionSymbolPlan(
+                symbols=symbols,
+                source="akshare",
                 batch_size=batch_size,
             )
 
@@ -285,7 +317,7 @@ def _configure_news_ingestion(
         ops_storage = PostgresOpsStorage(connection)
         ops_storage.create_schema()
 
-        symbol_plan = build_news_ingestion_symbol_plan(settings)
+        symbol_plan = build_news_ingestion_symbol_plan(settings, main_engine=main_engine)
         job = ExternalNewsIngestionJob(
             provider=news_provider_factory(settings),
             storage=event_storage,
@@ -405,6 +437,188 @@ def _split_symbols(value: Any) -> list[str]:
     for sep in (";", "，", "\n"):
         text = text.replace(sep, ",")
     return [item.strip().upper() for item in text.split(",") if item.strip()]
+
+
+def _symbols_from_vnpy_contracts(main_engine: Any | None) -> list[str]:
+    """
+    Build an A-share stock pool from vn.py's cached contracts.
+    """
+    if main_engine is None:
+        return []
+
+    get_all_contracts = getattr(main_engine, "get_all_contracts", None)
+    if not callable(get_all_contracts):
+        return []
+
+    try:
+        contracts = get_all_contracts()
+    except Exception:
+        return []
+
+    symbols: list[str] = []
+    seen: set[str] = set()
+    for contract in contracts or []:
+        if not _is_ashare_equity_contract(contract):
+            continue
+
+        vt_symbol = _normalize_ashare_vt_symbol(
+            getattr(contract, "vt_symbol", "") or getattr(contract, "symbol", ""),
+            getattr(contract, "exchange", None),
+        )
+        if vt_symbol and vt_symbol not in seen:
+            seen.add(vt_symbol)
+            symbols.append(vt_symbol)
+
+    return symbols
+
+
+def _symbols_from_akshare_universe(akshare_loader: AkshareLoader | None = None) -> list[str]:
+    """
+    Build an A-share stock pool from low-cost AKShare stock-list endpoints.
+    """
+    loader = akshare_loader or _load_akshare
+    try:
+        akshare = loader()
+    except Exception:
+        return []
+    if akshare is None:
+        return []
+
+    for endpoint in AKSHARE_STOCK_UNIVERSE_ENDPOINTS:
+        query = getattr(akshare, endpoint, None)
+        if not callable(query):
+            continue
+        try:
+            rows = _iter_table_rows(query())
+        except Exception:
+            continue
+
+        symbols = _symbols_from_stock_rows(rows)
+        if symbols:
+            return symbols
+
+    return []
+
+
+def _symbols_from_stock_rows(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """
+    Convert AKShare stock-list rows into vn.py vt_symbols.
+    """
+    symbols: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        raw_symbol = _first_text(row, "code", "代码", "symbol", "股票代码")
+        vt_symbol = _normalize_ashare_vt_symbol(raw_symbol)
+        if vt_symbol and vt_symbol not in seen:
+            seen.add(vt_symbol)
+            symbols.append(vt_symbol)
+    return symbols
+
+
+def _is_ashare_equity_contract(contract: Any) -> bool:
+    """
+    Return true for Shanghai/Shenzhen/Beijing stock contracts.
+    """
+    exchange = getattr(contract, "exchange", None)
+    product = getattr(contract, "product", None)
+    if exchange not in A_SHARE_EXCHANGES:
+        return False
+    return product == Product.EQUITY
+
+
+def _normalize_ashare_vt_symbol(value: Any, exchange: Exchange | None = None) -> str:
+    """
+    Normalize A-share code variants into vn.py vt_symbol form.
+    """
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+
+    parsed_exchange = exchange
+    if "." in text:
+        symbol_part, suffix = text.split(".", 1)
+        text = symbol_part
+        parsed_exchange = parsed_exchange or _exchange_from_suffix(suffix)
+
+    for prefix, prefix_exchange in (
+        ("SSE", Exchange.SSE),
+        ("SZSE", Exchange.SZSE),
+        ("BSE", Exchange.BSE),
+        ("SH", Exchange.SSE),
+        ("SZ", Exchange.SZSE),
+        ("BJ", Exchange.BSE),
+    ):
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+            parsed_exchange = parsed_exchange or prefix_exchange
+            break
+
+    symbol = text.zfill(6) if text.isdigit() and len(text) <= 6 else text
+    if not symbol.isdigit() or len(symbol) != 6:
+        return ""
+
+    final_exchange = parsed_exchange or _infer_ashare_exchange(symbol)
+    if final_exchange not in A_SHARE_EXCHANGES:
+        return ""
+    return f"{symbol}.{final_exchange.value}"
+
+
+def _exchange_from_suffix(value: str) -> Exchange | None:
+    """
+    Parse common A-share exchange suffixes.
+    """
+    return {
+        "SH": Exchange.SSE,
+        "SSE": Exchange.SSE,
+        "SZ": Exchange.SZSE,
+        "SZSE": Exchange.SZSE,
+        "BJ": Exchange.BSE,
+        "BSE": Exchange.BSE,
+    }.get(str(value or "").strip().upper())
+
+
+def _infer_ashare_exchange(symbol: str) -> Exchange:
+    """
+    Infer A-share exchange from code prefix.
+    """
+    if symbol.startswith(("6", "9")):
+        return Exchange.SSE
+    if symbol.startswith(("8", "4")):
+        return Exchange.BSE
+    return Exchange.SZSE
+
+
+def _iter_table_rows(data: Any) -> list[Mapping[str, Any]]:
+    """
+    Convert pandas-like tables or iterable mapping rows into dictionaries.
+    """
+    if data is None:
+        return []
+    to_dict = getattr(data, "to_dict", None)
+    if callable(to_dict):
+        return list(to_dict(orient="records"))
+    return [row for row in data if isinstance(row, Mapping)]
+
+
+def _first_text(row: Mapping[str, Any], *keys: str) -> str:
+    """
+    Return the first non-empty row value as text.
+    """
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _load_akshare() -> Any | None:
+    """
+    Lazily import AKShare only when it is needed as a fallback universe source.
+    """
+    try:
+        return import_module("akshare")
+    except ModuleNotFoundError:
+        return None
 
 
 def _build_entity_resolver(settings: Mapping[str, Any]) -> SecurityEntityResolver:

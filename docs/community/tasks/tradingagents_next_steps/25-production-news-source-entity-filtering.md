@@ -386,7 +386,8 @@ Toolkit --> Worker : high quality news context
 | `news.ingestion.providers` | `cninfo_announcement,sse_announcement,gdelt_global_news,akshare_stock_news` | 第二版 provider 顺序 |
 | `news.ingestion.official_lookback_days` | `7` | 官方公告回看天数 |
 | `news.ingestion.gdelt_query` | 宏观/行业主题表达式 | GDELT 默认查询，不按全市场股票暴力查询 |
-| `news.entity.catalog_path` | 空 | 本地股票主数据/别名 CSV 或 JSON 路径 |
+| `news.ingestion.symbols` | 空 | 手工股票池；为空时按实体目录、vn.py 已缓存合约、AKShare A 股列表依次生成慢速轮询股票池 |
+| `news.entity.catalog_path` | 空 | 本地股票主数据/别名 CSV 或 JSON 路径；配置后优先用于实体校验和新闻股票池 |
 | `news.entity.refresh_interval_hours` | `24` | 实体目录刷新间隔 |
 | `news.filter.min_trust_score` | `0.70` | TradingAgents 新闻上下文最低可信度 |
 | `news.filter.min_link_confidence` | `0.75` | 个股关联最低置信度 |

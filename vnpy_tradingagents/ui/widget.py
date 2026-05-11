@@ -80,7 +80,8 @@ def news_symbols_help_text() -> str:
     """
     return (
         "symbols 是新闻入库关注股票列表。留空不会立刻全市场逐股暴力拉取；"
-        "系统会先拉全局新闻/公告，配置 news.entity.catalog_path 后再按股票目录分批轮询，"
+        "系统会先用 news.entity.catalog_path，其次复用 vn.py 已缓存合约，"
+        "最后懒加载 AKShare A 股列表生成股票池并分批轮询，"
         "每轮数量由 news.ingestion.symbol_batch_size 控制。"
     )
 
