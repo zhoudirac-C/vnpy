@@ -10,6 +10,7 @@ from vnpy_router.event_storage import PostgresEventStorage
 from vnpy_router.financial_storage import PostgresFinancialStorage
 from vnpy_router.peewee import PeeweeConnectionAdapter, create_vnpy_postgres_database
 
+from .ai import build_daily_review_ai_orchestrator_from_settings
 from .engine import APP_NAME
 from .providers import VnpyAkshareDailyReviewProvider
 from .service import DailyReviewService
@@ -47,6 +48,7 @@ def configure_daily_review_services(main_engine: MainEngine) -> DailyReviewServi
             financial_storage=financial_storage,
         ),
         repository=repository,
+        ai_orchestrator=build_daily_review_ai_orchestrator_from_settings(SETTINGS),
     )
     engine.set_review_service(service)
     return service

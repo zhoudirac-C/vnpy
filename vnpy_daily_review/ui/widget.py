@@ -129,7 +129,9 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
                     "2. 行情优先复用 vn.py Gateway/Datafeed；未开通 QMT 时可用 AKShare 研究链路。",
                     "3. 新闻、公告和财报复用当前入库服务。",
                     "4. AI 输出只生成报告和观察计划，不直接创建订单。",
-                    "5. 完整数据流水线将在 P29 后续任务继续接入。",
+                    "5. 勾选“运行 AI 编排”后，会在 Evidence Pack 之上执行多阶段复盘。",
+                    "6. AI provider、model、API key 环境变量、thinking 和超时时间复用全局 AI 配置。",
+                    "7. 未配置 key 或模型调用失败时，系统会保留确定性报告并记录审计。",
                 ]
             )
         )

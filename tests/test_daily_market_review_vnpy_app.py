@@ -1,6 +1,60 @@
 import ast
+from datetime import date
+from decimal import Decimal
 from importlib import import_module
 from pathlib import Path
+
+
+def make_daily_review_fake_provider():
+    from vnpy_daily_review.domain import DailyStockSnapshot
+    from vnpy_daily_review.service import DailyReviewDataBundle
+
+    class FakeProvider:
+        def load_data_bundle(self, trade_date: date) -> DailyReviewDataBundle:
+            return DailyReviewDataBundle(
+                trade_date=trade_date,
+                stocks=[
+                    DailyStockSnapshot(
+                        symbol="001267.SZSE",
+                        name="汇绿生态",
+                        trade_date=trade_date,
+                        open_price=Decimal("10"),
+                        high_price=Decimal("11"),
+                        low_price=Decimal("9.8"),
+                        close_price=Decimal("10.8"),
+                        pct_change=Decimal("8"),
+                        volume=10000,
+                        amount=Decimal("10800000"),
+                        turnover_rate=Decimal("3.5"),
+                        is_limit_up=False,
+                        is_limit_down=False,
+                        provider="fake",
+                        sector="测试板块",
+                    ),
+                    DailyStockSnapshot(
+                        symbol="600519.SSE",
+                        name="贵州茅台",
+                        trade_date=trade_date,
+                        open_price=Decimal("100"),
+                        high_price=Decimal("101"),
+                        low_price=Decimal("98"),
+                        close_price=Decimal("99"),
+                        pct_change=Decimal("-1"),
+                        volume=100,
+                        amount=Decimal("9900000"),
+                        turnover_rate=Decimal("0.2"),
+                        is_limit_up=False,
+                        is_limit_down=False,
+                        provider="fake",
+                        sector="白酒",
+                    ),
+                ],
+                provider_records=[
+                    {"provider": "fake", "data_type": "stock_snapshot", "row_count": 2}
+                ],
+            )
+
+    return FakeProvider()
 
 
 def test_daily_market_review_app_metadata_imports_ui_widget():
@@ -59,56 +113,9 @@ def test_daily_market_review_engine_has_safe_not_configured_boundary():
 
 def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
     """Engine should delegate to the migrated vn.py daily review service."""
-    from datetime import date
-    from decimal import Decimal
-
     from vnpy.event import EventEngine
-    from vnpy_daily_review.domain import DailyStockSnapshot
     from vnpy_daily_review.engine import DailyMarketReviewEngine
-    from vnpy_daily_review.service import DailyReviewDataBundle, DailyReviewService
-
-    class FakeProvider:
-        def load_data_bundle(self, trade_date: date) -> DailyReviewDataBundle:
-            return DailyReviewDataBundle(
-                trade_date=trade_date,
-                stocks=[
-                    DailyStockSnapshot(
-                        symbol="001267.SZSE",
-                        name="汇绿生态",
-                        trade_date=trade_date,
-                        open_price=Decimal("10"),
-                        high_price=Decimal("11"),
-                        low_price=Decimal("9.8"),
-                        close_price=Decimal("10.8"),
-                        pct_change=Decimal("8"),
-                        volume=10000,
-                        amount=Decimal("10800000"),
-                        turnover_rate=Decimal("3.5"),
-                        is_limit_up=False,
-                        is_limit_down=False,
-                        provider="fake",
-                        sector="测试板块",
-                    ),
-                    DailyStockSnapshot(
-                        symbol="600519.SSE",
-                        name="贵州茅台",
-                        trade_date=trade_date,
-                        open_price=Decimal("100"),
-                        high_price=Decimal("101"),
-                        low_price=Decimal("98"),
-                        close_price=Decimal("99"),
-                        pct_change=Decimal("-1"),
-                        volume=100,
-                        amount=Decimal("9900000"),
-                        turnover_rate=Decimal("0.2"),
-                        is_limit_up=False,
-                        is_limit_down=False,
-                        provider="fake",
-                        sector="白酒",
-                    ),
-                ],
-                provider_records=[{"provider": "fake", "data_type": "stock_snapshot", "row_count": 2}],
-            )
+    from vnpy_daily_review.service import DailyReviewService
 
     engine = DailyMarketReviewEngine(None, EventEngine())  # type: ignore[arg-type]
     class FakeRepository:
@@ -125,7 +132,9 @@ def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
             return list(reversed(self.saved[-limit:]))
 
     repository = FakeRepository()
-    engine.set_review_service(DailyReviewService(FakeProvider(), repository=repository))
+    engine.set_review_service(
+        DailyReviewService(make_daily_review_fake_provider(), repository=repository)
+    )
 
     result = engine.run_preview(date(2026, 5, 11), run_llm=False)
 
@@ -138,6 +147,158 @@ def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
     assert repository.saved == [result]
     assert engine.load_latest_report() == result
     assert engine.list_reports(limit=10) == [result]
+
+
+def test_daily_market_review_ai_orchestrator_overrides_report_with_audited_llm_output():
+    """When requested, daily review should run auditable staged LLM composition."""
+    from vnpy_daily_review.ai import DailyReviewAIOrchestrator, DailyReviewLLMResponse
+    from vnpy_daily_review.service import DailyReviewService
+    from vnpy_daily_review.storage import InMemoryDailyReviewRepository
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = []
+            self.outputs = [
+                DailyReviewLLMResponse(
+                    content="市场处于修复观察，证据 EVT-20260511-0001。",
+                    usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                ),
+                DailyReviewLLMResponse(
+                    content="主线聚焦测试板块，证据 EVT-20260511-0002。",
+                    usage={"prompt_tokens": 11, "completion_tokens": 6, "total_tokens": 17},
+                ),
+                DailyReviewLLMResponse(
+                    content="风向标选择汇绿生态，证据 EVT-20260511-0003。",
+                    usage={"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19},
+                ),
+                DailyReviewLLMResponse(
+                    content="风险：追高和数据样本不足。",
+                    usage={"prompt_tokens": 13, "completion_tokens": 8, "total_tokens": 21},
+                ),
+                DailyReviewLLMResponse(
+                    content=(
+                        '{"report_markdown":"## AI复盘\\n- 引用 EVT-20260511-0001。",'
+                        '"watch_items":[{"symbol":"001267.SZSE","name":"汇绿生态",'
+                        '"role":"AI风向标","watch_action":"分歧低吸观察",'
+                        '"entry_condition":"回踩承接稳定","avoid_condition":"高开缩量追高",'
+                        '"position_rule":"轻仓观察","evidence_ids":["EVT-20260511-0001"]}]}'
+                    ),
+                    usage={"prompt_tokens": 14, "completion_tokens": 9, "total_tokens": 23},
+                ),
+            ]
+
+        def chat(self, messages, timeout_seconds, extra_body=None):
+            self.calls.append(
+                {
+                    "messages": messages,
+                    "timeout_seconds": timeout_seconds,
+                    "extra_body": extra_body,
+                }
+            )
+            return self.outputs[len(self.calls) - 1]
+
+    client = FakeClient()
+    repository = InMemoryDailyReviewRepository()
+    service = DailyReviewService(
+        make_daily_review_fake_provider(),
+        repository=repository,
+        ai_orchestrator=DailyReviewAIOrchestrator(
+            client=client,
+            provider="glm",
+            model_name="glm-4.7",
+            timeout_seconds=2700,
+            max_retries=1,
+            extra_body={"thinking": {"type": "enabled"}},
+        ),
+    )
+
+    result = service.run_preview(date(2026, 5, 11), run_llm=True)
+
+    assert result.status == "completed"
+    assert result.message == "llm_completed"
+    assert "AI复盘" in result.markdown
+    assert result.watch_items[0]["role"] == "AI风向标"
+    assert len(client.calls) == 5
+    assert {call["timeout_seconds"] for call in client.calls} == {2700}
+    assert client.calls[0]["extra_body"] == {"thinking": {"type": "enabled"}}
+    llm_audit = [audit for audit in result.audit if audit.get("mode") == "llm"]
+    assert [audit["stage"] for audit in llm_audit] == [
+        "MarketRegimeAnalyst",
+        "ThemeRotationAnalyst",
+        "LeaderAnalyst",
+        "RiskCritic",
+        "WatchPlanWriter",
+    ]
+    assert all(audit["status"] == "completed" for audit in llm_audit)
+    assert llm_audit[-1]["total_tokens"] == 23
+    assert repository.load_latest_report() == result
+
+
+def test_daily_market_review_ai_orchestrator_falls_back_with_failed_audit():
+    """LLM failures should keep deterministic report usable and auditable."""
+    from vnpy_daily_review.ai import DailyReviewAIOrchestrator
+    from vnpy_daily_review.service import DailyReviewService
+
+    class FailingClient:
+        def chat(self, messages, timeout_seconds, extra_body=None):
+            raise RuntimeError("model timeout")
+
+    service = DailyReviewService(
+        make_daily_review_fake_provider(),
+        ai_orchestrator=DailyReviewAIOrchestrator(
+            client=FailingClient(),
+            provider="glm",
+            model_name="glm-4.7",
+            timeout_seconds=2700,
+            max_retries=0,
+        ),
+    )
+
+    result = service.run_preview(date(2026, 5, 11), run_llm=True)
+
+    assert result.status == "partial"
+    assert result.message.startswith("llm_failed_fallback_deterministic")
+    assert "AI 编排失败" in result.markdown
+    failed_audit = [audit for audit in result.audit if audit.get("status") == "failed"]
+    assert failed_audit
+    assert failed_audit[0]["stage"] == "MarketRegimeAnalyst"
+    assert failed_audit[0]["error_message"] == "model timeout"
+    assert result.watch_items
+
+
+def test_daily_market_review_ai_orchestrator_reuses_tradingagents_llm_settings():
+    """Daily review LLM config should reuse the existing vn.py AI provider settings."""
+    from vnpy_daily_review.ai import build_daily_review_ai_orchestrator_from_settings
+
+    orchestrator = build_daily_review_ai_orchestrator_from_settings(
+        {
+            "tradingagents.llm_provider": "zhipu",
+            "tradingagents.api_key_env_var": "ZHIPU_API_KEY",
+            "tradingagents.model": "glm-4.7",
+            "tradingagents.backend_url": "",
+            "tradingagents.replay_thinking_type": "enabled",
+            "tradingagents.replay_timeout_seconds": 2700,
+            "tradingagents.max_retries": 2,
+            "tradingagents.max_completion_tokens": 2048,
+        },
+        environ={"ZHIPU_API_KEY": "secret-value"},
+    )
+
+    assert orchestrator is not None
+    assert orchestrator.provider == "glm"
+    assert orchestrator.model_name == "glm-4.7"
+    assert orchestrator.timeout_seconds == 2700
+    assert orchestrator.max_retries == 2
+    assert orchestrator.extra_body == {"thinking": {"type": "enabled"}}
+
+    missing_key = build_daily_review_ai_orchestrator_from_settings(
+        {
+            "tradingagents.llm_provider": "zhipu",
+            "tradingagents.api_key_env_var": "ZHIPU_API_KEY",
+        },
+        environ={},
+    )
+    assert missing_key is None
 
 
 def test_daily_market_review_schema_initializer_includes_report_tables():

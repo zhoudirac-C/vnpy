@@ -150,7 +150,7 @@ PostgreSQL。表结构通过 vn.py 现有 Peewee/create_tables 初始化，不�
 | `daily_watch_plan` | 明日观察计划，已实现 |
 | `daily_watch_plan_item` | 个股或板块级观察项，已实现 |
 | `daily_watch_plan_result` | 次日验证结果 |
-| `daily_review_model_audit` | prompt、模型、耗时、token、失败重试和输出校验，已实现基础审计 |
+| `daily_review_model_audit` | prompt hash、模型、耗时、token、失败重试和输出校验，已实现多阶段审计 |
 
 ## 7. 信号层
 
@@ -169,7 +169,12 @@ LLM 之前必须先完成结构化计算，避免让模型直接吞全市场原�
 
 AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
 
-建议分工：
+当前 vn.py 版本已经实现第一版可审计多阶段编排，入口在
+`vnpy_daily_review.ai`，由 `DailyReviewService.run_preview(run_llm=True)` 触发。
+如果没有配置 API key，或者模型调用失败，系统会保留确定性复盘报告，
+并在 `daily_review_model_audit` 中写入 `skipped` 或 `failed` 记录。
+
+多阶段分工：
 
 - `MarketRegimeAnalyst`：判断市场状态和指数风险。
 - `ThemeRotationAnalyst`：判断主线、分支、防御和退潮。
@@ -177,7 +182,14 @@ AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
 - `RiskCritic`：审查追高、缩量、节假日、财报风险。
 - `WatchPlanWriter`：生成 Markdown 报告和明日观察计划。
 
-日内快速复盘默认不开 thinking；盘后深度复盘默认可开 thinking，超时可复用 TradingAgents 的长任务配置。
+实现原则：
+
+- Prompt 输入只包含 Evidence Pack、确定性报告和前序阶段输出。
+- 每个阶段记录 `stage/provider/model_name/status/attempt/prompt_hash/elapsed_ms/token`。
+- `WatchPlanWriter` 输出结构化 JSON，包含 `report_markdown` 和 `watch_items`。
+- 输出解析失败时，Markdown 仍可作为报告展示，观察计划回退到确定性候选。
+- 盘后深度复盘复用全局 AI 长任务配置，默认 45 分钟超时，可开启 thinking。
+- 不新增独立 AI 配置；provider、base URL、model、API key env var 和密钥读取复用当前全局 AI 设置。
 
 ## 9. UI 设计
 
@@ -200,6 +212,7 @@ AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
 - 打开后是独立大窗口，行为类似 `CTA策略`。
 - `运行预览` 能通过 vn.py tick/AKShare provider 生成确定性复盘报告。
 - `历史报告` 能读取已落库报告并双击回看。
+- 勾选 `运行 AI 编排` 后，若全局 AI 配置和 key 可用，会执行多阶段复盘。
 - 不混入交易面板，不占用 TradingAgents 单票分析页。
 
 ## 10. 安全和生产边界
@@ -218,6 +231,6 @@ AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
 4. 只读查询：接入 PostgreSQL 中已有新闻、财报、行情快照。
 5. 报告落库：报告、观察计划、证据和模型审计写入 PostgreSQL。
 6. 证据增强：新闻、财报、龙虎榜和基础分时异动加入 Evidence Pack。
-7. AI 编排：在 Evidence Pack 上增加可审计 LLM 阶段，保留确定性兜底。
+7. AI 编排：在 Evidence Pack 上增加可审计 LLM 阶段，保留确定性兜底，已完成第一版。
 8. 次日验证：观察计划触发情况、MFE/MAE、遗漏和误判统计。
 9. 生产验证：真实数据源 smoke、连续运行、成本、超时和审计落档。

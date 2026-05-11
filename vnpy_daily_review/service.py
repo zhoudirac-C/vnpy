@@ -2,7 +2,7 @@
 vn.py service layer for daily market review.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
@@ -58,6 +58,22 @@ class DailyReviewDataProvider(Protocol):
         """
 
 
+class DailyReviewAIOrchestratorProtocol(Protocol):
+    """
+    Optional staged AI composer.
+    """
+
+    def run(
+        self,
+        pack: EvidencePack,
+        deterministic_markdown: str,
+        base_watch_items: list[dict[str, Any]],
+    ) -> Any:
+        """
+        Run the AI composer over an Evidence Pack.
+        """
+
+
 class DailyReviewService:
     """
     Daily market review pipeline running inside vn.py.
@@ -67,9 +83,11 @@ class DailyReviewService:
         self,
         data_provider: DailyReviewDataProvider,
         repository: DailyReviewRepository | None = None,
+        ai_orchestrator: DailyReviewAIOrchestratorProtocol | None = None,
     ) -> None:
         self._data_provider = data_provider
         self._repository = repository
+        self._ai_orchestrator = ai_orchestrator
         self._last_result: DailyMarketReviewReportResult | None = None
 
     def load_latest_report(self) -> DailyMarketReviewReportResult:
@@ -153,12 +171,13 @@ class DailyReviewService:
             lhb_net_buy_amount=lhb_signal.net_buy_amount,
             run_llm=run_llm,
         )
+        watch_items = [_leader_to_watch_item(leader, pack) for leader in leaders[:10]]
         result = DailyMarketReviewReportResult(
             status="completed",
             trade_date=trade_date,
             title=f"{trade_date.isoformat()} 每日市场复盘",
             markdown=markdown,
-            watch_items=[_leader_to_watch_item(leader, pack) for leader in leaders[:10]],
+            watch_items=watch_items,
             evidence=[item.to_llm_dict() for item in pack.evidence],
             audit=[
                 {
@@ -173,6 +192,8 @@ class DailyReviewService:
             ],
             message="completed",
         )
+        if run_llm:
+            result = self._compose_with_ai_if_possible(result, pack)
         result = self._save_if_possible(result)
         self._last_result = result
         return result
@@ -242,6 +263,43 @@ class DailyReviewService:
         except Exception as exc:
             return with_storage_warning(result, str(exc))
 
+    def _compose_with_ai_if_possible(
+        self,
+        result: DailyMarketReviewReportResult,
+        pack: EvidencePack,
+    ) -> DailyMarketReviewReportResult:
+        """
+        Apply optional AI composition while preserving deterministic fallback.
+        """
+        if self._ai_orchestrator is None:
+            return replace(
+                result,
+                audit=[
+                    *result.audit,
+                    {
+                        "mode": "llm",
+                        "stage": "orchestrator",
+                        "status": "skipped",
+                        "error_message": "daily_review_ai_orchestrator_not_configured",
+                    },
+                ],
+                message="llm_skipped_not_configured",
+            )
+
+        output = self._ai_orchestrator.run(
+            pack=pack,
+            deterministic_markdown=result.markdown,
+            base_watch_items=result.watch_items,
+        )
+        return replace(
+            result,
+            status=str(output.status),
+            markdown=str(output.markdown),
+            watch_items=list(output.watch_items),
+            audit=[*result.audit, *list(output.audit)],
+            message=str(output.message),
+        )
+
 
 class DailyReviewMarkdownComposer:
     """
@@ -282,12 +340,6 @@ class DailyReviewMarkdownComposer:
             f"- `{item.evidence_id}` {item.source_type}: {item.content[:120]}"
             for item in pack.evidence[:12]
         ] or ["- 暂无证据条目"]
-        llm_note = (
-            "\n\n> 已勾选 AI 编排，但当前 vn.py 迁移版先使用确定性复盘模板；"
-            "后续会在 Evidence Pack 之上接入可审计 LLM 编排。"
-            if run_llm
-            else ""
-        )
         return "\n".join(
             [
                 "## 核心市场信号",
@@ -321,7 +373,6 @@ class DailyReviewMarkdownComposer:
                 "",
                 "## 证据引用",
                 *evidence_lines,
-                llm_note,
             ]
         ).strip()
 

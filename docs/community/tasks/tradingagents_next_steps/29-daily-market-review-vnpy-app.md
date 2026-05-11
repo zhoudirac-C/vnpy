@@ -70,9 +70,14 @@
   - 验收：复盘报告能明确引用新闻公告/财报证据 ID，并能说明哪些数据源缺失。
   - 状态：已完成第一版。provider 会读取 PostgreSQL `news_event`、财报上下文、AKShare 龙虎榜，并从全市场快照生成基础分时异动信号；任一来源失败只记录质量告警。
 
-- [ ] **P29-T06.6: 深度 AI 编排和生产验证**
-  - 目标：在 Evidence Pack 之上接入可审计 LLM 多阶段复盘，并做真实数据连续运行验证。
-  - 验收：模型审计、token/耗时、失败重试、连续运行结果和次日验证全部落档。
+- [x] **P29-T06.6: 深度 AI 编排第一版**
+  - 目标：在 Evidence Pack 之上接入可审计 LLM 多阶段复盘。
+  - 验收：模型审计、token/耗时、失败重试和确定性兜底全部落档。
+  - 状态：已完成第一版。新增 `vnpy_daily_review.ai`，包含 `MarketRegimeAnalyst`、`ThemeRotationAnalyst`、`LeaderAnalyst`、`RiskCritic`、`WatchPlanWriter` 五个阶段；复用全局 AI provider/model/base URL/API key env var/thinking/超时配置；模型失败时自动回退确定性报告并记录失败审计。
+
+- [ ] **P29-T06.7: 真实数据连续运行和次日验证落档**
+  - 目标：用真实行情、新闻、财报和 LLM 配置连续运行多日，并把次日观察计划验证结果落库。
+  - 验收：连续运行结果、成本、超时、失败重试、次日触发/遗漏/误判统计全部落档。
 
 ## 完成记录
 
@@ -82,6 +87,7 @@
 | P29-T02 至 P29-T05 | 2026-05-11 | 未提交 | `uv run --with pytest python -m pytest tests/test_daily_market_review_vnpy_app.py -q`，6 passed |
 | P29-T06.1 至 P29-T06.3 | 2026-05-11 | c8d8ccf1 | 迁移核心领域/信号/Evidence Pack，接入 vn.py/AKShare provider 和启动 bootstrap |
 | P29-T06.4 至 P29-T06.5 | 2026-05-11 | 未提交 | 报告/证据/观察计划/审计 PostgreSQL 落库；新闻、财报、龙虎榜、基础分时异动进入 Evidence Pack |
+| P29-T06.6 | 2026-05-11 | 未提交 | `uv run --with pytest python -m pytest tests/test_daily_market_review_vnpy_app.py -q`，11 passed |
 
 ## 风险
 
