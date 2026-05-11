@@ -234,6 +234,54 @@ def test_configure_tradingagents_services_registers_disabled_financial_scheduler
     assert scheduler.symbol_batch_size == 1
 
 
+def test_configure_tradingagents_services_uses_vnpy_contracts_for_financial_scheduler():
+    """Financial ingestion should reuse vn.py A-share contracts when no catalog is configured."""
+    from vnpy_tradingagents.bootstrap import configure_tradingagents_services
+
+    engine = object.__new__(TradingAgentsEngine)
+    engine.runtime = FakeRuntime()
+    engine.manual_analysis_service = None
+    engine.financial_ingestion_scheduler = None
+    engine.financial_reader = None
+    engine.set_manual_analysis_service = lambda service: setattr(
+        engine, "manual_analysis_service", service
+    )
+    engine.set_financial_reader = lambda reader: setattr(engine, "financial_reader", reader)
+    engine.set_financial_ingestion_scheduler = lambda scheduler: setattr(
+        engine,
+        "financial_ingestion_scheduler",
+        scheduler,
+    )
+
+    ok = configure_tradingagents_services(
+        FakeMainEngine(
+            engine,
+            contracts=[
+                make_contract("600519", Exchange.SSE, Product.EQUITY),
+                make_contract("000001", Exchange.SZSE, Product.EQUITY),
+                make_contract("rb2410", Exchange.SHFE, Product.FUTURES),
+            ],
+        ),
+        settings={
+            "database.name": "postgresql",
+            "financial.ingestion.enabled": False,
+            "financial.ingestion.symbols": "",
+            "financial.ingestion.catalog_path": "",
+            "news.entity.catalog_path": "",
+            "financial.ingestion.symbol_batch_size": 2,
+        },
+        connection_factory=lambda settings: FakeConnection(),
+        worker_factory=lambda: FakeWorker(),
+        financial_provider_factory=lambda settings: FakeFinancialProvider(),
+        financial_scheduler_factory=lambda **kwargs: FakeFinancialScheduler(**kwargs),
+    )
+
+    scheduler = engine.financial_ingestion_scheduler
+    assert ok
+    assert scheduler.symbols == ("600519.SSE", "000001.SZSE")
+    assert scheduler.symbol_batch_size == 2
+
+
 def test_configure_tradingagents_services_keeps_news_scheduler_disabled_by_default():
     """News ingestion should remain opt-in at vn.py startup."""
     from vnpy_tradingagents.bootstrap import configure_tradingagents_services
@@ -350,14 +398,54 @@ def test_news_ingestion_symbol_plan_empty_without_contracts_or_akshare_is_global
     assert plan.source == "global_only"
 
 
+def test_financial_ingestion_symbol_plan_falls_back_to_akshare_stock_universe():
+    """Financial ingestion should share the AKShare stock-universe fallback."""
+    from vnpy_tradingagents.bootstrap import build_financial_ingestion_symbol_plan
+
+    plan = build_financial_ingestion_symbol_plan(
+        {
+            "financial.ingestion.symbols": "",
+            "financial.ingestion.catalog_path": "",
+            "news.entity.catalog_path": "",
+        },
+        main_engine=FakeMainEngineWithContracts([]),
+        akshare_loader=lambda: FakeAkshareModule(),
+    )
+
+    assert plan.symbols == ("600519.SSE", "000001.SZSE", "430047.BSE")
+    assert plan.source == "akshare"
+
+
+def test_financial_ingestion_symbol_plan_empty_without_contracts_or_akshare():
+    """Financial ingestion should remain a no-op when no stock universe is available."""
+    from vnpy_tradingagents.bootstrap import build_financial_ingestion_symbol_plan
+
+    plan = build_financial_ingestion_symbol_plan(
+        {
+            "financial.ingestion.symbols": "",
+            "financial.ingestion.catalog_path": "",
+            "news.entity.catalog_path": "",
+        },
+        main_engine=FakeMainEngineWithContracts([]),
+        akshare_loader=lambda: None,
+    )
+
+    assert plan.symbols == ()
+    assert plan.source == "empty"
+
+
 class FakeMainEngine:
     """Small MainEngine fake."""
 
-    def __init__(self, engine) -> None:
+    def __init__(self, engine, contracts=None) -> None:
         self.engine = engine
+        self.contracts = list(contracts or [])
 
     def get_engine(self, name: str):
         return self.engine if name == "TradingAgents" else None
+
+    def get_all_contracts(self):
+        return list(self.contracts)
 
 
 class FakeMainEngineWithContracts:

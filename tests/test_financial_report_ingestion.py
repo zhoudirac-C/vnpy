@@ -608,7 +608,49 @@ def test_postgres_financial_storage_saves_and_loads_context_rows():
     assert context["statements"]["income_statement"]["report_period"] == "2024-12-31"
     assert context["indicators"][0]["fields"]["净资产收益率"] == 18.5
     assert context["documents"][0]["title"] == "2024年年度报告"
-    assert context["quality_status"] == "primary"
+    assert context["vt_symbol"] == "600519.SSE"
+
+
+def test_postgres_financial_storage_loads_latest_context_when_symbol_is_empty():
+    """Financial data UI should be able to show the latest stored context without a symbol."""
+    from vnpy_router.financial_storage import PostgresFinancialStorage
+
+    connection = FinancialConnection(
+        fetchall_result=[
+            [{"vt_symbol": "000001.SZSE"}],
+            [
+                {
+                    "vt_symbol": "000001.SZSE",
+                    "report_period": datetime(2025, 3, 31),
+                    "statement_type": "income_statement",
+                    "report_type": "quarterly",
+                    "announcement_date": datetime(2025, 4, 30),
+                    "provider_name": "akshare_sina",
+                    "provider_version": "v1",
+                    "currency": "CNY",
+                    "unit": "yuan",
+                    "payload": {"raw_fields": {"营业收入": 120.0}},
+                    "source_document_id": "",
+                    "quality_status": "primary",
+                    "quality_report": {},
+                }
+            ],
+            [],
+            [],
+        ]
+    )
+    storage = PostgresFinancialStorage(connection)
+
+    context = storage.load_latest_financial_context(
+        as_of=datetime(2025, 5, 1),
+        max_periods=4,
+    )
+
+    sql_text = "\n".join(sql for sql, _ in connection.cursor_obj.executed)
+    assert "SELECT vt_symbol" in sql_text
+    assert context["vt_symbol"] == "000001.SZSE"
+    assert context["statements"]["income_statement"]["fields"]["营业收入"] == 120.0
+    assert context["quality_status"] == "degraded"
 
 
 def test_market_data_toolkit_includes_financials_when_reader_supports_it():
@@ -791,6 +833,7 @@ def test_engine_delegates_financial_reader_and_manual_trigger():
 
     engine.set_financial_reader(reader)
     context = engine.load_financial_context("600519.SSE", max_periods=2)
+    latest_context = engine.load_financial_context("", max_periods=3)
     engine.set_financial_ingestion_scheduler(scheduler)
     message = engine.trigger_financial_ingestion(["600519.SSE"])
     status = engine.get_financial_ingestion_status()
@@ -808,7 +851,9 @@ def test_engine_delegates_financial_reader_and_manual_trigger():
     )
 
     assert context["quality_status"] == "primary"
+    assert latest_context["vt_symbol"] == "000001.SZSE"
     assert reader.calls == [("600519.SSE", 2)]
+    assert reader.latest_calls == [3]
     assert message == "financial_ingestion_triggered symbols=600519.SSE"
     assert engine.retry_failed_financial_ingestion() == "financial_ingestion_retry_failed_triggered"
     assert scheduler.calls == [["600519.SSE"]]
@@ -1033,10 +1078,20 @@ class FakeFinancialReader:
 
     def __init__(self) -> None:
         self.calls = []
+        self.latest_calls = []
 
     def load_financial_context(self, vt_symbol, as_of, max_periods=4):
         self.calls.append((vt_symbol, max_periods))
         return {"statements": {}, "documents": [], "quality_status": "primary"}
+
+    def load_latest_financial_context(self, as_of, max_periods=4):
+        self.latest_calls.append(max_periods)
+        return {
+            "vt_symbol": "000001.SZSE",
+            "statements": {},
+            "documents": [],
+            "quality_status": "primary",
+        }
 
 
 class FakeFinancialScheduler:

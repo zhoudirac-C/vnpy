@@ -292,8 +292,8 @@ Toolkit --> Worker : fundamentals + valuation + financials
 | --- | --- | --- |
 | `financial.ingestion.enabled` | `true` | 默认开启财报自动入库；vn.py 启动时默认注册 scheduler，并激活盘后和早晨定时任务，关闭时定时任务暂停 |
 | `financial.ingestion.providers` | `akshare_sina,akshare_eastmoney,akshare_indicator,cninfo_report,exchange_report` | provider 顺序 |
-| `financial.ingestion.symbols` | 空 | 空表示跟随 `financial.ingestion.catalog_path` 或 `news.entity.catalog_path` 股票池；不建议一上来全市场无限回补 |
-| `financial.ingestion.catalog_path` | 空 | 财报入库股票池路径；留空时复用 `news.entity.catalog_path` |
+| `financial.ingestion.symbols` | 空 | 空表示按 `financial.ingestion.catalog_path`、`news.entity.catalog_path`、vn.py 已缓存 A 股合约、AKShare A 股列表依次生成股票池；不建议一上来全市场无限回补 |
+| `financial.ingestion.catalog_path` | 空 | 财报入库股票池路径；留空时复用 `news.entity.catalog_path`，再退回 vn.py 合约和 AKShare A 股列表 |
 | `financial.ingestion.lookback_years` | `5` | 回补历史年限 |
 | `financial.ingestion.schedule` | `20:30` | 默认盘后每日拉取一次；财报是低频数据，不做分钟级轮询 |
 | `financial.ingestion.morning_retry_enabled` | `true` | 次日早晨轻量补偿，补晚间披露、接口延迟和前一轮失败 |
@@ -309,7 +309,8 @@ Toolkit --> Worker : fundamentals + valuation + financials
 - 财报 scheduler 默认随 vn.py 启动注册，不需要单独的“启动后是否注册”配置。
 - `financial.ingestion.enabled` 是唯一总开关，默认 `true`：盘后和早晨定时任务默认生效，用户手动改为 `false` 后定时任务暂停。
 - `enabled=true` 不等于“启动 vn.py 后马上拉取全市场”；启动时只注册任务并等待下一个调度时间。
-- `symbols` 空值不等于立刻全市场爬取；第一版使用 `financial.ingestion.catalog_path`，未配置时复用 `news.entity.catalog_path`。
+- `symbols` 空值不等于立刻全市场爬取；系统先使用 `financial.ingestion.catalog_path`，再复用 `news.entity.catalog_path`，如果都没有则读取 vn.py 当前已缓存 A 股合约，最后懒加载 AKShare A 股列表作为无账号兜底。
+- 财报数据页的 `vt_symbol` 查询框可以留空；留空时展示 PostgreSQL 中最近公告/拉取到的一只股票财报上下文，方便确认最新入库数据是否可见。
 - 盘后任务只做增量拉取，默认每天一次；财报、公告和财务指标不需要像行情那样高频轮询。
 - 早晨补偿任务只重试最近窗口和失败任务，不做大规模历史回补。
 - 历史 3 年、5 年回补必须走 UI 手动按钮，例如“回补当前股票”“回补股票池”“停止回补”。
@@ -385,12 +386,14 @@ Toolkit --> Worker : fundamentals + valuation + financials
   - 历史回补和全市场回补必须由用户手动触发，并支持进度、限流、失败重试和取消。
   - 单测：验证配置可热加载，任务失败不会影响 vn.py 主进程；启动时不会自动执行全市场任务。
   - 进度：2026-05-09 已完成默认注册 scheduler、盘后/早晨调度、配置归集、Toolkit 接入、单股手动回补、按股票池批次回补、任务状态展示、取消请求、配置热更新和 `tools.production.financial_ingestion_smoke`。
-  - 实现说明：`financial.ingestion.symbols` 留空时，慢速回补会读取 `financial.ingestion.catalog_path`，若为空则复用 `news.entity.catalog_path`；`financial.ingestion.enabled=false` 时 scheduler 仍注册但自动定时暂停，用户仍可在 UI 查看状态。
+  - 进度：2026-05-11 已补齐空 `financial.ingestion.symbols` 的自动股票池来源：`financial.ingestion.catalog_path` -> `news.entity.catalog_path` -> vn.py 已缓存 A 股合约 -> AKShare A 股列表。
+  - 实现说明：`financial.ingestion.enabled=false` 时 scheduler 仍注册但自动定时暂停，用户仍可在 UI 查看状态。
 
 - [x] **P28-T09: 财报数据管理和分析报告展示**
   - 在 TradingAgents 分析管理中新增“财报数据”Tab。
   - 支持按股票查看报告期、三大报表、指标、官方 PDF 链接、质量报告。
   - 历史分析详情页展示本次分析使用的财报版本。
+  - 进度：2026-05-11 已支持 `vt_symbol` 留空时展示最近入库财报上下文，便于确认数据页不是空白。
 
 - [x] **P28-T10: 端到端验证和落档**
   - 用至少 3 只股票验证：沪市、深市、科创/创业板各一只。
@@ -453,7 +456,7 @@ uv run python -m tools.production.financial_ingestion_smoke \
 | P28-T05 | 2026-05-09 | 待提交 | `uv run --with pytest pytest tests/test_financial_report_ingestion.py -q` |
 | P28-T06 | 2026-05-09 | 待提交 | `uv run --with pytest pytest tests/test_financial_report_ingestion.py -q` |
 | P28-T07 | 2026-05-09 | 待提交 | `uv run --with pytest pytest tests/test_financial_report_ingestion.py -q` |
-| P28-T08 | 2026-05-09 | 待提交 | `uv run --with pytest pytest tests/test_financial_report_ingestion.py::test_financial_ingestion_scheduler_reports_progress_and_manual_batches tests/test_financial_report_ingestion.py::test_financial_ingestion_scheduler_retries_failed_symbols tests/test_financial_report_ingestion.py::test_financial_ingestion_scheduler_can_request_cancel tests/test_financial_report_ingestion.py::test_engine_delegates_financial_reader_and_manual_trigger tests/test_tradingagents_ui.py::test_financial_context_tab_has_refresh_and_trigger_helpers tests/test_tradingagents_app_bootstrap.py::test_configure_tradingagents_services_registers_disabled_financial_scheduler_from_catalog -q` |
-| P28-T09 | 2026-05-09 | 待提交 | `uv run --with pytest pytest tests/test_tradingagents_ui.py -q` |
+| P28-T08 | 2026-05-11 | 待提交 | `uv run --with pytest python -m pytest tests/test_tradingagents_app_bootstrap.py tests/test_financial_report_ingestion.py::test_engine_delegates_financial_reader_and_manual_trigger -q` |
+| P28-T09 | 2026-05-11 | 待提交 | `uv run --with pytest python -m pytest tests/test_financial_report_ingestion.py::test_postgres_financial_storage_saves_and_loads_context_rows tests/test_financial_report_ingestion.py::test_postgres_financial_storage_loads_latest_context_when_symbol_is_empty tests/test_tradingagents_ui.py::test_financial_context_tab_has_refresh_and_trigger_helpers -q` |
 | P28-T10 | 2026-05-09 | 待提交 | `uv run python -m tools.production.financial_ingestion_smoke --symbols 600519.SSE,000001.SZSE,688008.SSE --lookback-years 2 --write-validation-doc`; `uv run python /private/tmp/p28_t10_point_in_time.py`; `uv run python /private/tmp/p28_t10_toolkit_context.py` |
 | P28-T11 | 2026-05-09 | 待提交 | `uv run --with pytest python -m pytest tests/test_tradingagents_prompts.py::test_worker_system_prompt_contains_f10_financial_methodology tests/test_tradingagents_f10_financial.py tests/test_financial_report_ingestion.py::test_financial_snapshot_builder_maps_akshare_em_indicator_keys tests/test_financial_report_ingestion.py::test_market_data_toolkit_includes_financials_when_reader_supports_it` |

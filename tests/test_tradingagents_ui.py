@@ -105,6 +105,7 @@ def test_financial_context_tab_has_refresh_and_trigger_helpers():
 
     detail = build_financial_context_detail_text(
         {
+            "vt_symbol": "600519.SSE",
             "quality_status": "primary",
             "statements": {
                 "income_statement": {
@@ -125,6 +126,7 @@ def test_financial_context_tab_has_refresh_and_trigger_helpers():
         }
     )
 
+    assert "vt_symbol=600519.SSE" in detail
     assert "quality_status=primary" in detail
     assert "income_statement" in detail
     assert "营业收入" in detail

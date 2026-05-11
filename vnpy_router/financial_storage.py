@@ -246,6 +246,26 @@ LIMIT %(limit)s;
 """
 
 
+SELECT_LATEST_FINANCIAL_SYMBOL_SQL: str = """
+SELECT vt_symbol
+FROM (
+    SELECT vt_symbol, announcement_date, pulled_at
+    FROM financial_statement_snapshot
+    WHERE announcement_date <= %(as_of)s
+    UNION ALL
+    SELECT vt_symbol, announcement_date, pulled_at
+    FROM financial_indicator_snapshot
+    WHERE announcement_date <= %(as_of)s
+    UNION ALL
+    SELECT vt_symbol, announcement_date, pulled_at
+    FROM financial_report_document
+    WHERE announcement_date <= %(as_of)s
+) latest
+ORDER BY announcement_date DESC, pulled_at DESC
+LIMIT 1;
+"""
+
+
 class Cursor(Protocol):
     def execute(self, sql: str, params: dict[str, Any] | None = None) -> None:
         pass
@@ -454,11 +474,47 @@ class PostgresFinancialStorage:
             )
 
         return {
+            "vt_symbol": vt_symbol,
             "statements": statements,
             "indicators": indicators,
             "documents": documents,
             "quality_status": _context_quality_status(statements, indicators, documents),
         }
+
+    def load_latest_financial_context(
+        self,
+        as_of: datetime,
+        max_periods: int = 4,
+    ) -> dict[str, Any]:
+        """
+        Load the most recently announced financial context across all symbols.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(SELECT_LATEST_FINANCIAL_SYMBOL_SQL, {"as_of": as_of})
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+
+        if not rows:
+            return {
+                "vt_symbol": "",
+                "statements": {},
+                "indicators": [],
+                "documents": [],
+                "quality_status": "empty",
+            }
+
+        vt_symbol = str(rows[0].get("vt_symbol", "") or "")
+        if not vt_symbol:
+            return {
+                "vt_symbol": "",
+                "statements": {},
+                "indicators": [],
+                "documents": [],
+                "quality_status": "empty",
+            }
+        return self.load_financial_context(vt_symbol, as_of=as_of, max_periods=max_periods)
 
 
 def build_document_id(vt_symbol: str, report_period: datetime, title: str, source: str) -> str:

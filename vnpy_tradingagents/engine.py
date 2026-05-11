@@ -162,9 +162,18 @@ class TradingAgentsEngine(BaseEngine):
         """
         if self.financial_reader is None:
             raise RuntimeError("TradingAgents financial reader is not configured")
+        as_of = datetime.now()
+        if not vt_symbol.strip():
+            load_latest = getattr(self.financial_reader, "load_latest_financial_context", None)
+            if not callable(load_latest):
+                raise RuntimeError("TradingAgents financial reader cannot load latest context")
+            return load_latest(
+                as_of=as_of,
+                max_periods=max_periods,
+            )
         return self.financial_reader.load_financial_context(
             vt_symbol,
-            as_of=datetime.now(),
+            as_of=as_of,
             max_periods=max_periods,
         )
 
@@ -247,7 +256,7 @@ class TradingAgentsEngine(BaseEngine):
         apply_settings(
             enabled=_bool_setting(settings.get("financial.ingestion.enabled"), True),
             schedule_times=schedule_times,
-            symbols=_financial_symbols_from_settings(settings),
+            symbols=_financial_symbols_from_settings(settings, self.main_engine),
             lookback_years=_int_setting(settings.get("financial.ingestion.lookback_years"), 5),
             symbol_batch_size=_int_setting(settings.get("financial.ingestion.symbol_batch_size"), 0),
         )
@@ -307,7 +316,10 @@ def _financial_schedule_times(settings: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(time for time in times if time)
 
 
-def _financial_symbols_from_settings(settings: Mapping[str, Any]) -> tuple[str, ...]:
+def _financial_symbols_from_settings(
+    settings: Mapping[str, Any],
+    main_engine: Any | None = None,
+) -> tuple[str, ...]:
     explicit_symbols = _split_csv_symbols(settings.get("financial.ingestion.symbols", ""))
     if explicit_symbols:
         return explicit_symbols
@@ -318,9 +330,24 @@ def _financial_symbols_from_settings(settings: Mapping[str, Any]) -> tuple[str, 
         or ""
     ).strip()
     if not catalog_path:
-        return ()
+        return _financial_symbols_from_runtime_universe(main_engine)
     try:
         catalog = SecurityEntityCatalog.from_path(catalog_path)
     except Exception:
-        return ()
+        return _financial_symbols_from_runtime_universe(main_engine)
     return tuple(catalog.entities.keys())
+
+
+def _financial_symbols_from_runtime_universe(main_engine: Any | None = None) -> tuple[str, ...]:
+    """
+    Fallback for hot-apply settings when no catalog is configured.
+    """
+    try:
+        from .bootstrap import _symbols_from_akshare_universe, _symbols_from_vnpy_contracts
+
+        contract_symbols = tuple(_symbols_from_vnpy_contracts(main_engine))
+        if contract_symbols:
+            return contract_symbols
+        return tuple(_symbols_from_akshare_universe())
+    except Exception:
+        return ()

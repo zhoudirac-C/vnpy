@@ -322,6 +322,7 @@ def build_financial_context_detail_text(context: dict[str, Any]) -> str:
     statements = context.get("statements") or {}
     documents = context.get("documents") or []
     lines = [
+        f"vt_symbol={context.get('vt_symbol', '-')}",
         f"quality_status={context.get('quality_status', '-')}",
         "statements:",
     ]
@@ -543,7 +544,7 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.news_detail_text = QtWidgets.QPlainTextEdit()
         self.news_detail_text.setReadOnly(True)
         self.financial_symbol_edit = QtWidgets.QLineEdit()
-        self.financial_symbol_edit.setPlaceholderText("600519.SSE")
+        self.financial_symbol_edit.setPlaceholderText("留空展示最新财报")
         self.financial_periods_spin = QtWidgets.QSpinBox()
         self.financial_periods_spin.setRange(1, 20)
         self.financial_periods_spin.setValue(int(SETTINGS.get("financial.context.max_statement_periods", 4)))
@@ -975,13 +976,9 @@ class TradingAgentsWidget(QtWidgets.QWidget):
 
     def refresh_financial_context(self) -> None:
         """
-        Load structured financial context for one symbol.
+        Load structured financial context for one symbol or latest stored data.
         """
         vt_symbol = self.financial_symbol_edit.text().strip()
-        if not vt_symbol:
-            self.financial_table.setRowCount(0)
-            self.financial_detail_text.setPlainText("status=invalid error=missing vt_symbol")
-            return
 
         try:
             self.financial_context = self.engine.load_financial_context(

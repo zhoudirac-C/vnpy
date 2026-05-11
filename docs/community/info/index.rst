@@ -13,6 +13,8 @@
    datafeed.md
    custom_quant_architecture.md
    vnpy_reuse_extension_route.md
+   ai-module-roadmap.md
+   daily-market-review-ai-technical-plan.md
    tradingagents_llm_env.md
    pycharm.md
    contribution.md

@@ -250,13 +250,17 @@ def build_news_ingestion_symbol_plan(
 
 def build_financial_ingestion_symbol_plan(
     settings: Mapping[str, Any] | None = None,
+    main_engine: Any | None = None,
+    akshare_loader: AkshareLoader | None = None,
 ) -> FinancialIngestionSymbolPlan:
     """
     Resolve the symbol list for financial report ingestion.
 
     Explicit ``financial.ingestion.symbols`` wins. When it is empty, the
     scheduler reuses ``financial.ingestion.catalog_path`` or
-    ``news.entity.catalog_path`` as a slow batch stock pool.
+    ``news.entity.catalog_path`` as a slow batch stock pool. If no catalog is
+    configured, it reuses live vn.py A-share contracts, then AKShare's stock
+    universe as a no-account fallback.
     """
     source: Mapping[str, Any] = settings or SETTINGS
     batch_size = max(0, _to_int(source.get("financial.ingestion.symbol_batch_size", 20), 20))
@@ -283,6 +287,22 @@ def build_financial_ingestion_symbol_plan(
                 source="catalog",
                 batch_size=batch_size,
             )
+
+    symbols = tuple(_symbols_from_vnpy_contracts(main_engine))
+    if symbols:
+        return FinancialIngestionSymbolPlan(
+            symbols=symbols,
+            source="vnpy_contracts",
+            batch_size=batch_size,
+        )
+
+    symbols = tuple(_symbols_from_akshare_universe(akshare_loader))
+    if symbols:
+        return FinancialIngestionSymbolPlan(
+            symbols=symbols,
+            source="akshare",
+            batch_size=batch_size,
+        )
 
     return FinancialIngestionSymbolPlan(symbols=(), source="empty", batch_size=batch_size)
 
@@ -374,7 +394,10 @@ def _configure_financial_ingestion(
     Register default-on low-frequency financial report ingestion.
     """
     try:
-        symbol_plan = build_financial_ingestion_symbol_plan(settings)
+        symbol_plan = build_financial_ingestion_symbol_plan(
+            settings,
+            main_engine=main_engine,
+        )
         schedule_times = _financial_schedule_times(settings)
         job = FinancialIngestionJob(
             provider=financial_provider_factory(settings),
