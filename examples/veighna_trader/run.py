@@ -39,6 +39,7 @@ from vnpy_tradingagents import TradingAgentsApp
 from vnpy_tradingagents.bootstrap import configure_tradingagents_services
 from vnpy_tradingagents.cta_ui_compat import install_cta_strategy_ui_refresh_patch
 from vnpy_daily_review import DailyMarketReviewApp
+from vnpy_daily_review.bootstrap import configure_daily_review_services
 
 
 def optional_class(module_name: str, class_name: str) -> type[Any] | None:
@@ -117,6 +118,7 @@ def main():
     main_engine.add_app(TradingAgentsApp)
     main_engine.add_app(DailyMarketReviewApp)
     configure_tradingagents_services(main_engine)
+    configure_daily_review_services(main_engine)
 
     main_window = MainWindow(main_engine, event_engine)
     main_window.showMaximized()

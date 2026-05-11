@@ -1,10 +1,10 @@
 # AI 每日全市场复盘技术方案
 
-版本：v0.2
+版本：v0.3
 
 日期：2026-05-11
 
-状态：vn.py 版方案，P29 开始落地
+状态：vn.py 版方案，P29 正在落地核心复盘流水线
 
 > 本文档定义的是“AI 根据全市场数据自动生成每日市场复盘和明日观察计划”的 vn.py 版本架构。它不是旧 `quantitative-try` 项目中的 FastAPI/HTML 页面，也不是 TradingAgents 单票研究页。每日市场复盘默认只生成报告和观察计划，不直接下单。
 
@@ -22,7 +22,16 @@
 - 全市场行情、板块、涨停生态、龙虎榜、分时异动、新闻公告和财报证据的复盘编排。
 - 明日观察计划、次日验证和复盘报告的独立 UI。
 
-因此需要新增 `vnpy_daily_review` 模块。第一版先按 vn.py App 方式落地 UI、Engine 边界和任务文档；后续再分阶段接入完整数据流水线。
+因此新增 `vnpy_daily_review` 模块。当前 vn.py 迁移版已经不再只停留在
+`not_configured` 边界，而是接入了第一版 `DailyReviewService`：
+
+- `VnpyAkshareDailyReviewProvider`：优先读取 vn.py 当前 tick；没有实时 tick 时降级读取 AKShare 全市场快照。
+- `MarketBreadthEngine`：计算上涨/下跌/涨跌停/市场宽度/情绪分。
+- `SectorRotationEngine`：读取 AKShare 板块，失败时从个股快照中的行业字段推断。
+- `LimitUpEmotionEngine`：读取 AKShare 涨停池，失败时降级为空并记录质量告警。
+- `LeaderScoringEngine`：生成明日观察候选标的。
+- `EvidencePackBuilder`：生成带证据 ID 的 Evidence Pack。
+- `DailyReviewMarkdownComposer`：先生成确定性 Markdown 复盘报告；后续再把 Evidence Pack 接入可审计 LLM 编排。
 
 ## 2. 与现有模块的边界
 
@@ -74,6 +83,7 @@ database "PostgreSQL\nvn.py database.*" as PG
 
 package "Review Pipeline" {
   [ProviderRouter] as Router
+  [DailyReviewService] as Service
   [DailyReviewIngestionJob] as Ingest
   [MarketSignalEngine] as Signal
   [EvidencePackBuilder] as Evidence
@@ -99,7 +109,11 @@ App --> Engine
 Engine --> Event
 Engine --> PG
 UI --> Engine
-Engine --> Orchestrator
+Engine --> Service
+Service --> Router
+Service --> Signal
+Service --> Evidence
+Service --> Orchestrator
 
 @enduml
 ```
@@ -118,7 +132,9 @@ Engine --> Orchestrator
 
 ## 6. 数据表建议
 
-后续 P29 子阶段可以逐步增加以下表。第一版 UI 不需要一次性全部建完。
+后续 P29 子阶段可以逐步增加以下表。当前 `DailyReviewService` 第一版
+先在进程内生成报告和观察计划，尚未把报告历史和 Evidence Pack 完整写入
+PostgreSQL；下一步需要把以下表用 vn.py 现有 Peewee/create_tables 方式补齐。
 
 | 表 | 作用 |
 | --- | --- |
@@ -178,11 +194,11 @@ AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
   配置
 ```
 
-第一版必须做到：
+第一版已经做到：
 
 - 在 vn.py `功能` 菜单和左侧工具栏可见。
 - 打开后是独立大窗口，行为类似 `CTA策略`。
-- 清楚显示当前是否已接入复盘服务。
+- `运行预览` 能通过 vn.py tick/AKShare provider 生成确定性复盘报告。
 - 不混入交易面板，不占用 TradingAgents 单票分析页。
 
 ## 10. 安全和生产边界
@@ -197,7 +213,9 @@ AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
 
 1. 文档落地：迁入本 vn.py 仓库并改写为 vn.py 版本。
 2. UI 可见：新增 `vnpy_daily_review` App、Engine 和 PySide Widget。
-3. 只读查询：接入 PostgreSQL 中已有新闻、财报、行情快照。
-4. 复盘流水线：实现 Evidence Pack、AI 复盘、报告落库和历史查询。
-5. 次日验证：观察计划触发情况、MFE/MAE、遗漏和误判统计。
-6. 生产验证：真实数据源 smoke、连续运行、成本、超时和审计落档。
+3. 核心流水线：接入 `DailyReviewService`、vn.py tick/AKShare provider、信号计算、Evidence Pack 和确定性报告。
+4. 只读查询：接入 PostgreSQL 中已有新闻、财报、行情快照。
+5. AI 编排：在 Evidence Pack 上增加可审计 LLM 阶段，保留确定性兜底。
+6. 报告落库：报告、观察计划、证据和模型审计写入 PostgreSQL。
+7. 次日验证：观察计划触发情况、MFE/MAE、遗漏和误判统计。
+8. 生产验证：真实数据源 smoke、连续运行、成本、超时和审计落档。

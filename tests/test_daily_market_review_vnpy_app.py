@@ -56,11 +56,78 @@ def test_daily_market_review_engine_has_safe_not_configured_boundary():
     assert validation.status == "not_configured"
 
 
+def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
+    """Engine should delegate to the migrated vn.py daily review service."""
+    from datetime import date
+    from decimal import Decimal
+
+    from vnpy.event import EventEngine
+    from vnpy_daily_review.domain import DailyStockSnapshot
+    from vnpy_daily_review.engine import DailyMarketReviewEngine
+    from vnpy_daily_review.service import DailyReviewDataBundle, DailyReviewService
+
+    class FakeProvider:
+        def load_data_bundle(self, trade_date: date) -> DailyReviewDataBundle:
+            return DailyReviewDataBundle(
+                trade_date=trade_date,
+                stocks=[
+                    DailyStockSnapshot(
+                        symbol="001267.SZSE",
+                        name="汇绿生态",
+                        trade_date=trade_date,
+                        open_price=Decimal("10"),
+                        high_price=Decimal("11"),
+                        low_price=Decimal("9.8"),
+                        close_price=Decimal("10.8"),
+                        pct_change=Decimal("8"),
+                        volume=10000,
+                        amount=Decimal("10800000"),
+                        turnover_rate=Decimal("3.5"),
+                        is_limit_up=False,
+                        is_limit_down=False,
+                        provider="fake",
+                        sector="测试板块",
+                    ),
+                    DailyStockSnapshot(
+                        symbol="600519.SSE",
+                        name="贵州茅台",
+                        trade_date=trade_date,
+                        open_price=Decimal("100"),
+                        high_price=Decimal("101"),
+                        low_price=Decimal("98"),
+                        close_price=Decimal("99"),
+                        pct_change=Decimal("-1"),
+                        volume=100,
+                        amount=Decimal("9900000"),
+                        turnover_rate=Decimal("0.2"),
+                        is_limit_up=False,
+                        is_limit_down=False,
+                        provider="fake",
+                        sector="白酒",
+                    ),
+                ],
+                provider_records=[{"provider": "fake", "data_type": "stock_snapshot", "row_count": 2}],
+            )
+
+    engine = DailyMarketReviewEngine(None, EventEngine())  # type: ignore[arg-type]
+    engine.set_review_service(DailyReviewService(FakeProvider()))
+
+    result = engine.run_preview(date(2026, 5, 11), run_llm=False)
+
+    assert result.status == "completed"
+    assert "每日市场复盘" in result.title
+    assert "汇绿生态" in result.markdown
+    assert result.watch_items
+    assert result.evidence
+    assert result.audit[0]["mode"] == "deterministic"
+
+
 def test_daily_market_review_module_does_not_import_trading_or_order_paths():
     """Daily market review must remain a report/watch-plan module, not an order module."""
     package_files = [
         Path("vnpy_daily_review/app.py"),
         Path("vnpy_daily_review/engine.py"),
+        Path("vnpy_daily_review/service.py"),
         Path("vnpy_daily_review/ui/widget.py"),
     ]
 
@@ -90,9 +157,16 @@ def test_veighna_trader_example_registers_daily_market_review_app():
         and node.args[0].id == "DailyMarketReviewApp"
         for node in ast.walk(tree)
     )
+    configures_service = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "configure_daily_review_services"
+        for node in ast.walk(tree)
+    )
 
     assert imports_app
     assert registers_app
+    assert configures_service
 
 
 def test_daily_market_review_docs_are_present_in_vnpy_docs():
@@ -108,4 +182,6 @@ def test_daily_market_review_docs_are_present_in_vnpy_docs():
     assert "每日市场复盘" in roadmap
     assert "vn.py 版本架构" in plan
     assert "DailyMarketReviewApp" in plan
+    assert "DailyReviewService" in plan
     assert "P29" in task
+    assert "P29-T06.1" in task

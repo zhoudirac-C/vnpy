@@ -4,6 +4,7 @@ from .engine import (
     DailyMarketReviewReportResult,
     DailyMarketReviewValidationResult,
 )
+from .service import DailyReviewService
 
 
 __all__ = [
@@ -11,4 +12,5 @@ __all__ = [
     "DailyMarketReviewEngine",
     "DailyMarketReviewReportResult",
     "DailyMarketReviewValidationResult",
+    "DailyReviewService",
 ]
