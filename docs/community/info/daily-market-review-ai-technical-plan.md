@@ -124,6 +124,7 @@ Service --> Orchestrator
 每日市场复盘复用 vn.py 和本 fork 已有能力，不重新发明独立数据配置：
 
 - 实时行情优先从 vn.py Gateway 获取。QMT 开通后自然接入；未开通时可用 AKShare 只读 Gateway 做研究和演示。
+- 每日复盘的 AKShare 全市场股票快照必须使用多接口降级和自动重试；当前顺序为 `stock_zh_a_spot_em` -> `stock_zh_a_spot`，单个接口失败不会直接导致复盘无数据。
 - 历史 K 线优先复用 vn.py Datafeed 和当前数据库。
 - 新闻公告复用当前 `NewsProvider`、`AnnouncementProvider`、`PostgresEventStorage`。
 - 财报上下文复用 P28 财报入库和 `MarketDataToolkit`。

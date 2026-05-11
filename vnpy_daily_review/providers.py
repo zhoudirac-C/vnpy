@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from importlib import import_module
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Any
 
 from vnpy.trader.engine import MainEngine
@@ -22,6 +22,14 @@ from .domain import (
     DailyStockSnapshot,
 )
 from .service import DailyReviewDataBundle
+
+
+AKSHARE_STOCK_SNAPSHOT_ENDPOINTS: tuple[str, ...] = (
+    "stock_zh_a_spot_em",
+    "stock_zh_a_spot",
+)
+AKSHARE_STOCK_SNAPSHOT_ATTEMPTS: int = 2
+AKSHARE_RETRY_BACKOFF_SECONDS: float = 0.5
 
 
 class VnpyAkshareDailyReviewProvider:
@@ -111,22 +119,70 @@ class VnpyAkshareDailyReviewProvider:
         trade_date: date,
         provider_records: list[dict[str, Any]],
     ) -> list[DailyStockSnapshot]:
-        started_at = perf_counter()
         try:
             akshare = import_module("akshare")
-            frame = akshare.stock_zh_a_spot_em()
-            rows = _records_from_frame(frame)
-            snapshots = [_snapshot_from_akshare_row(row, trade_date) for row in rows]
-            snapshots = [snapshot for snapshot in snapshots if snapshot is not None]
-            provider_records.append(
-                _record("akshare", "stock_snapshot", "success", len(snapshots), started_at)
-            )
-            return snapshots
         except Exception as exc:
+            started_at = perf_counter()
             provider_records.append(
                 _record("akshare", "stock_snapshot", "failed", 0, started_at, str(exc))
             )
             return []
+
+        for endpoint in AKSHARE_STOCK_SNAPSHOT_ENDPOINTS:
+            query = getattr(akshare, endpoint, None)
+            if not callable(query):
+                started_at = perf_counter()
+                provider_records.append(
+                    _record(
+                        "akshare",
+                        f"stock_snapshot:{endpoint}",
+                        "failed",
+                        0,
+                        started_at,
+                        "endpoint_not_found",
+                    )
+                )
+                continue
+
+            for attempt in range(1, AKSHARE_STOCK_SNAPSHOT_ATTEMPTS + 1):
+                started_at = perf_counter()
+                try:
+                    frame = query()
+                    rows = _records_from_frame(frame)
+                    snapshots = [
+                        _snapshot_from_akshare_row(row, trade_date, provider=f"akshare:{endpoint}")
+                        for row in rows
+                    ]
+                    snapshots = [snapshot for snapshot in snapshots if snapshot is not None]
+                except Exception as exc:
+                    provider_records.append(
+                        _record(
+                            "akshare",
+                            f"stock_snapshot:{endpoint}",
+                            "failed",
+                            0,
+                            started_at,
+                            f"attempt={attempt}; {exc}",
+                        )
+                    )
+                    if attempt < AKSHARE_STOCK_SNAPSHOT_ATTEMPTS:
+                        sleep(AKSHARE_RETRY_BACKOFF_SECONDS * attempt)
+                    continue
+
+                provider_records.append(
+                    _record(
+                        "akshare",
+                        f"stock_snapshot:{endpoint}",
+                        "success",
+                        len(snapshots),
+                        started_at,
+                        f"attempt={attempt}",
+                    )
+                )
+                if snapshots:
+                    return snapshots
+
+        return []
 
     def _load_akshare_sectors(
         self,
@@ -327,6 +383,7 @@ def _snapshot_from_tick(tick: Any, trade_date: date) -> DailyStockSnapshot | Non
 def _snapshot_from_akshare_row(
     row: dict[str, Any],
     trade_date: date,
+    provider: str = "akshare",
 ) -> DailyStockSnapshot | None:
     symbol = _vt_symbol(_text_value(row, "代码", "code", "symbol"))
     if not symbol:
@@ -360,7 +417,7 @@ def _snapshot_from_akshare_row(
         turnover_rate=_to_decimal(_row_value(row, "换手率", "turnover_rate")),
         is_limit_up=pct_change >= Decimal("9.8"),
         is_limit_down=pct_change <= Decimal("-9.8"),
-        provider="akshare",
+        provider=provider,
     )
 
 
@@ -559,7 +616,16 @@ def _vt_symbol(raw_symbol: str) -> str:
     symbol = raw_symbol.strip().upper()
     if not symbol:
         return ""
-    symbol = symbol.removeprefix("SH").removeprefix("SZ").removeprefix("BJ")
+    if symbol.startswith("SH"):
+        symbol = symbol.removeprefix("SH").split(".")[0]
+        return f"{symbol}.SSE" if symbol else ""
+    if symbol.startswith("SZ"):
+        symbol = symbol.removeprefix("SZ").split(".")[0]
+        return f"{symbol}.SZSE" if symbol else ""
+    if symbol.startswith("BJ"):
+        symbol = symbol.removeprefix("BJ").split(".")[0]
+        return f"{symbol}.BSE" if symbol else ""
+
     symbol = symbol.split(".")[0]
     if not symbol:
         return ""

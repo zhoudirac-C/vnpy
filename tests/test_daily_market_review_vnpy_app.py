@@ -301,6 +301,85 @@ def test_daily_market_review_ai_orchestrator_reuses_tradingagents_llm_settings()
     assert missing_key is None
 
 
+def test_daily_market_review_provider_retries_and_falls_back_akshare_stock_snapshot(
+    monkeypatch,
+):
+    """Daily review should not fail when the primary AKShare spot endpoint disconnects."""
+    import vnpy_daily_review.providers as provider_module
+    from vnpy_daily_review.providers import VnpyAkshareDailyReviewProvider
+
+    class FakeMainEngine:
+        def get_all_ticks(self):
+            return []
+
+        def get_contract(self, vt_symbol):
+            del vt_symbol
+            return None
+
+    class FakeAkshare:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def stock_zh_a_spot_em(self):
+            self.calls.append("stock_zh_a_spot_em")
+            raise ConnectionError("spot disconnected")
+
+        def stock_zh_a_spot(self):
+            self.calls.append("stock_zh_a_spot")
+            return [
+                {
+                    "代码": "sz001267",
+                    "名称": "汇绿生态",
+                    "最新价": 11,
+                    "今开": 10,
+                    "最高": 11,
+                    "最低": 9.8,
+                    "涨跌幅": 10,
+                    "成交量": 1200,
+                    "成交额": 132000,
+                    "换手率": 3.1,
+                }
+            ]
+
+        def stock_board_industry_name_em(self):
+            return []
+
+        def stock_zt_pool_em(self, date):
+            del date
+            return []
+
+        def stock_lhb_detail_em(self, start_date, end_date):
+            del start_date, end_date
+            return []
+
+    fake_akshare = FakeAkshare()
+    monkeypatch.setattr(provider_module, "import_module", lambda name: fake_akshare)
+    monkeypatch.setattr(provider_module, "sleep", lambda seconds: None)
+
+    bundle = VnpyAkshareDailyReviewProvider(FakeMainEngine()).load_data_bundle(
+        date(2026, 5, 11)
+    )
+
+    assert bundle.trade_date == date(2026, 5, 11)
+    assert len(bundle.stocks) == 1
+    assert bundle.stocks[0].symbol == "001267.SZSE"
+    assert bundle.stocks[0].pct_change == Decimal("10")
+    assert bundle.stocks[0].provider == "akshare:stock_zh_a_spot"
+    assert provider_module._vt_symbol("bj920000") == "920000.BSE"
+    assert fake_akshare.calls == [
+        "stock_zh_a_spot_em",
+        "stock_zh_a_spot_em",
+        "stock_zh_a_spot",
+    ]
+    assert any(
+        record["provider"] == "akshare"
+        and record["status"] == "success"
+        and record["row_count"] == 1
+        and record["data_type"] == "stock_snapshot:stock_zh_a_spot"
+        for record in bundle.provider_records
+    )
+
+
 def test_daily_market_review_schema_initializer_includes_report_tables():
     """Daily review persistence tables should reuse the existing schema initializer."""
     from vnpy_tradingagents.schema_init import EXTENSION_TABLE_NAMES
