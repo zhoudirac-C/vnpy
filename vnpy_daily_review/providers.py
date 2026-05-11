@@ -4,8 +4,9 @@ Data providers for the vn.py daily market review service.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from hashlib import sha256
 from importlib import import_module
 from time import perf_counter
 from typing import Any
@@ -13,6 +14,9 @@ from typing import Any
 from vnpy.trader.engine import MainEngine
 
 from .domain import (
+    DailyEventCatalyst,
+    DailyIntradayAnomaly,
+    DailyLhbSnapshot,
     DailyLimitUpSnapshot,
     DailySectorSnapshot,
     DailyStockSnapshot,
@@ -25,8 +29,15 @@ class VnpyAkshareDailyReviewProvider:
     Provider that first reuses live ticks in vn.py and then falls back to AKShare.
     """
 
-    def __init__(self, main_engine: MainEngine) -> None:
+    def __init__(
+        self,
+        main_engine: MainEngine,
+        event_storage: Any | None = None,
+        financial_storage: Any | None = None,
+    ) -> None:
         self._main_engine = main_engine
+        self._event_storage = event_storage
+        self._financial_storage = financial_storage
 
     def load_data_bundle(self, trade_date: date) -> DailyReviewDataBundle:
         """
@@ -38,17 +49,35 @@ class VnpyAkshareDailyReviewProvider:
             stocks = self._load_akshare_stocks(trade_date, provider_records)
         sectors = self._load_akshare_sectors(trade_date, provider_records)
         limit_ups = self._load_akshare_limit_ups(trade_date, provider_records)
+        lhb = self._load_akshare_lhb(trade_date, provider_records)
+        events = self._load_postgres_events(trade_date, provider_records)
+        financial_contexts = self._load_financial_contexts(
+            trade_date,
+            stocks,
+            provider_records,
+        )
+        intraday_anomalies = _intraday_anomalies_from_stocks(stocks)
         quality_warnings = []
         if not sectors:
             quality_warnings.append("sector_provider_empty")
         if not limit_ups:
             quality_warnings.append("limit_up_provider_empty")
+        if not lhb:
+            quality_warnings.append("lhb_provider_empty")
+        if self._event_storage is not None and not events:
+            quality_warnings.append("news_event_storage_empty")
+        if self._financial_storage is not None and not financial_contexts:
+            quality_warnings.append("financial_context_empty")
 
         return DailyReviewDataBundle(
             trade_date=trade_date,
             stocks=stocks,
             sectors=sectors,
             limit_ups=limit_ups,
+            lhb=lhb,
+            intraday_anomalies=intraday_anomalies,
+            events=events,
+            financial_contexts=financial_contexts,
             provider_records=provider_records,
             quality_warnings=quality_warnings,
         )
@@ -140,6 +169,120 @@ class VnpyAkshareDailyReviewProvider:
         except Exception as exc:
             provider_records.append(
                 _record("akshare", "limit_up_snapshot", "failed", 0, started_at, str(exc))
+            )
+            return []
+
+    def _load_akshare_lhb(
+        self,
+        trade_date: date,
+        provider_records: list[dict[str, Any]],
+    ) -> list[DailyLhbSnapshot]:
+        started_at = perf_counter()
+        try:
+            akshare = import_module("akshare")
+            frame = akshare.stock_lhb_detail_em(
+                start_date=trade_date.strftime("%Y%m%d"),
+                end_date=trade_date.strftime("%Y%m%d"),
+            )
+            rows = _records_from_frame(frame)
+            snapshots = [_lhb_from_akshare_row(row, trade_date) for row in rows]
+            snapshots = [snapshot for snapshot in snapshots if snapshot is not None]
+            provider_records.append(
+                _record("akshare", "lhb_snapshot", "success", len(snapshots), started_at)
+            )
+            return snapshots
+        except Exception as exc:
+            provider_records.append(
+                _record("akshare", "lhb_snapshot", "failed", 0, started_at, str(exc))
+            )
+            return []
+
+    def _load_postgres_events(
+        self,
+        trade_date: date,
+        provider_records: list[dict[str, Any]],
+    ) -> list[DailyEventCatalyst]:
+        started_at = perf_counter()
+        if self._event_storage is None:
+            provider_records.append(
+                _record("postgres", "news_event", "partial", 0, started_at, "not_configured")
+            )
+            return []
+        try:
+            events = self._event_storage.search_news_events(limit=200)
+            start = datetime(
+                trade_date.year,
+                trade_date.month,
+                trade_date.day,
+                tzinfo=UTC,
+            ) - timedelta(days=2)
+            end = start + timedelta(days=4)
+            catalysts = [
+                _event_catalyst_from_news_event(event, trade_date)
+                for event in events
+                if start <= _aware_datetime(getattr(event, "occurred_at", None)) <= end
+            ]
+            catalysts = [event for event in catalysts if event is not None][:80]
+            provider_records.append(
+                _record("postgres", "news_event", "success", len(catalysts), started_at)
+            )
+            return catalysts
+        except Exception as exc:
+            provider_records.append(
+                _record("postgres", "news_event", "failed", 0, started_at, str(exc))
+            )
+            return []
+
+    def _load_financial_contexts(
+        self,
+        trade_date: date,
+        stocks: list[DailyStockSnapshot],
+        provider_records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        started_at = perf_counter()
+        if self._financial_storage is None:
+            provider_records.append(
+                _record(
+                    "postgres",
+                    "financial_context",
+                    "partial",
+                    0,
+                    started_at,
+                    "not_configured",
+                )
+            )
+            return []
+        as_of = datetime(
+            trade_date.year,
+            trade_date.month,
+            trade_date.day,
+            23,
+            59,
+            tzinfo=UTC,
+        )
+        contexts: list[dict[str, Any]] = []
+        try:
+            for stock in sorted(stocks, key=lambda item: item.amount, reverse=True)[:20]:
+                context = self._financial_storage.load_financial_context(
+                    stock.symbol,
+                    as_of=as_of,
+                    max_periods=4,
+                )
+                if context.get("quality_status") != "empty":
+                    contexts.append(dict(context))
+            provider_records.append(
+                _record(
+                    "postgres",
+                    "financial_context",
+                    "success",
+                    len(contexts),
+                    started_at,
+                )
+            )
+            return contexts
+        except Exception as exc:
+            provider_records.append(
+                _record("postgres", "financial_context", "failed", 0, started_at, str(exc))
             )
             return []
 
@@ -258,6 +401,94 @@ def _limit_up_from_akshare_row(
     )
 
 
+def _lhb_from_akshare_row(
+    row: dict[str, Any],
+    trade_date: date,
+) -> DailyLhbSnapshot | None:
+    symbol = _vt_symbol(_text_value(row, "代码", "股票代码", "symbol", "code"))
+    if not symbol:
+        return None
+    buy_amount = _to_decimal(_row_value(row, "买入额", "买入金额", "buy_amount"))
+    sell_amount = _to_decimal(_row_value(row, "卖出额", "卖出金额", "sell_amount"))
+    net_buy = _to_decimal(_row_value(row, "净买额", "净买入", "net_buy_amount"))
+    if net_buy == 0 and (buy_amount > 0 or sell_amount > 0):
+        net_buy = buy_amount - sell_amount
+    return DailyLhbSnapshot(
+        symbol=symbol,
+        trade_date=trade_date,
+        buy_amount=buy_amount,
+        sell_amount=sell_amount,
+        net_buy_amount=net_buy,
+        seat_tags=[_text_value(row, "上榜原因", "解读", "reason")],
+        provider="akshare",
+    )
+
+
+def _intraday_anomalies_from_stocks(
+    stocks: list[DailyStockSnapshot],
+) -> list[DailyIntradayAnomaly]:
+    anomalies: list[DailyIntradayAnomaly] = []
+    for stock in stocks:
+        if stock.pct_change >= Decimal("7"):
+            anomaly_type = "strong_pull_up"
+        elif stock.pct_change <= Decimal("-7"):
+            anomaly_type = "sharp_selloff"
+        else:
+            continue
+        anomalies.append(
+            DailyIntradayAnomaly(
+                symbol=stock.symbol,
+                trade_date=stock.trade_date,
+                anomaly_type=anomaly_type,
+                occurred_at=datetime.now(UTC),
+                strength_score=min(Decimal("15"), abs(stock.pct_change)),
+                description=f"{stock.name} 最新涨跌幅 {stock.pct_change}%",
+                provider="derived_from_stock_snapshot",
+            )
+        )
+    return anomalies[:200]
+
+
+def _event_catalyst_from_news_event(
+    event: Any,
+    trade_date: date,
+) -> DailyEventCatalyst | None:
+    title = str(getattr(event, "title", "") or "")
+    if not title:
+        return None
+    vt_symbol = str(getattr(event, "vt_symbol", "") or "")
+    summary = str(getattr(event, "summary", "") or "")
+    content_hash = sha256(
+        "|".join(
+            [
+                str(getattr(event, "event_id", "")),
+                vt_symbol,
+                title,
+                summary,
+            ]
+        ).encode("utf-8")
+    ).hexdigest()
+    return DailyEventCatalyst(
+        trade_date=trade_date,
+        title=title,
+        source=str(getattr(event, "source", "") or "news_event"),
+        source_type=str(getattr(event, "event_type", "") or "news"),
+        published_at=_aware_datetime(getattr(event, "occurred_at", None)),
+        related_symbols=[vt_symbol] if vt_symbol else [],
+        related_sectors=[
+            value
+            for value in [
+                str(getattr(event, "sector", "") or ""),
+                str(getattr(event, "topic", "") or ""),
+            ]
+            if value
+        ],
+        sentiment=_event_sentiment(event),
+        trust_score=_trust_score(getattr(event, "trust_score", 0)),
+        content_hash=content_hash,
+    )
+
+
 def _records_from_frame(frame: Any) -> list[dict[str, Any]]:
     if frame is None:
         return []
@@ -293,6 +524,35 @@ def _to_decimal(value: Any) -> Decimal:
 
 def _positive_or(value: Decimal, fallback: Decimal) -> Decimal:
     return value if value > 0 else fallback
+
+
+def _aware_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
+    return datetime.now(UTC)
+
+
+def _trust_score(value: Any) -> Decimal:
+    score = _to_decimal(value)
+    if score <= 0:
+        return Decimal("0.6")
+    if score > 1:
+        return Decimal("1")
+    return score
+
+
+def _event_sentiment(event: Any) -> str:
+    event_type = str(getattr(event, "event_type", "") or "").lower()
+    title = str(getattr(event, "title", "") or "")
+    negative_words = ("风险", "处罚", "监管", "亏损", "减持", "暴雷", "问询")
+    positive_words = ("增长", "中标", "回购", "增持", "突破", "合作", "利好")
+    if any(word in title for word in negative_words) or "risk" in event_type:
+        return "negative"
+    if any(word in title for word in positive_words):
+        return "positive"
+    return "neutral"
 
 
 def _vt_symbol(raw_symbol: str) -> str:

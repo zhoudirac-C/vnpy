@@ -63,6 +63,14 @@ class DailyMarketReviewEngine(BaseEngine):
 
         return self._not_configured_report(date.today())
 
+    def list_reports(self, limit: int = 50) -> list[DailyMarketReviewReportResult]:
+        """
+        List historical reports for the UI.
+        """
+        if self.review_service and hasattr(self.review_service, "list_reports"):
+            return self.review_service.list_reports(limit=limit)
+        return []
+
     def run_preview(
         self,
         trade_date: date,

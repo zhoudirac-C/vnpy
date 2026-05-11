@@ -60,13 +60,19 @@
   - 修改：`examples/veighna_trader/run.py`
   - 验收：`configure_daily_review_services(main_engine)` 在 vn.py 启动时把 service 注入 `DailyMarketReviewEngine`。
 
-- [ ] **P29-T06.4: PostgreSQL 报告和证据落库**
+- [x] **P29-T06.4: PostgreSQL 报告和证据落库**
   - 目标：用 vn.py 现有 `database.*` 和 Peewee `create_tables()` 增加复盘报告、观察计划、证据和审计表。
   - 验收：UI 可加载历史报告，Evidence Pack、明日观察计划和模型审计可查。
+  - 状态：已完成第一版。新增 `daily_review_report`、`daily_review_evidence`、`daily_watch_plan`、`daily_watch_plan_item`、`daily_review_model_audit`，并在 `DailyReviewService` 生成报告后落库。
 
-- [ ] **P29-T06.5: 新闻/财报/龙虎榜/分时异动增强**
+- [x] **P29-T06.5: 新闻/财报/龙虎榜/分时异动增强第一版**
   - 目标：把 P26 新闻公告、P28 财报、龙虎榜和分时异动加入 Evidence Pack。
   - 验收：复盘报告能明确引用新闻公告/财报证据 ID，并能说明哪些数据源缺失。
+  - 状态：已完成第一版。provider 会读取 PostgreSQL `news_event`、财报上下文、AKShare 龙虎榜，并从全市场快照生成基础分时异动信号；任一来源失败只记录质量告警。
+
+- [ ] **P29-T06.6: 深度 AI 编排和生产验证**
+  - 目标：在 Evidence Pack 之上接入可审计 LLM 多阶段复盘，并做真实数据连续运行验证。
+  - 验收：模型审计、token/耗时、失败重试、连续运行结果和次日验证全部落档。
 
 ## 完成记录
 
@@ -74,7 +80,8 @@
 | --- | --- | --- | --- |
 | P29-T01 | 2026-05-11 | 未提交 | 文档已迁入并改写 |
 | P29-T02 至 P29-T05 | 2026-05-11 | 未提交 | `uv run --with pytest python -m pytest tests/test_daily_market_review_vnpy_app.py -q`，6 passed |
-| P29-T06.1 至 P29-T06.3 | 2026-05-11 | 未提交 | 迁移核心领域/信号/Evidence Pack，接入 vn.py/AKShare provider 和启动 bootstrap |
+| P29-T06.1 至 P29-T06.3 | 2026-05-11 | c8d8ccf1 | 迁移核心领域/信号/Evidence Pack，接入 vn.py/AKShare provider 和启动 bootstrap |
+| P29-T06.4 至 P29-T06.5 | 2026-05-11 | 未提交 | 报告/证据/观察计划/审计 PostgreSQL 落库；新闻、财报、龙虎榜、基础分时异动进入 Evidence Pack |
 
 ## 风险
 

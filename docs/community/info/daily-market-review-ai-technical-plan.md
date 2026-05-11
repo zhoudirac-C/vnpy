@@ -31,7 +31,8 @@
 - `LimitUpEmotionEngine`：读取 AKShare 涨停池，失败时降级为空并记录质量告警。
 - `LeaderScoringEngine`：生成明日观察候选标的。
 - `EvidencePackBuilder`：生成带证据 ID 的 Evidence Pack。
-- `DailyReviewMarkdownComposer`：先生成确定性 Markdown 复盘报告；后续再把 Evidence Pack 接入可审计 LLM 编排。
+- `PeeweeDailyReviewRepository`：复用 vn.py `database.*` 和 Peewee `create_tables()` 保存复盘报告、Evidence Pack、明日观察计划和模型审计。
+- `DailyReviewMarkdownComposer`：先生成确定性 Markdown 复盘报告，并列出证据 ID；后续再把 Evidence Pack 接入可审计 LLM 编排。
 
 ## 2. 与现有模块的边界
 
@@ -132,9 +133,8 @@ Service --> Orchestrator
 
 ## 6. 数据表建议
 
-后续 P29 子阶段可以逐步增加以下表。当前 `DailyReviewService` 第一版
-先在进程内生成报告和观察计划，尚未把报告历史和 Evidence Pack 完整写入
-PostgreSQL；下一步需要把以下表用 vn.py 现有 Peewee/create_tables 方式补齐。
+当前 `DailyReviewService` 第一版已经把报告历史和 Evidence Pack 写入
+PostgreSQL。表结构通过 vn.py 现有 Peewee/create_tables 初始化，不新增独立 DSN。
 
 | 表 | 作用 |
 | --- | --- |
@@ -146,11 +146,11 @@ PostgreSQL；下一步需要把以下表用 vn.py 现有 Peewee/create_tables �
 | `daily_lhb_snapshot` | 龙虎榜席位、买卖额、净买、机构/游资标签 |
 | `daily_intraday_anomaly` | 分时放量拉升、跳水、回封、尾盘异动 |
 | `daily_review_evidence` | 复盘证据条目，带证据 ID |
-| `daily_review_report` | Markdown 报告、摘要、模型版本和质量评分 |
-| `daily_watch_plan` | 明日观察计划 |
-| `daily_watch_plan_item` | 个股或板块级观察项 |
+| `daily_review_report` | Markdown 报告、摘要、模型版本和质量评分，已实现 |
+| `daily_watch_plan` | 明日观察计划，已实现 |
+| `daily_watch_plan_item` | 个股或板块级观察项，已实现 |
 | `daily_watch_plan_result` | 次日验证结果 |
-| `daily_review_model_audit` | prompt、模型、耗时、token、失败重试和输出校验 |
+| `daily_review_model_audit` | prompt、模型、耗时、token、失败重试和输出校验，已实现基础审计 |
 
 ## 7. 信号层
 
@@ -199,6 +199,7 @@ AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
 - 在 vn.py `功能` 菜单和左侧工具栏可见。
 - 打开后是独立大窗口，行为类似 `CTA策略`。
 - `运行预览` 能通过 vn.py tick/AKShare provider 生成确定性复盘报告。
+- `历史报告` 能读取已落库报告并双击回看。
 - 不混入交易面板，不占用 TradingAgents 单票分析页。
 
 ## 10. 安全和生产边界
@@ -215,7 +216,8 @@ AI 只读取 Evidence Pack，不直接查数据库、不直接访问 provider。
 2. UI 可见：新增 `vnpy_daily_review` App、Engine 和 PySide Widget。
 3. 核心流水线：接入 `DailyReviewService`、vn.py tick/AKShare provider、信号计算、Evidence Pack 和确定性报告。
 4. 只读查询：接入 PostgreSQL 中已有新闻、财报、行情快照。
-5. AI 编排：在 Evidence Pack 上增加可审计 LLM 阶段，保留确定性兜底。
-6. 报告落库：报告、观察计划、证据和模型审计写入 PostgreSQL。
-7. 次日验证：观察计划触发情况、MFE/MAE、遗漏和误判统计。
-8. 生产验证：真实数据源 smoke、连续运行、成本、超时和审计落档。
+5. 报告落库：报告、观察计划、证据和模型审计写入 PostgreSQL。
+6. 证据增强：新闻、财报、龙虎榜和基础分时异动加入 Evidence Pack。
+7. AI 编排：在 Evidence Pack 上增加可审计 LLM 阶段，保留确定性兜底。
+8. 次日验证：观察计划触发情况、MFE/MAE、遗漏和误判统计。
+9. 生产验证：真实数据源 smoke、连续运行、成本、超时和审计落档。

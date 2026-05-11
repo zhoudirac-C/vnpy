@@ -30,6 +30,7 @@ def test_daily_market_review_widget_exposes_required_workspace_tabs():
     assert DAILY_MARKET_REVIEW_TAB_TITLES == [
         "今日报告",
         "明日观察",
+        "历史报告",
         "市场信号",
         "验证复盘",
         "配置",
@@ -110,7 +111,21 @@ def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
             )
 
     engine = DailyMarketReviewEngine(None, EventEngine())  # type: ignore[arg-type]
-    engine.set_review_service(DailyReviewService(FakeProvider()))
+    class FakeRepository:
+        def __init__(self) -> None:
+            self.saved = []
+
+        def save_report_result(self, result):
+            self.saved.append(result)
+
+        def load_latest_report(self):
+            return self.saved[-1] if self.saved else None
+
+        def list_reports(self, limit=50):
+            return list(reversed(self.saved[-limit:]))
+
+    repository = FakeRepository()
+    engine.set_review_service(DailyReviewService(FakeProvider(), repository=repository))
 
     result = engine.run_preview(date(2026, 5, 11), run_llm=False)
 
@@ -120,6 +135,19 @@ def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
     assert result.watch_items
     assert result.evidence
     assert result.audit[0]["mode"] == "deterministic"
+    assert repository.saved == [result]
+    assert engine.load_latest_report() == result
+    assert engine.list_reports(limit=10) == [result]
+
+
+def test_daily_market_review_schema_initializer_includes_report_tables():
+    """Daily review persistence tables should reuse the existing schema initializer."""
+    from vnpy_tradingagents.schema_init import EXTENSION_TABLE_NAMES
+
+    assert "daily_review_report" in EXTENSION_TABLE_NAMES
+    assert "daily_review_evidence" in EXTENSION_TABLE_NAMES
+    assert "daily_watch_plan" in EXTENSION_TABLE_NAMES
+    assert "daily_watch_plan_item" in EXTENSION_TABLE_NAMES
 
 
 def test_daily_market_review_module_does_not_import_trading_or_order_paths():

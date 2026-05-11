@@ -16,6 +16,7 @@ from ..engine import (
 DAILY_MARKET_REVIEW_TAB_TITLES: list[str] = [
     "今日报告",
     "明日观察",
+    "历史报告",
     "市场信号",
     "验证复盘",
     "配置",
@@ -93,6 +94,19 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
         )
 
+        self.history_results: list[DailyMarketReviewReportResult] = []
+        self.history_table = QtWidgets.QTableWidget(0, 4)
+        self.history_table.setHorizontalHeaderLabels(["交易日", "状态", "标题", "信息"])
+        self.history_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.history_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.history_table.cellDoubleClicked.connect(self.load_history_row)
+        self.refresh_history_button = QtWidgets.QPushButton("刷新历史报告")
+        self.refresh_history_button.clicked.connect(self.refresh_history_reports)
+
         self.signal_text = QtWidgets.QPlainTextEdit()
         self.signal_text.setReadOnly(True)
         self.signal_text.setPlainText("市场信号流水线未接入。")
@@ -123,9 +137,10 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self.create_report_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[0])
         self.tabs.addTab(self.create_watch_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[1])
-        self.tabs.addTab(self.create_signal_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[2])
-        self.tabs.addTab(self.create_validation_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[3])
-        self.tabs.addTab(self.create_config_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[4])
+        self.tabs.addTab(self.create_history_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[2])
+        self.tabs.addTab(self.create_signal_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[3])
+        self.tabs.addTab(self.create_validation_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[4])
+        self.tabs.addTab(self.create_config_tab(), DAILY_MARKET_REVIEW_TAB_TITLES[5])
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.tabs)
@@ -159,6 +174,21 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.watch_table)
+        widget.setLayout(layout)
+        return widget
+
+    def create_history_tab(self) -> QtWidgets.QWidget:
+        """
+        Create report history tab.
+        """
+        widget = QtWidgets.QWidget()
+        controls = QtWidgets.QHBoxLayout()
+        controls.addWidget(self.refresh_history_button)
+        controls.addStretch()
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(controls)
+        layout.addWidget(self.history_table)
         widget.setLayout(layout)
         return widget
 
@@ -204,6 +234,7 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         Load latest report into the workspace.
         """
         self.apply_report_result(self.engine.load_latest_report())
+        self.refresh_history_reports()
 
     def run_preview(self) -> None:
         """
@@ -215,6 +246,33 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
             run_llm=self.run_llm_checkbox.isChecked(),
         )
         self.apply_report_result(result)
+        self.refresh_history_reports()
+
+    def refresh_history_reports(self) -> None:
+        """
+        Refresh report history rows.
+        """
+        self.history_results = list(self.engine.list_reports(limit=100))
+        self.history_table.setRowCount(len(self.history_results))
+        for row, result in enumerate(self.history_results):
+            values = [
+                result.trade_date.isoformat(),
+                result.status,
+                result.title,
+                result.message,
+            ]
+            for column, value in enumerate(values):
+                self.history_table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
+
+    def load_history_row(self, row: int, column: int) -> None:
+        """
+        Load a selected historical report.
+        """
+        del column
+        if row < 0 or row >= len(self.history_results):
+            return
+        self.apply_report_result(self.history_results[row])
+        self.tabs.setCurrentWidget(self.report_browser.parentWidget())
 
     def validate_next_day(self) -> None:
         """

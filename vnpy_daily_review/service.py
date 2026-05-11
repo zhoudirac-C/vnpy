@@ -3,8 +3,9 @@ vn.py service layer for daily market review.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
 from typing import Any, Protocol
 
 from .domain import (
@@ -16,7 +17,7 @@ from .domain import (
     DailyStockSnapshot,
 )
 from .engine import DailyMarketReviewReportResult, DailyMarketReviewValidationResult
-from .evidence import EvidencePack, EvidencePackBuilder
+from .evidence import EvidenceItem, EvidencePack, EvidencePackBuilder
 from .signals import (
     LeaderScore,
     LeaderScoringEngine,
@@ -25,6 +26,7 @@ from .signals import (
     MarketBreadthEngine,
     SectorRotationEngine,
 )
+from .storage import DailyReviewRepository, with_storage_warning
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ class DailyReviewDataBundle:
     lhb: list[DailyLhbSnapshot] = field(default_factory=list)
     intraday_anomalies: list[DailyIntradayAnomaly] = field(default_factory=list)
     events: list[DailyEventCatalyst] = field(default_factory=list)
+    financial_contexts: list[dict[str, Any]] = field(default_factory=list)
     provider_records: list[dict[str, Any]] = field(default_factory=list)
     quality_warnings: list[str] = field(default_factory=list)
 
@@ -60,8 +63,13 @@ class DailyReviewService:
     Daily market review pipeline running inside vn.py.
     """
 
-    def __init__(self, data_provider: DailyReviewDataProvider) -> None:
+    def __init__(
+        self,
+        data_provider: DailyReviewDataProvider,
+        repository: DailyReviewRepository | None = None,
+    ) -> None:
         self._data_provider = data_provider
+        self._repository = repository
         self._last_result: DailyMarketReviewReportResult | None = None
 
     def load_latest_report(self) -> DailyMarketReviewReportResult:
@@ -70,6 +78,11 @@ class DailyReviewService:
         """
         if self._last_result is not None:
             return self._last_result
+        if self._repository is not None:
+            result = self._repository.load_latest_report()
+            if result is not None:
+                self._last_result = result
+                return result
         return DailyMarketReviewReportResult(
             status="no_data",
             trade_date=date.today(),
@@ -80,6 +93,16 @@ class DailyReviewService:
             ),
             message="no_latest_report",
         )
+
+    def list_reports(self, limit: int = 50) -> list[DailyMarketReviewReportResult]:
+        """
+        List newest report results.
+        """
+        if self._repository is not None:
+            return self._repository.list_reports(limit=limit)
+        if self._last_result is not None:
+            return [self._last_result]
+        return []
 
     def run_preview(
         self,
@@ -92,6 +115,7 @@ class DailyReviewService:
         bundle = self._data_provider.load_data_bundle(trade_date)
         if not bundle.stocks:
             result = _no_data_result(bundle)
+            result = self._save_if_possible(result)
             self._last_result = result
             return result
 
@@ -117,6 +141,10 @@ class DailyReviewService:
             leader_candidates=leaders,
             news_catalysts=bundle.events,
             data_quality=bundle.quality_warnings,
+            extra_evidence=_financial_evidence_items(
+                trade_date,
+                bundle.financial_contexts,
+            ),
         )
         markdown = DailyReviewMarkdownComposer().compose(
             pack=pack,
@@ -145,6 +173,7 @@ class DailyReviewService:
             ],
             message="completed",
         )
+        result = self._save_if_possible(result)
         self._last_result = result
         return result
 
@@ -198,6 +227,21 @@ class DailyReviewService:
             message=f"validated {len(results)} watch items",
         )
 
+    def _save_if_possible(
+        self,
+        result: DailyMarketReviewReportResult,
+    ) -> DailyMarketReviewReportResult:
+        """
+        Persist a report result when repository is configured.
+        """
+        if self._repository is None:
+            return result
+        try:
+            self._repository.save_report_result(result)
+            return result
+        except Exception as exc:
+            return with_storage_warning(result, str(exc))
+
 
 class DailyReviewMarkdownComposer:
     """
@@ -234,6 +278,10 @@ class DailyReviewMarkdownComposer:
             for theme in themes
         ]
         quality_lines = [f"- {warning}" for warning in pack.data_quality] or ["- 未发现严重数据质量告警"]
+        evidence_lines = [
+            f"- `{item.evidence_id}` {item.source_type}: {item.content[:120]}"
+            for item in pack.evidence[:12]
+        ] or ["- 暂无证据条目"]
         llm_note = (
             "\n\n> 已勾选 AI 编排，但当前 vn.py 迁移版先使用确定性复盘模板；"
             "后续会在 Evidence Pack 之上接入可审计 LLM 编排。"
@@ -270,6 +318,9 @@ class DailyReviewMarkdownComposer:
                 "",
                 "## 数据质量",
                 *quality_lines,
+                "",
+                "## 证据引用",
+                *evidence_lines,
                 llm_note,
             ]
         ).strip()
@@ -309,6 +360,44 @@ def _leader_to_watch_item(leader: LeaderScore, pack: EvidencePack) -> dict[str, 
         "position_rule": leader.position_rule,
         "evidence_ids": evidence_ids,
     }
+
+
+def _financial_evidence_items(
+    trade_date: date,
+    contexts: list[dict[str, Any]],
+) -> list[EvidenceItem]:
+    items: list[EvidenceItem] = []
+    for context in contexts:
+        vt_symbol = str(context.get("vt_symbol", "") or "")
+        if not vt_symbol:
+            continue
+        quality_status = str(context.get("quality_status", "") or "")
+        indicators = list(context.get("indicators", []) or [])
+        documents = list(context.get("documents", []) or [])
+        content = (
+            f"财报上下文 {vt_symbol} quality={quality_status}，"
+            f"indicators={len(indicators)}，documents={len(documents)}"
+        )
+        items.append(
+            EvidenceItem(
+                evidence_id="",
+                source="financial_storage",
+                source_type="financial_context",
+                content=content,
+                trust_score=Decimal("0.85"),
+                data_time=datetime(
+                    trade_date.year,
+                    trade_date.month,
+                    trade_date.day,
+                    16,
+                    0,
+                    tzinfo=UTC,
+                ),
+                content_hash=sha256(content.encode("utf-8")).hexdigest(),
+                metadata=context,
+            )
+        )
+    return items
 
 
 def _role_label(role: str) -> str:

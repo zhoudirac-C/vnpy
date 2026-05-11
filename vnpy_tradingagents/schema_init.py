@@ -12,6 +12,10 @@ from vnpy_router.extension_models import (
     build_router_extension_models,
 )
 from vnpy_router.peewee import create_vnpy_postgres_database
+from vnpy_daily_review.models import (
+    DAILY_REVIEW_EXTENSION_TABLE_NAMES,
+    build_daily_review_extension_models,
+)
 
 from .models import (
     TRADINGAGENTS_EXTENSION_TABLE_NAMES,
@@ -20,7 +24,9 @@ from .models import (
 
 
 EXTENSION_TABLE_NAMES: tuple[str, ...] = (
-    ROUTER_EXTENSION_TABLE_NAMES + TRADINGAGENTS_EXTENSION_TABLE_NAMES
+    ROUTER_EXTENSION_TABLE_NAMES
+    + TRADINGAGENTS_EXTENSION_TABLE_NAMES
+    + DAILY_REVIEW_EXTENSION_TABLE_NAMES
 )
 
 
@@ -107,7 +113,11 @@ def _build_extension_models(database: Any) -> list[type]:
     """
     Build all router and TradingAgents extension models for one database.
     """
-    return build_router_extension_models(database) + build_tradingagents_extension_models(database)
+    return (
+        build_router_extension_models(database)
+        + build_tradingagents_extension_models(database)
+        + build_daily_review_extension_models(database)
+    )
 
 
 def _connect(database: Any) -> None:
