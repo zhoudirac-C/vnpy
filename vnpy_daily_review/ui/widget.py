@@ -114,6 +114,41 @@ def format_validation_result_text(result: DailyMarketReviewValidationResult) -> 
     return "\n".join(lines)
 
 
+class DailyReviewPreviewWorker(QtCore.QThread):
+    """
+    Background worker for long-running daily review preview.
+    """
+
+    result_ready = QtCore.Signal(object)
+    error_ready = QtCore.Signal(str)
+
+    def __init__(
+        self,
+        engine: DailyMarketReviewEngine,
+        trade_date: date,
+        run_llm: bool,
+        parent: QtCore.QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.engine: DailyMarketReviewEngine = engine
+        self.trade_date: date = trade_date
+        self.run_llm: bool = run_llm
+
+    def run(self) -> None:
+        """
+        Run the blocking provider/AI pipeline outside the UI thread.
+        """
+        try:
+            result = self.engine.run_preview(
+                self.trade_date,
+                run_llm=self.run_llm,
+            )
+        except Exception as exc:
+            self.error_ready.emit(f"{type(exc).__name__}: {exc}")
+            return
+        self.result_ready.emit(result)
+
+
 class DailyMarketReviewWidget(QtWidgets.QWidget):
     """
     Standalone daily market review workspace.
@@ -129,6 +164,7 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         self.main_engine: MainEngine = main_engine
         self.event_engine: EventEngine = event_engine
         self.engine: DailyMarketReviewEngine = main_engine.get_engine(APP_NAME)
+        self.preview_worker: DailyReviewPreviewWorker | None = None
 
         self.setWindowTitle(self.workspace_title)
         self.setMinimumSize(*self.workspace_minimum_size)
@@ -142,6 +178,7 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         self.load_latest_button.clicked.connect(self.load_latest_report)
         self.run_preview_button = QtWidgets.QPushButton("运行预览")
         self.run_preview_button.clicked.connect(self.run_preview)
+        self.preview_status_label = QtWidgets.QLabel("就绪")
         self.report_browser = QtWidgets.QTextBrowser()
         self.report_browser.setOpenExternalLinks(True)
         self.raw_output_text = QtWidgets.QPlainTextEdit()
@@ -226,6 +263,7 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         controls.addWidget(self.run_llm_checkbox)
         controls.addWidget(self.load_latest_button)
         controls.addWidget(self.run_preview_button)
+        controls.addWidget(self.preview_status_label)
         controls.addStretch()
 
         layout = QtWidgets.QVBoxLayout()
@@ -310,13 +348,69 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
         """
         Run one preview request.
         """
+        if self.preview_worker is not None and self.preview_worker.isRunning():
+            self.preview_status_label.setText("已有复盘任务运行中，请稍候。")
+            return
+
         trade_date = self._qdate_to_date(self.trade_date_edit.date())
-        result = self.engine.run_preview(
-            trade_date,
-            run_llm=self.run_llm_checkbox.isChecked(),
+        run_llm = self.run_llm_checkbox.isChecked()
+        self.run_preview_button.setEnabled(False)
+        self.load_latest_button.setEnabled(False)
+        self.run_preview_button.setText("加载中...")
+        self.preview_status_label.setText(
+            "正在运行 AI 编排，窗口可继续查看历史报告。"
+            if run_llm
+            else "正在读取数据并生成复盘。"
         )
+        self.report_browser.setMarkdown(
+            "## 复盘生成中\n\n"
+            "- 正在读取全市场数据、新闻、财报和复盘证据。\n"
+            "- 勾选 AI 编排时会等待模型返回，完成后自动刷新报告正文。"
+        )
+
+        worker = DailyReviewPreviewWorker(
+            self.engine,
+            trade_date,
+            run_llm=run_llm,
+            parent=self,
+        )
+        worker.result_ready.connect(self._on_preview_result)
+        worker.error_ready.connect(self._on_preview_error)
+        worker.finished.connect(self._on_preview_finished)
+        self.preview_worker = worker
+        worker.start()
+
+    def _on_preview_result(self, result: DailyMarketReviewReportResult) -> None:
+        """
+        Render a completed background preview result.
+        """
         self.apply_report_result(result)
         self.refresh_history_reports()
+        self.preview_status_label.setText(f"完成：{result.status} / {result.message}")
+
+    def _on_preview_error(self, error_message: str) -> None:
+        """
+        Render background preview failure.
+        """
+        self.report_browser.setMarkdown(
+            "# 每日市场复盘运行失败\n\n"
+            "```text\n"
+            f"{error_message}\n"
+            "```"
+        )
+        self.raw_output_text.setPlainText(error_message)
+        self.preview_status_label.setText("运行失败")
+
+    def _on_preview_finished(self) -> None:
+        """
+        Restore controls after a background preview.
+        """
+        self.run_preview_button.setEnabled(True)
+        self.load_latest_button.setEnabled(True)
+        self.run_preview_button.setText("运行预览")
+        if self.preview_worker is not None:
+            self.preview_worker.deleteLater()
+        self.preview_worker = None
 
     def refresh_history_reports(self) -> None:
         """

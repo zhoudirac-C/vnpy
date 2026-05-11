@@ -147,6 +147,31 @@ def test_daily_market_review_ui_extracts_readable_ai_report_from_json_payload():
     assert "report_markdown" in raw_text
 
 
+def test_daily_market_review_preview_runs_off_ui_thread():
+    """Preview should not run the full AI/data pipeline directly in the Qt UI slot."""
+    source = Path("vnpy_daily_review/ui/widget.py").read_text()
+    tree = ast.parse(source)
+    widget_class = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == "DailyMarketReviewWidget"
+    )
+    run_preview = next(
+        node
+        for node in widget_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_preview"
+    )
+
+    direct_calls = [
+        node
+        for node in ast.walk(run_preview)
+        if isinstance(node, ast.Attribute) and node.attr == "run_preview"
+    ]
+
+    assert "class DailyReviewPreviewWorker" in source
+    assert not direct_calls
+
+
 def test_daily_market_review_engine_runs_migrated_pipeline_with_provider():
     """Engine should delegate to the migrated vn.py daily review service."""
     from vnpy.event import EventEngine
