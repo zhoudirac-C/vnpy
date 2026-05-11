@@ -465,9 +465,15 @@ def _lhb_from_akshare_row(
     symbol = _vt_symbol(_text_value(row, "代码", "股票代码", "symbol", "code"))
     if not symbol:
         return None
-    buy_amount = _to_decimal(_row_value(row, "买入额", "买入金额", "buy_amount"))
-    sell_amount = _to_decimal(_row_value(row, "卖出额", "卖出金额", "sell_amount"))
-    net_buy = _to_decimal(_row_value(row, "净买额", "净买入", "net_buy_amount"))
+    buy_amount = _to_decimal(
+        _row_value(row, "龙虎榜买入额", "买入额", "买入金额", "buy_amount")
+    )
+    sell_amount = _to_decimal(
+        _row_value(row, "龙虎榜卖出额", "卖出额", "卖出金额", "sell_amount")
+    )
+    net_buy = _to_decimal(
+        _row_value(row, "龙虎榜净买额", "净买额", "净买入", "net_buy_amount")
+    )
     if net_buy == 0 and (buy_amount > 0 or sell_amount > 0):
         net_buy = buy_amount - sell_amount
     return DailyLhbSnapshot(

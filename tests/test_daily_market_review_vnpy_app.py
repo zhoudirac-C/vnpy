@@ -441,6 +441,67 @@ def test_daily_market_review_provider_retries_and_falls_back_akshare_stock_snaps
     )
 
 
+def test_daily_market_review_provider_parses_akshare_lhb_amount_columns(monkeypatch):
+    """Daily review should parse Eastmoney LHB amount columns from AKShare."""
+    import vnpy_daily_review.providers as provider_module
+    from vnpy_daily_review.providers import VnpyAkshareDailyReviewProvider
+
+    class FakeMainEngine:
+        def get_all_ticks(self):
+            return []
+
+        def get_contract(self, vt_symbol):
+            del vt_symbol
+            return None
+
+    class FakeAkshare:
+        def stock_zh_a_spot_em(self):
+            return [
+                {
+                    "代码": "000062",
+                    "名称": "深圳华强",
+                    "最新价": 39.09,
+                    "今开": 38,
+                    "最高": 39.09,
+                    "最低": 37.5,
+                    "涨跌幅": 9.9887,
+                    "成交量": 1000,
+                    "成交额": 100000,
+                }
+            ]
+
+        def stock_board_industry_name_em(self):
+            return []
+
+        def stock_zt_pool_em(self, date):
+            del date
+            return []
+
+        def stock_lhb_detail_em(self, start_date, end_date):
+            del start_date, end_date
+            return [
+                {
+                    "代码": "000062",
+                    "龙虎榜买入额": 673637900,
+                    "龙虎榜卖出额": 198561200,
+                    "龙虎榜净买额": 475076700,
+                    "上榜原因": "日涨幅偏离值达到7%的前5只证券",
+                }
+            ]
+
+    monkeypatch.setattr(provider_module, "import_module", lambda name: FakeAkshare())
+
+    bundle = VnpyAkshareDailyReviewProvider(FakeMainEngine()).load_data_bundle(
+        date(2026, 5, 11)
+    )
+
+    assert len(bundle.lhb) == 1
+    assert bundle.lhb[0].symbol == "000062.SZSE"
+    assert bundle.lhb[0].buy_amount == Decimal("673637900")
+    assert bundle.lhb[0].sell_amount == Decimal("198561200")
+    assert bundle.lhb[0].net_buy_amount == Decimal("475076700")
+
+
 def test_daily_market_review_schema_initializer_includes_report_tables():
     """Daily review persistence tables should reuse the existing schema initializer."""
     from vnpy_tradingagents.schema_init import EXTENSION_TABLE_NAMES
