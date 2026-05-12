@@ -218,7 +218,7 @@ PG --> UI
     - 股票池为空时，能自动从现有 vn.py 合约表 / bar overview / AKShare 股票列表生成 universe。
     - 扫描请求只生成日线 `HistoryRequest`，不会读取或请求分钟线。
 
-- [ ] **P31-T07: 扫描结果持久化**
+- [x] **P31-T07: 扫描结果持久化**
   - 新增：`vnpy_seven_boll/storage.py`
   - 修改：`vnpy_tradingagents/schema_init.py`
   - 测试：`tests/test_seven_boll_storage.py`
@@ -409,4 +409,5 @@ PG --> UI
 | P31-T04 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_cta_strategy.py -q`，5 passed |
 | P31-T05 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_backtest_strategy.py -q`，1 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-backtest.md` |
 | P31-T06 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py -q`，5 passed |
-| P31-T07 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T07 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_storage.py -q`，2 passed |
+| P31-T08 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |

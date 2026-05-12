@@ -16,6 +16,10 @@ from vnpy_daily_review.models import (
     DAILY_REVIEW_EXTENSION_TABLE_NAMES,
     build_daily_review_extension_models,
 )
+from vnpy_seven_boll.models import (
+    SEVEN_BOLL_EXTENSION_TABLE_NAMES,
+    build_seven_boll_extension_models,
+)
 
 from .models import (
     TRADINGAGENTS_EXTENSION_TABLE_NAMES,
@@ -27,6 +31,7 @@ EXTENSION_TABLE_NAMES: tuple[str, ...] = (
     ROUTER_EXTENSION_TABLE_NAMES
     + TRADINGAGENTS_EXTENSION_TABLE_NAMES
     + DAILY_REVIEW_EXTENSION_TABLE_NAMES
+    + SEVEN_BOLL_EXTENSION_TABLE_NAMES
 )
 
 
@@ -117,6 +122,7 @@ def _build_extension_models(database: Any) -> list[type]:
         build_router_extension_models(database)
         + build_tradingagents_extension_models(database)
         + build_daily_review_extension_models(database)
+        + build_seven_boll_extension_models(database)
     )
 
 

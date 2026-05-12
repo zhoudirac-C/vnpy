@@ -15,6 +15,7 @@ from .scanner import (
     VnpySevenBollHistoryProvider,
     build_scan_request_from_settings,
 )
+from .storage import PeeweeSevenBollScanRepository
 from .signals import (
     SevenBollSignal,
     SevenBollSignalResult,
@@ -32,6 +33,7 @@ __all__ = [
     "SevenBollSignal",
     "SevenBollSignalResult",
     "VnpySevenBollHistoryProvider",
+    "PeeweeSevenBollScanRepository",
     "build_scan_request_from_settings",
     "calculate_seven_bollinger",
     "evaluate_seven_boll_signal",
