@@ -235,7 +235,7 @@ PG --> UI
     - UI 可读取最近一次和历史 run。
     - 删除或重跑扫描不会影响 vn.py 原始行情数据。
 
-- [ ] **P31-T08: 定时扫描调度器**
+- [x] **P31-T08: 定时扫描调度器**
   - 新增：`vnpy_seven_boll/scheduler.py`
   - 修改：`vnpy/trader/setting.py`
   - 修改：`vnpy_tradingagents/bootstrap.py` 或新增独立 bootstrap
@@ -410,4 +410,5 @@ PG --> UI
 | P31-T05 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_backtest_strategy.py -q`，1 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-backtest.md` |
 | P31-T06 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py -q`，5 passed |
 | P31-T07 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_storage.py -q`，2 passed |
-| P31-T08 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T08 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scheduler.py -q`，5 passed |
+| P31-T09 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |

@@ -15,6 +15,7 @@ from .scanner import (
     VnpySevenBollHistoryProvider,
     build_scan_request_from_settings,
 )
+from .scheduler import SevenBollScanScheduler
 from .storage import PeeweeSevenBollScanRepository
 from .signals import (
     SevenBollSignal,
@@ -30,6 +31,7 @@ __all__ = [
     "SevenBollScanResult",
     "SevenBollScanService",
     "SevenBollScanSummary",
+    "SevenBollScanScheduler",
     "SevenBollSignal",
     "SevenBollSignalResult",
     "VnpySevenBollHistoryProvider",

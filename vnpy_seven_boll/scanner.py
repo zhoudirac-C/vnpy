@@ -47,6 +47,7 @@ class SevenBollScanRequest:
     min_buy_score: float = 65.0
     min_sell_score: float = 65.0
     symbols: tuple[str, ...] = ()
+    scan_type: str = "manual"
     end: datetime = field(default_factory=datetime.now)
     config: SevenBollIndicatorConfig = field(default_factory=SevenBollIndicatorConfig)
 
@@ -328,6 +329,7 @@ class VnpySevenBollHistoryProvider:
 def build_scan_request_from_settings(
     settings: Mapping[str, Any] | None = None,
     symbols: Sequence[str] | None = None,
+    scan_type: str = "manual",
 ) -> SevenBollScanRequest:
     """
     Build a scan request from vn.py SETTINGS plus optional UI overrides.
@@ -340,6 +342,7 @@ def build_scan_request_from_settings(
         min_buy_score=float(source.get("seven_boll.scan.min_buy_score", 65.0) or 65.0),
         min_sell_score=float(source.get("seven_boll.scan.min_sell_score", 65.0) or 65.0),
         symbols=tuple(_normalize_vt_symbol(symbol) for symbol in (symbols or []) if symbol),
+        scan_type=scan_type,
         config=SevenBollIndicatorConfig(
             window=_int_setting(source.get("seven_boll.indicator.window", 20), 20),
             std_ma_window=_int_setting(source.get("seven_boll.indicator.std_ma_window", 5), 5),

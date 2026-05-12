@@ -95,6 +95,8 @@ SETTINGS: dict = {
     "news.llm_classifier.fast_timeout_seconds": 360,
     "news.llm_classifier.deep_timeout_seconds": 2700,
     "news.llm_classifier.min_confidence": 0.65,
+    "seven_boll.scan.enabled": True,
+    "seven_boll.scan.schedule": "11:35,15:05",
 
     "database.timezone": get_localzone_name(),
     "database.name": "sqlite",
