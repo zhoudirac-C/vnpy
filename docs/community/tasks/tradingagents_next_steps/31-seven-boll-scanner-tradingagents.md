@@ -413,7 +413,7 @@ PG --> UI
 | P31-T08 | 2026-05-12 | `0435ff65` | `uv run --with pytest python -m pytest tests/test_seven_boll_scheduler.py -q`，5 passed |
 | P31-T09 | 2026-05-12 | `663e1113` | `uv run --with pytest python -m pytest tests/test_seven_boll_engine_integration.py -q`，4 passed |
 | P31-T10 | 2026-05-12 | `00377b21` | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py -q`，2 passed |
-| P31-T11 | 2026-05-12 | 待本次提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_tradingagents_context.py -q`，1 passed |
-| P31-T12 | 2026-05-12 | 待本次提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py -q`，2 passed |
+| P31-T11 | 2026-05-12 | `f1e22e50` | `uv run --with pytest python -m pytest tests/test_seven_boll_tradingagents_context.py -q`，1 passed |
+| P31-T12 | 2026-05-12 | `f1e22e50` | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py -q`，2 passed |
 | P31-T13 | 2026-05-12 | `00377b21` | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py tests/test_seven_boll_scanner.py -q`，7 passed |
-| P31-T14 | 2026-05-12 | 待本次提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py tests/test_seven_boll_cta_strategy.py tests/test_seven_boll_backtest_strategy.py tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_scheduler.py tests/test_seven_boll_engine_integration.py tests/test_seven_boll_ui.py tests/test_seven_boll_tradingagents_context.py -q`，31 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-scan-tradingagents.md` |
+| P31-T14 | 2026-05-12 | `f1e22e50` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py tests/test_seven_boll_cta_strategy.py tests/test_seven_boll_backtest_strategy.py tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_scheduler.py tests/test_seven_boll_engine_integration.py tests/test_seven_boll_ui.py tests/test_seven_boll_tradingagents_context.py -q`，31 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-scan-tradingagents.md` |
