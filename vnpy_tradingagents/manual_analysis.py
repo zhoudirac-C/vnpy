@@ -116,6 +116,12 @@ class TradingAgentsManualAnalysisService:
             )
         )
         context.update(request.context_overrides)
+        if "seven_boll_scan" in context:
+            context["seven_boll_analysis_guidance"] = (
+                "七轨布林线扫描结果只能作为日线技术面证据，不能当作唯一买卖依据。"
+                "如果基本面、新闻、财报与七轨技术信号冲突，必须明确写出冲突。"
+                "报告定位为波段/明日观察计划，不输出日内分时交易建议。"
+            )
         context["manual_analysis"] = {
             "entrypoint": "TradingAgentsApp",
             "vt_symbol": request.vt_symbol,

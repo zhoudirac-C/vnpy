@@ -297,7 +297,7 @@ PG --> UI
     - 手动扫描完成后无需重启 UI 即可查看结果。
     - 用户点单行后能跳转或联动到已有 TradingAgents 分析报告页。
 
-- [ ] **P31-T11: 扫描结果与 TradingAgents 上下文联动**
+- [x] **P31-T11: 扫描结果与 TradingAgents 上下文联动**
   - 修改：`vnpy_tradingagents/manual_analysis.py`
   - 修改：`vnpy_tradingagents/toolkit.py` 或新增 scan context helper
   - 测试：`tests/test_seven_boll_tradingagents_context.py`
@@ -318,7 +318,7 @@ PG --> UI
     - 分析报告能引用七轨扫描结果，不再只是普通手动分析。
     - 未命中扫描结果时，不会污染原有手动分析逻辑。
 
-- [ ] **P31-T12: 分析报告跳转与异步状态展示**
+- [x] **P31-T12: 分析报告跳转与异步状态展示**
   - 修改：`vnpy_tradingagents/ui/widget.py`
   - 测试：`tests/test_seven_boll_ui.py`
   - 内容：
@@ -364,7 +364,7 @@ PG --> UI
     - 用户不需要改代码即可调扫描参数。
     - 配置说明文本能解释参数作用，并明确说明“仅日线扫描，不用于日内短线”。
 
-- [ ] **P31-T14: 验证落档**
+- [x] **P31-T14: 验证落档**
   - 新增：`docs/community/ops/validation_results/<date>-seven-boll-scan-tradingagents.md`
   - 内容：
     - 记录：
@@ -406,13 +406,14 @@ PG --> UI
 | P31-T01 | 2026-05-12 | 未开始 | 未开始 |
 | P31-T02 | 2026-05-12 | `1d247adb` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
 | P31-T03 | 2026-05-12 | `1d247adb` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
-| P31-T04 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_cta_strategy.py -q`，5 passed |
-| P31-T05 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_backtest_strategy.py -q`，1 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-backtest.md` |
-| P31-T06 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py -q`，5 passed |
-| P31-T07 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_storage.py -q`，2 passed |
-| P31-T08 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scheduler.py -q`，5 passed |
-| P31-T09 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_engine_integration.py -q`，4 passed |
-| P31-T10 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py -q`，2 passed |
-| P31-T11 至 P31-T12 | 2026-05-12 | 未开始 | 未开始 |
-| P31-T13 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py tests/test_seven_boll_scanner.py -q`，7 passed |
-| P31-T14 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T04 | 2026-05-12 | `7fab772c` | `uv run --with pytest python -m pytest tests/test_seven_boll_cta_strategy.py -q`，5 passed |
+| P31-T05 | 2026-05-12 | `7fab772c` | `uv run --with pytest python -m pytest tests/test_seven_boll_backtest_strategy.py -q`，1 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-backtest.md` |
+| P31-T06 | 2026-05-12 | `80b3c345` | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py -q`，5 passed |
+| P31-T07 | 2026-05-12 | `8bc11997` | `uv run --with pytest python -m pytest tests/test_seven_boll_storage.py -q`，2 passed |
+| P31-T08 | 2026-05-12 | `0435ff65` | `uv run --with pytest python -m pytest tests/test_seven_boll_scheduler.py -q`，5 passed |
+| P31-T09 | 2026-05-12 | `663e1113` | `uv run --with pytest python -m pytest tests/test_seven_boll_engine_integration.py -q`，4 passed |
+| P31-T10 | 2026-05-12 | `00377b21` | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py -q`，2 passed |
+| P31-T11 | 2026-05-12 | 待本次提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_tradingagents_context.py -q`，1 passed |
+| P31-T12 | 2026-05-12 | 待本次提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py -q`，2 passed |
+| P31-T13 | 2026-05-12 | `00377b21` | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py tests/test_seven_boll_scanner.py -q`，7 passed |
+| P31-T14 | 2026-05-12 | 待本次提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py tests/test_seven_boll_cta_strategy.py tests/test_seven_boll_backtest_strategy.py tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_scheduler.py tests/test_seven_boll_engine_integration.py tests/test_seven_boll_ui.py tests/test_seven_boll_tradingagents_context.py -q`，31 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-scan-tradingagents.md` |

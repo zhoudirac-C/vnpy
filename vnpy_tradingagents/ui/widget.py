@@ -58,6 +58,10 @@ SEVEN_BOLL_COLUMNS: list[str] = [
     "analysis_status",
     "查看报告",
 ]
+SEVEN_BOLL_ANALYSIS_RUN_COLUMN: int = SEVEN_BOLL_COLUMNS.index("analysis_run_id")
+SEVEN_BOLL_ANALYSIS_STATUS_COLUMN: int = SEVEN_BOLL_COLUMNS.index("analysis_status")
+SEVEN_BOLL_REPORT_COLUMN: int = SEVEN_BOLL_COLUMNS.index("查看报告")
+SEVEN_BOLL_RUNNING_STATUSES: set[str] = {"queued", "running"}
 CONFIG_TAB_TITLE: str = "配置"
 TRADINGAGENTS_API_KEY_FIELD: str = "tradingagents.api_key"
 TRADINGAGENTS_CONFIG_PREFIXES: tuple[str, ...] = (
@@ -629,6 +633,14 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.seven_boll_buy_table.setHorizontalHeaderLabels(SEVEN_BOLL_COLUMNS)
         self.seven_boll_sell_table = QtWidgets.QTableWidget(0, len(SEVEN_BOLL_COLUMNS))
         self.seven_boll_sell_table.setHorizontalHeaderLabels(SEVEN_BOLL_COLUMNS)
+        for table in (self.seven_boll_buy_table, self.seven_boll_sell_table):
+            table.setSelectionBehavior(
+                QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+            )
+            table.setEditTriggers(
+                QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+            )
+            table.cellClicked.connect(self.handle_seven_boll_cell_clicked)
         self.report_browser = QtWidgets.QTextBrowser()
         self.report_browser.setOpenExternalLinks(True)
         self.config_widgets: dict[str, tuple[QtWidgets.QLineEdit, type]] = {}
@@ -1045,28 +1057,108 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         """
         Trigger analysis for the selected seven-boll candidate.
         """
-        vt_symbol = self._selected_seven_boll_symbol()
+        selected = self._selected_seven_boll_row()
+        if selected is None:
+            self.seven_boll_summary_text.setPlainText("status=invalid error=missing selected symbol")
+            return
+
+        table, row = selected
+        vt_symbol = self._seven_boll_table_text(table, row, 0)
         if not vt_symbol:
             self.seven_boll_summary_text.setPlainText("status=invalid error=missing selected symbol")
             return
+        if self._is_seven_boll_analysis_running(table, row):
+            run_id = self._seven_boll_table_text(
+                table,
+                row,
+                SEVEN_BOLL_ANALYSIS_RUN_COLUMN,
+            )
+            self.seven_boll_summary_text.setPlainText(
+                f"analysis_status=running run_id={run_id} symbol={vt_symbol}"
+            )
+            return
+
+        self._set_seven_boll_analysis_state(table, row, "queued")
+        self.seven_boll_summary_text.setPlainText(
+            f"analysis_status=queued symbol={vt_symbol}"
+        )
+        QtWidgets.QApplication.processEvents()
+        self._set_seven_boll_analysis_state(table, row, "running")
+        self.seven_boll_summary_text.setPlainText(
+            f"analysis_status=running symbol={vt_symbol}"
+        )
+        QtWidgets.QApplication.processEvents()
         try:
             run_id = self.engine.run_scan_analysis(vt_symbol)
         except Exception as exc:
+            self._set_seven_boll_analysis_state(table, row, "failed")
             self.seven_boll_summary_text.setPlainText(f"status=failed error={exc}")
             return
-        self.seven_boll_summary_text.setPlainText(f"analysis_status=queued run_id={run_id}")
+        if not run_id:
+            self._set_seven_boll_analysis_state(table, row, "failed")
+            self.seven_boll_summary_text.setPlainText(
+                f"analysis_status=failed symbol={vt_symbol} error=missing_run_id"
+            )
+            return
+        self._set_seven_boll_analysis_state(table, row, "completed", run_id)
+        self.seven_boll_summary_text.setPlainText(
+            f"analysis_status=completed run_id={run_id} symbol={vt_symbol}"
+        )
 
     def run_batch_seven_boll_analysis(self) -> None:
         """
         Trigger batch analysis for current buy/sell candidates.
         """
-        symbols = self._all_visible_seven_boll_symbols()
-        try:
-            run_ids = self.engine.run_batch_scan_analysis(symbols)
-        except Exception as exc:
-            self.seven_boll_summary_text.setPlainText(f"status=failed error={exc}")
+        rows = self._visible_seven_boll_rows()
+        queued_rows: list[tuple[QtWidgets.QTableWidget, int, str]] = []
+        skipped = 0
+        for table, row in rows:
+            vt_symbol = self._seven_boll_table_text(table, row, 0)
+            if not vt_symbol:
+                continue
+            if self._is_seven_boll_analysis_running(table, row):
+                skipped += 1
+                continue
+            self._set_seven_boll_analysis_state(table, row, "queued")
+            queued_rows.append((table, row, vt_symbol))
+
+        if not queued_rows:
+            self.seven_boll_summary_text.setPlainText(
+                f"analysis_status=running queued=0 skipped={skipped}"
+            )
             return
-        self.seven_boll_summary_text.setPlainText("analysis_status=queued run_ids=" + ",".join(run_ids))
+
+        self.seven_boll_summary_text.setPlainText(
+            f"analysis_status=queued queued={len(queued_rows)} skipped={skipped}"
+        )
+        QtWidgets.QApplication.processEvents()
+
+        run_ids: list[str] = []
+        failed = 0
+        for table, row, vt_symbol in queued_rows:
+            self._set_seven_boll_analysis_state(table, row, "running")
+            self.seven_boll_summary_text.setPlainText(
+                f"analysis_status=running symbol={vt_symbol}"
+            )
+            QtWidgets.QApplication.processEvents()
+            try:
+                run_id = self.engine.run_scan_analysis(vt_symbol)
+            except Exception:
+                failed += 1
+                self._set_seven_boll_analysis_state(table, row, "failed")
+                continue
+            if not run_id:
+                failed += 1
+                self._set_seven_boll_analysis_state(table, row, "failed")
+                continue
+            run_ids.append(run_id)
+            self._set_seven_boll_analysis_state(table, row, "completed", run_id)
+
+        self.seven_boll_summary_text.setPlainText(
+            "analysis_status=completed run_ids="
+            + ",".join(run_ids)
+            + f" failed={failed} skipped={skipped}"
+        )
 
     def _populate_seven_boll_table(self, table: QtWidgets.QTableWidget, candidates: list[Any]) -> None:
         table.setRowCount(len(candidates))
@@ -1085,13 +1177,48 @@ class TradingAgentsWidget(QtWidgets.QWidget):
                 table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
         table.resizeColumnsToContents()
 
+    def handle_seven_boll_cell_clicked(self, row: int, column: int) -> None:
+        """
+        Jump from a seven-boll scan row to the persisted Markdown report.
+        """
+        table = self.sender()
+        if table not in (self.seven_boll_buy_table, self.seven_boll_sell_table):
+            return
+        if row < 0 or row >= table.rowCount():
+            return
+        if column != SEVEN_BOLL_REPORT_COLUMN:
+            return
+
+        vt_symbol = self._seven_boll_table_text(table, row, 0)
+        run_id = self._seven_boll_table_text(
+            table,
+            row,
+            SEVEN_BOLL_ANALYSIS_RUN_COLUMN,
+        )
+        if not run_id:
+            self._set_seven_boll_analysis_state(table, row, "failed")
+            self.seven_boll_summary_text.setPlainText(
+                f"analysis_status=failed symbol={vt_symbol} error=missing_report"
+            )
+            return
+
+        self.history_symbol_edit.setText(vt_symbol)
+        self.refresh_analysis_history(select_run_id=run_id)
+        self.tabs.setCurrentWidget(self.report_tab)
+
     def _selected_seven_boll_symbol(self) -> str:
+        selected = self._selected_seven_boll_row()
+        if selected is None:
+            return ""
+        table, row = selected
+        return self._seven_boll_table_text(table, row, 0)
+
+    def _selected_seven_boll_row(self) -> tuple[QtWidgets.QTableWidget, int] | None:
         for table in (self.seven_boll_buy_table, self.seven_boll_sell_table):
             row = table.currentRow()
             if row >= 0:
-                item = table.item(row, 0)
-                return item.text() if item is not None else ""
-        return ""
+                return table, row
+        return None
 
     def _all_visible_seven_boll_symbols(self) -> list[str]:
         symbols: list[str] = []
@@ -1101,6 +1228,56 @@ class TradingAgentsWidget(QtWidgets.QWidget):
                 if item is not None and item.text():
                     symbols.append(item.text())
         return symbols
+
+    def _visible_seven_boll_rows(self) -> list[tuple[QtWidgets.QTableWidget, int]]:
+        rows: list[tuple[QtWidgets.QTableWidget, int]] = []
+        for table in (self.seven_boll_buy_table, self.seven_boll_sell_table):
+            for row in range(table.rowCount()):
+                rows.append((table, row))
+        return rows
+
+    def _seven_boll_table_text(
+        self,
+        table: QtWidgets.QTableWidget,
+        row: int,
+        column: int,
+    ) -> str:
+        item = table.item(row, column)
+        return item.text().strip() if item is not None else ""
+
+    def _is_seven_boll_analysis_running(
+        self,
+        table: QtWidgets.QTableWidget,
+        row: int,
+    ) -> bool:
+        return (
+            self._seven_boll_table_text(
+                table,
+                row,
+                SEVEN_BOLL_ANALYSIS_STATUS_COLUMN,
+            )
+            in SEVEN_BOLL_RUNNING_STATUSES
+        )
+
+    def _set_seven_boll_analysis_state(
+        self,
+        table: QtWidgets.QTableWidget,
+        row: int,
+        status: str,
+        run_id: str = "",
+    ) -> None:
+        if run_id:
+            table.setItem(
+                row,
+                SEVEN_BOLL_ANALYSIS_RUN_COLUMN,
+                QtWidgets.QTableWidgetItem(run_id),
+            )
+        table.setItem(
+            row,
+            SEVEN_BOLL_ANALYSIS_STATUS_COLUMN,
+            QtWidgets.QTableWidgetItem(status),
+        )
+        table.resizeColumnsToContents()
 
     def search_news_events(self) -> None:
         """
