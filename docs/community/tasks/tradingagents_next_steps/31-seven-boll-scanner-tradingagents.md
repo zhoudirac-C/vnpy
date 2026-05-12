@@ -81,7 +81,7 @@ PG --> UI
 
 ## 阶段任务
 
-- [ ] **P31-T01: 文档与边界定稿**
+- [x] **P31-T01: 文档与边界定稿**
   - 修改：`docs/community/info/seven_bollinger_bands_strategy.md`
   - 修改：`docs/community/tasks/tradingagents_next_steps/README.md`
   - 内容：
@@ -403,7 +403,7 @@ PG --> UI
 
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
-| P31-T01 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T01 | 2026-05-12 | 待本次提交 | 文档边界收口：P31 第一阶段只做日线指标、CTA/回测、扫描、调度、UI 和 TradingAgents 联动；分时/自动下单/组合资金分配延后 |
 | P31-T02 | 2026-05-12 | `1d247adb` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
 | P31-T03 | 2026-05-12 | `1d247adb` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
 | P31-T04 | 2026-05-12 | `7fab772c` | `uv run --with pytest python -m pytest tests/test_seven_boll_cta_strategy.py -q`，5 passed |
