@@ -181,7 +181,7 @@ PG --> UI
     - 至少能在 vn.py `CTA回测` 中手动选择策略并执行。
     - 文档中明确说明示例回测只用于验证逻辑，不代表生产收益。
 
-- [ ] **P31-T06: 全市场扫描服务**
+- [x] **P31-T06: 全市场扫描服务**
   - 新增：`vnpy_seven_boll/scanner.py`
   - 测试：`tests/test_seven_boll_scanner.py`
   - 内容：
@@ -408,4 +408,5 @@ PG --> UI
 | P31-T03 | 2026-05-12 | `1d247adb` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
 | P31-T04 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_cta_strategy.py -q`，5 passed |
 | P31-T05 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_backtest_strategy.py -q`，1 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-backtest.md` |
-| P31-T06 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T06 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py -q`，5 passed |
+| P31-T07 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |
