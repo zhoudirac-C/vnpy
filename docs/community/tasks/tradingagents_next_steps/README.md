@@ -58,6 +58,7 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 - [x] TradingAgents 定位需要从“混入传统策略”调整为“手动分析页 + 独立 AI 策略 + 独立 AI 回测策略”；传统规则策略默认不消费 AI 信号。
 - [ ] 完整财报信息还没有入库任务；`MarketDataToolkit` 已有 `fundamentals/valuation` 读取入口，但缺三大报表、财务指标、官方披露 PDF 元数据和点时防穿越校验。
 - [x] 每日市场复盘旧方案已迁入 vn.py 文档并补独立 `每日市场复盘` App/UI 入口；完整数据流水线仍在 P29-T06 后续阶段。
+- [x] 每日市场复盘已在 P30 接入龙虎榜机构/活跃营业部/疑似游资席位拆解、上榜原因分类、买卖集中度和 AI 提示词约束。
 
 ## 阶段文档
 
@@ -92,15 +93,17 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 | P27 | [27-tradingagents-strategy-positioning.md](27-tradingagents-strategy-positioning.md) | 收敛 TradingAgents 为手动分析、独立 AI 策略和 AI 回测链路；传统策略默认不接 AI |
 | P28 | [28-financial-report-ingestion.md](28-financial-report-ingestion.md) | 接入完整财报入库：三大报表、财务指标、官方披露文档、质量评分和 TradingAgents 财务上下文 |
 | P29 | [29-daily-market-review-vnpy-app.md](29-daily-market-review-vnpy-app.md) | 把 AI 每日全市场复盘迁入 vn.py，新增独立 App/UI 和后续数据流水线任务 |
+| P30 | [30-daily-review-lhb-seat-analysis.md](30-daily-review-lhb-seat-analysis.md) | 增强每日复盘龙虎榜证据：机构/活跃营业部/疑似游资、成功率、上榜原因、买卖集中度和 AI 提示词 |
 | P31 | [31-seven-boll-scanner-tradingagents.md](31-seven-boll-scanner-tradingagents.md) | 新增七轨布林线日线指标、CTA/回测策略、全市场日线扫描、午盘预览/收盘正式触发，以及和 TradingAgents 的单点/批量分析联动 |
 
 ## 下一步推荐
 
 1. P31 先落七轨布林线日线指标、CTA/回测策略和全市场日线扫描，再把扫描结果接到 TradingAgents 分析管理页。
 2. P29 继续补每日市场复盘的完整全市场数据流水线和连续运行验证。
-3. P28 继续补完整财报入库，否则 TradingAgents 的基本面分析只能看到行情和新闻，无法稳定读取三大报表和财务指标。
-4. P27 已完成代码级定位纠偏；随后回到 P19，用本地 fixture 和 vn.py BacktestingEngine 跑通 AI 回测闭环，并把验证结果落档。
-5. 再完成 P20/P21，把真实数据源、股票 Gateway、仿真和 live gate 分别验证清楚。
-6. 若要补新闻增强，P24/P25/P26 已完成代码级链路和一次真实公网/GLM smoke；下一步是连续运行和实体误链率抽样。
-7. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
-8. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。
+3. P30 继续强化龙虎榜深度证据和 AI 提示词，让每日复盘能区分机构推动、活跃营业部推动、疑似游资接力和高集中度风险。
+4. P28 继续补完整财报入库，否则 TradingAgents 的基本面分析只能看到行情和新闻，无法稳定读取三大报表和财务指标。
+5. P27 已完成代码级定位纠偏；随后回到 P19，用本地 fixture 和 vn.py BacktestingEngine 跑通 AI 回测闭环，并把验证结果落档。
+6. 再完成 P20/P21，把真实数据源、股票 Gateway、仿真和 live gate 分别验证清楚。
+7. 若要补新闻增强，P24/P25/P26 已完成代码级链路和一次真实公网/GLM smoke；下一步是连续运行和实体误链率抽样。
+8. 同步处理 P22/P23，避免 UI 使用问题和文档口径不一致继续干扰生产联调。
+9. 连续运行稳定并完成审计导出后，才考虑小资金实盘灰度。

@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from importlib import import_module
+import re
 from time import perf_counter, sleep
 from typing import Any
 
@@ -16,7 +17,10 @@ from vnpy.trader.engine import MainEngine
 from .domain import (
     DailyEventCatalyst,
     DailyIntradayAnomaly,
+    DailyLhbActiveSeatSnapshot,
+    DailyLhbInstitutionSnapshot,
     DailyLhbSnapshot,
+    DailyLhbStockSeatSnapshot,
     DailyLimitUpSnapshot,
     DailySectorSnapshot,
     DailyStockSnapshot,
@@ -30,6 +34,7 @@ AKSHARE_STOCK_SNAPSHOT_ENDPOINTS: tuple[str, ...] = (
 )
 AKSHARE_STOCK_SNAPSHOT_ATTEMPTS: int = 2
 AKSHARE_RETRY_BACKOFF_SECONDS: float = 0.5
+AKSHARE_LHB_STOCK_SEAT_DETAIL_LIMIT: int = 8
 
 
 class VnpyAkshareDailyReviewProvider:
@@ -58,6 +63,19 @@ class VnpyAkshareDailyReviewProvider:
         sectors = self._load_akshare_sectors(trade_date, provider_records)
         limit_ups = self._load_akshare_limit_ups(trade_date, provider_records)
         lhb = self._load_akshare_lhb(trade_date, provider_records)
+        lhb_institutions = self._load_akshare_lhb_institutions(
+            trade_date,
+            provider_records,
+        )
+        lhb_active_seats = self._load_akshare_lhb_active_seats(
+            trade_date,
+            provider_records,
+        )
+        lhb_stock_seats = self._load_akshare_lhb_stock_seats(
+            trade_date,
+            lhb,
+            provider_records,
+        )
         events = self._load_postgres_events(trade_date, provider_records)
         financial_contexts = self._load_financial_contexts(
             trade_date,
@@ -83,6 +101,9 @@ class VnpyAkshareDailyReviewProvider:
             sectors=sectors,
             limit_ups=limit_ups,
             lhb=lhb,
+            lhb_institutions=lhb_institutions,
+            lhb_active_seats=lhb_active_seats,
+            lhb_stock_seats=lhb_stock_seats,
             intraday_anomalies=intraday_anomalies,
             events=events,
             financial_contexts=financial_contexts,
@@ -250,6 +271,207 @@ class VnpyAkshareDailyReviewProvider:
         except Exception as exc:
             provider_records.append(
                 _record("akshare", "lhb_snapshot", "failed", 0, started_at, str(exc))
+            )
+            return []
+
+    def _load_akshare_lhb_institutions(
+        self,
+        trade_date: date,
+        provider_records: list[dict[str, Any]],
+    ) -> list[DailyLhbInstitutionSnapshot]:
+        started_at = perf_counter()
+        try:
+            akshare = import_module("akshare")
+            query = getattr(akshare, "stock_lhb_jgmmtj_em", None)
+            if not callable(query):
+                provider_records.append(
+                    _record(
+                        "akshare",
+                        "lhb_institution_snapshot",
+                        "partial",
+                        0,
+                        started_at,
+                        "endpoint_not_found",
+                    )
+                )
+                return []
+            frame = query(
+                start_date=trade_date.strftime("%Y%m%d"),
+                end_date=trade_date.strftime("%Y%m%d"),
+            )
+            rows = _records_from_frame(frame)
+            snapshots = [_lhb_institution_from_akshare_row(row, trade_date) for row in rows]
+            snapshots = [snapshot for snapshot in snapshots if snapshot is not None]
+            provider_records.append(
+                _record(
+                    "akshare",
+                    "lhb_institution_snapshot",
+                    "success",
+                    len(snapshots),
+                    started_at,
+                )
+            )
+            return snapshots
+        except Exception as exc:
+            provider_records.append(
+                _record(
+                    "akshare",
+                    "lhb_institution_snapshot",
+                    "failed",
+                    0,
+                    started_at,
+                    str(exc),
+                )
+            )
+            return []
+
+    def _load_akshare_lhb_active_seats(
+        self,
+        trade_date: date,
+        provider_records: list[dict[str, Any]],
+    ) -> list[DailyLhbActiveSeatSnapshot]:
+        started_at = perf_counter()
+        try:
+            akshare = import_module("akshare")
+            query = getattr(akshare, "stock_lhb_hyyyb_em", None)
+            if not callable(query):
+                provider_records.append(
+                    _record(
+                        "akshare",
+                        "lhb_active_seat_snapshot",
+                        "partial",
+                        0,
+                        started_at,
+                        "endpoint_not_found",
+                    )
+                )
+                return []
+            frame = query(
+                start_date=trade_date.strftime("%Y%m%d"),
+                end_date=trade_date.strftime("%Y%m%d"),
+            )
+            rows = _records_from_frame(frame)
+            snapshots = [_lhb_active_seat_from_akshare_row(row, trade_date) for row in rows]
+            snapshots = [snapshot for snapshot in snapshots if snapshot is not None]
+            provider_records.append(
+                _record(
+                    "akshare",
+                    "lhb_active_seat_snapshot",
+                    "success",
+                    len(snapshots),
+                    started_at,
+                )
+            )
+            return snapshots
+        except Exception as exc:
+            provider_records.append(
+                _record(
+                    "akshare",
+                    "lhb_active_seat_snapshot",
+                    "failed",
+                    0,
+                    started_at,
+                    str(exc),
+                )
+            )
+            return []
+
+    def _load_akshare_lhb_stock_seats(
+        self,
+        trade_date: date,
+        lhb_snapshots: list[DailyLhbSnapshot],
+        provider_records: list[dict[str, Any]],
+    ) -> list[DailyLhbStockSeatSnapshot]:
+        started_at = perf_counter()
+        if not lhb_snapshots:
+            provider_records.append(
+                _record(
+                    "akshare",
+                    "lhb_stock_seat_snapshot",
+                    "partial",
+                    0,
+                    started_at,
+                    "empty_lhb_snapshot",
+                )
+            )
+            return []
+        try:
+            akshare = import_module("akshare")
+            query = getattr(akshare, "stock_lhb_stock_detail_em", None)
+            if not callable(query):
+                provider_records.append(
+                    _record(
+                        "akshare",
+                        "lhb_stock_seat_snapshot",
+                        "partial",
+                        0,
+                        started_at,
+                        "endpoint_not_found",
+                    )
+                )
+                return []
+
+            snapshots: list[DailyLhbStockSeatSnapshot] = []
+            candidates = sorted(
+                lhb_snapshots,
+                key=lambda item: abs(item.net_buy_amount),
+                reverse=True,
+            )[:AKSHARE_LHB_STOCK_SEAT_DETAIL_LIMIT]
+            for lhb in candidates:
+                symbol = lhb.symbol.split(".")[0]
+                for side, flag in (("buy", "买入"), ("sell", "卖出")):
+                    try:
+                        frame = query(
+                            symbol=symbol,
+                            date=trade_date.strftime("%Y%m%d"),
+                            flag=flag,
+                        )
+                    except Exception as exc:
+                        provider_records.append(
+                            _record(
+                                "akshare",
+                                f"lhb_stock_seat_snapshot:{symbol}:{side}",
+                                "failed",
+                                0,
+                                perf_counter(),
+                                str(exc),
+                            )
+                        )
+                        continue
+                    rows = _records_from_frame(frame)
+                    snapshots.extend(
+                        snapshot
+                        for snapshot in [
+                            _lhb_stock_seat_from_akshare_row(
+                                row,
+                                trade_date,
+                                lhb.symbol,
+                                side,
+                            )
+                            for row in rows
+                        ]
+                        if snapshot is not None
+                    )
+            provider_records.append(
+                _record(
+                    "akshare",
+                    "lhb_stock_seat_snapshot",
+                    "success",
+                    len(snapshots),
+                    started_at,
+                )
+            )
+            return snapshots
+        except Exception as exc:
+            provider_records.append(
+                _record(
+                    "akshare",
+                    "lhb_stock_seat_snapshot",
+                    "failed",
+                    0,
+                    started_at,
+                    str(exc),
+                )
             )
             return []
 
@@ -465,6 +687,8 @@ def _lhb_from_akshare_row(
     symbol = _vt_symbol(_text_value(row, "代码", "股票代码", "symbol", "code"))
     if not symbol:
         return None
+    reason = _text_value(row, "上榜原因", "原因", "reason")
+    interpretation = _text_value(row, "解读", "interpretation")
     buy_amount = _to_decimal(
         _row_value(row, "龙虎榜买入额", "买入额", "买入金额", "buy_amount")
     )
@@ -478,11 +702,128 @@ def _lhb_from_akshare_row(
         net_buy = buy_amount - sell_amount
     return DailyLhbSnapshot(
         symbol=symbol,
+        name=_text_value(row, "名称", "股票简称", "name"),
         trade_date=trade_date,
         buy_amount=buy_amount,
         sell_amount=sell_amount,
         net_buy_amount=net_buy,
-        seat_tags=[_text_value(row, "上榜原因", "解读", "reason")],
+        seat_tags=[value for value in [reason, interpretation] if value],
+        provider="akshare",
+        list_reason=reason,
+        reason_category=_classify_lhb_reason(reason),
+        net_buy_ratio=_optional_decimal(
+            _row_value(row, "净买额占总成交比", "净买额占比", "net_buy_ratio")
+        ),
+        turnover_ratio=_optional_decimal(
+            _row_value(row, "成交额占总成交比", "龙虎榜成交占比", "turnover_ratio")
+        ),
+        turnover_rate=_optional_decimal(_row_value(row, "换手率", "turnover_rate")),
+    )
+
+
+def _lhb_institution_from_akshare_row(
+    row: dict[str, Any],
+    trade_date: date,
+) -> DailyLhbInstitutionSnapshot | None:
+    symbol = _vt_symbol(_text_value(row, "代码", "股票代码", "symbol", "code"))
+    if not symbol:
+        return None
+    reason = _text_value(row, "上榜原因", "原因", "reason")
+    return DailyLhbInstitutionSnapshot(
+        symbol=symbol,
+        name=_text_value(row, "名称", "股票简称", "name"),
+        trade_date=trade_date,
+        buy_institution_count=int(_to_decimal(_row_value(row, "买方机构数", "buyer_count"))),
+        sell_institution_count=int(_to_decimal(_row_value(row, "卖方机构数", "seller_count"))),
+        buy_amount=_to_decimal(
+            _row_value(row, "机构买入总额", "买入额", "买入金额", "buy_amount")
+        ),
+        sell_amount=_to_decimal(
+            _row_value(row, "机构卖出总额", "卖出额", "卖出金额", "sell_amount")
+        ),
+        net_amount=_to_decimal(
+            _row_value(row, "机构买入净额", "机构净买额", "净买额", "net_amount")
+        ),
+        provider="akshare",
+        list_reason=reason,
+        reason_category=_classify_lhb_reason(reason),
+        concentration_ratio=_optional_decimal(
+            _row_value(
+                row,
+                "机构净买额占总成交额比",
+                "净买额占总成交比",
+                "concentration_ratio",
+            )
+        ),
+    )
+
+
+def _lhb_active_seat_from_akshare_row(
+    row: dict[str, Any],
+    trade_date: date,
+) -> DailyLhbActiveSeatSnapshot | None:
+    seat_name = _text_value(row, "营业部名称", "交易营业部名称", "名称", "seat_name")
+    if not seat_name:
+        return None
+    buy_symbols = [
+        value.strip()
+        for value in re.split(r"[,，、\s]+", _text_value(row, "买入股票", "buy_symbols"))
+        if value.strip()
+    ]
+    return DailyLhbActiveSeatSnapshot(
+        seat_name=seat_name,
+        trade_date=trade_date,
+        list_day_count=int(_to_decimal(_row_value(row, "上榜日", "上榜次数", "list_day_count"))),
+        buy_stock_count=int(_to_decimal(_row_value(row, "买入个股数", "buy_stock_count"))),
+        sell_stock_count=int(_to_decimal(_row_value(row, "卖出个股数", "sell_stock_count"))),
+        buy_amount=_to_decimal(
+            _row_value(row, "买入总金额", "买入金额", "buy_amount")
+        ),
+        sell_amount=_to_decimal(
+            _row_value(row, "卖出总金额", "卖出金额", "sell_amount")
+        ),
+        net_amount=_to_decimal(
+            _row_value(row, "总买卖净额", "净买额", "net_amount")
+        ),
+        buy_symbols=buy_symbols,
+        provider="akshare",
+        seat_type_hint=_seat_type_hint(seat_name),
+    )
+
+
+def _lhb_stock_seat_from_akshare_row(
+    row: dict[str, Any],
+    trade_date: date,
+    vt_symbol: str,
+    side: str,
+) -> DailyLhbStockSeatSnapshot | None:
+    seat_name = _text_value(row, "营业部名称", "交易营业部名称", "机构名称", "名称", "seat_name")
+    if not seat_name:
+        return None
+    amount = _to_decimal(
+        _row_value(
+            row,
+            "买入金额" if side == "buy" else "卖出金额",
+            "买入额" if side == "buy" else "卖出额",
+            "金额",
+            "amount",
+        )
+    )
+    if amount <= 0:
+        fallback_amount = _to_decimal(_row_value(row, "买入金额", "买入额", "卖出金额", "卖出额"))
+        amount = fallback_amount
+    success_rate = _optional_decimal(_row_value(row, "成功率", "success_rate"))
+    if success_rate is None:
+        success_rate = _extract_success_rate(" ".join(str(value) for value in row.values()))
+    return DailyLhbStockSeatSnapshot(
+        symbol=vt_symbol,
+        trade_date=trade_date,
+        side=side,
+        seat_name=seat_name,
+        seat_code=_text_value(row, "营业部代码", "席位代码", "代码", "seat_code"),
+        amount=amount,
+        success_rate=success_rate,
+        seat_type_hint=_seat_type_hint(seat_name),
         provider="akshare",
     )
 
@@ -578,11 +919,59 @@ def _to_decimal(value: Any) -> Decimal:
     if value is None:
         return Decimal("0")
     try:
-        if str(value).lower() in {"nan", "none", ""}:
+        text = str(value).strip().replace("%", "").replace(",", "")
+        if text.lower() in {"nan", "none", ""}:
             return Decimal("0")
-        return Decimal(str(value))
+        return Decimal(text)
     except (InvalidOperation, ValueError):
         return Decimal("0")
+
+
+def _optional_decimal(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text.lower() in {"", "nan", "none", "--", "-"}:
+        return None
+    return _to_decimal(text)
+
+
+def _extract_success_rate(text: str) -> Decimal | None:
+    match = re.search(r"成功率[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*%", text)
+    if not match:
+        return None
+    return _optional_decimal(match.group(1))
+
+
+def _classify_lhb_reason(reason: str) -> str:
+    if not reason:
+        return "unknown"
+    if "ST" in reason.upper() or "退市" in reason:
+        return "st_or_risk"
+    if "换手" in reason:
+        return "turnover"
+    if "振幅" in reason:
+        return "amplitude"
+    if any(keyword in reason for keyword in ("连续三个交易日", "连续3个交易日", "累计")):
+        return "three_day_deviation"
+    if any(keyword in reason for keyword in ("涨幅偏离", "跌幅偏离", "偏离值", "价格涨跌")):
+        return "price_deviation"
+    return "unknown"
+
+
+def _seat_type_hint(seat_name: str) -> str:
+    normalized = seat_name.strip()
+    if not normalized:
+        return "unknown"
+    if "机构专用" in normalized or "机构席位" in normalized:
+        return "institution"
+    if "深股通" in normalized or "沪股通" in normalized:
+        return "northbound"
+    if any(keyword in normalized for keyword in ("拉萨", "团结路", "东环路", "湖滨路")):
+        return "hot_money"
+    if "营业部" in normalized:
+        return "broker_branch"
+    return "unknown"
 
 
 def _positive_or(value: Decimal, fallback: Decimal) -> Decimal:

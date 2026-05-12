@@ -190,6 +190,10 @@ class PeeweeDailyReviewRepository:
                 .order_by(self.plan_item_model.item_id)
             )
             watch_items = [_watch_item_from_row(item) for item in item_rows]
+            watch_items = _merge_watch_item_extras(
+                watch_items,
+                list(structured.get("watch_items", []) or []),
+            )
         if not watch_items:
             watch_items = list(structured.get("watch_items", []) or [])
 
@@ -288,6 +292,38 @@ def _watch_item_from_row(row: Any) -> dict[str, Any]:
         "position_rule": row.position_rule,
         "evidence_ids": list(row.evidence_ids or []),
     }
+
+
+def _merge_watch_item_extras(
+    saved_items: list[dict[str, Any]],
+    structured_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Restore non-table fields such as capital_type/lhb_summary from structured JSON.
+    """
+    if not saved_items or not structured_items:
+        return saved_items
+
+    structured_by_symbol = {
+        str(item.get("symbol", "")): item
+        for item in structured_items
+        if isinstance(item, dict)
+    }
+    merged: list[dict[str, Any]] = []
+    for item in saved_items:
+        symbol = str(item.get("symbol", ""))
+        extra = dict(structured_by_symbol.get(symbol, {}) or {})
+        combined = {**extra, **item}
+        for key in (
+            "capital_type",
+            "lhb_summary",
+            "lhb_reason_category",
+            "concentration_risk",
+        ):
+            if key in extra and key not in item:
+                combined[key] = extra[key]
+        merged.append(combined)
+    return merged
 
 
 def _evidence_from_row(row: Any) -> dict[str, Any]:

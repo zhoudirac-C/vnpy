@@ -46,6 +46,20 @@ def _validate_status(value: str, allowed: set[str], field_name: str = "status") 
         raise ValueError(f"{field_name} must be one of {sorted(allowed)}")
 
 
+def _validate_optional_percentage(value: Decimal | None, field_name: str) -> None:
+    if value is None:
+        return
+    if value < 0 or value > 100:
+        raise ValueError(f"{field_name} must be between 0 and 100")
+
+
+def _validate_optional_signed_percentage(value: Decimal | None, field_name: str) -> None:
+    if value is None:
+        return
+    if value < -100 or value > 100:
+        raise ValueError(f"{field_name} must be between -100 and 100")
+
+
 def _validate_price_range(
     open_price: Decimal,
     high_price: Decimal,
@@ -182,12 +196,106 @@ class DailyLhbSnapshot:
     net_buy_amount: Decimal
     seat_tags: list[str]
     provider: str
+    name: str = ""
+    list_reason: str = ""
+    reason_category: str = "unknown"
+    net_buy_ratio: Decimal | None = None
+    turnover_ratio: Decimal | None = None
+    turnover_rate: Decimal | None = None
 
     def __post_init__(self) -> None:
         validate_symbol(self.symbol)
         _validate_non_empty(self.provider, "provider")
         _validate_non_negative(self.buy_amount, "buy_amount")
         _validate_non_negative(self.sell_amount, "sell_amount")
+        _validate_optional_signed_percentage(self.net_buy_ratio, "net_buy_ratio")
+        _validate_optional_percentage(self.turnover_ratio, "turnover_ratio")
+        _validate_optional_percentage(self.turnover_rate, "turnover_rate")
+
+
+@dataclass(frozen=True)
+class DailyLhbInstitutionSnapshot:
+    """
+    Institution buy/sell summary on the dragon-tiger list.
+    """
+
+    symbol: str
+    trade_date: date
+    buy_institution_count: int
+    sell_institution_count: int
+    buy_amount: Decimal
+    sell_amount: Decimal
+    net_amount: Decimal
+    provider: str
+    name: str = ""
+    list_reason: str = ""
+    reason_category: str = "unknown"
+    concentration_ratio: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        validate_symbol(self.symbol)
+        _validate_non_empty(self.provider, "provider")
+        _validate_non_negative(self.buy_institution_count, "buy_institution_count")
+        _validate_non_negative(self.sell_institution_count, "sell_institution_count")
+        _validate_non_negative(self.buy_amount, "buy_amount")
+        _validate_non_negative(self.sell_amount, "sell_amount")
+        _validate_optional_signed_percentage(
+            self.concentration_ratio,
+            "concentration_ratio",
+        )
+
+
+@dataclass(frozen=True)
+class DailyLhbActiveSeatSnapshot:
+    """
+    Active broker branch summary on the dragon-tiger list.
+    """
+
+    seat_name: str
+    trade_date: date
+    list_day_count: int
+    buy_stock_count: int
+    sell_stock_count: int
+    buy_amount: Decimal
+    sell_amount: Decimal
+    net_amount: Decimal
+    buy_symbols: list[str]
+    provider: str
+    seat_type_hint: str = "unknown"
+
+    def __post_init__(self) -> None:
+        _validate_non_empty(self.seat_name, "seat_name")
+        _validate_non_empty(self.provider, "provider")
+        _validate_non_negative(self.list_day_count, "list_day_count")
+        _validate_non_negative(self.buy_stock_count, "buy_stock_count")
+        _validate_non_negative(self.sell_stock_count, "sell_stock_count")
+        _validate_non_negative(self.buy_amount, "buy_amount")
+        _validate_non_negative(self.sell_amount, "sell_amount")
+
+
+@dataclass(frozen=True)
+class DailyLhbStockSeatSnapshot:
+    """
+    Per-stock dragon-tiger list seat detail.
+    """
+
+    symbol: str
+    trade_date: date
+    side: str
+    seat_name: str
+    amount: Decimal
+    provider: str
+    seat_code: str = ""
+    success_rate: Decimal | None = None
+    seat_type_hint: str = "unknown"
+
+    def __post_init__(self) -> None:
+        validate_symbol(self.symbol)
+        _validate_status(self.side, {"buy", "sell"}, "side")
+        _validate_non_empty(self.seat_name, "seat_name")
+        _validate_non_empty(self.provider, "provider")
+        _validate_non_negative(self.amount, "amount")
+        _validate_optional_percentage(self.success_rate, "success_rate")
 
 
 @dataclass(frozen=True)

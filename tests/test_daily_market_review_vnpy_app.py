@@ -327,6 +327,79 @@ def test_daily_market_review_ai_orchestrator_falls_back_with_failed_audit():
     assert result.watch_items
 
 
+def test_daily_market_review_ai_orchestrator_uses_total_timeout_budget(monkeypatch):
+    """The daily review AI timeout should cap the whole staged orchestration."""
+    import vnpy_daily_review.ai as ai_module
+    from vnpy_daily_review.ai import DailyReviewAIOrchestrator, DailyReviewLLMResponse
+    from vnpy_daily_review.service import DailyReviewService
+
+    current_time = 0.0
+
+    def fake_perf_counter():
+        return current_time
+
+    class SlowFirstStageClient:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def chat(self, messages, timeout_seconds, extra_body=None):
+            nonlocal current_time
+            self.calls.append(timeout_seconds)
+            current_time = 11.0
+            return DailyReviewLLMResponse(content="第一阶段完成。")
+
+    client = SlowFirstStageClient()
+    monkeypatch.setattr(ai_module.time, "perf_counter", fake_perf_counter)
+
+    service = DailyReviewService(
+        make_daily_review_fake_provider(),
+        ai_orchestrator=DailyReviewAIOrchestrator(
+            client=client,
+            provider="glm",
+            model_name="glm-4.7",
+            timeout_seconds=10,
+            max_retries=0,
+        ),
+    )
+
+    result = service.run_preview(date(2026, 5, 11), run_llm=True)
+
+    assert client.calls == [10]
+    assert result.status == "partial"
+    assert "total_timeout" in result.message
+    failed_audit = [audit for audit in result.audit if audit.get("status") == "failed"]
+    assert failed_audit[-1]["error_message"] == "daily_review_ai_total_timeout:10s"
+
+
+def test_daily_review_llm_client_fails_fast_when_endpoint_is_unreachable(monkeypatch):
+    """Network outage should fail before waiting for the long model timeout."""
+    import vnpy_daily_review.ai as ai_module
+    from vnpy_daily_review.ai import OpenAICompatibleDailyReviewLLMClient
+
+    def broken_connection(address, timeout):
+        del address, timeout
+        raise OSError("network is down")
+
+    monkeypatch.setattr(ai_module.socket, "create_connection", broken_connection)
+    client = OpenAICompatibleDailyReviewLLMClient(
+        base_url="https://open.bigmodel.cn/api/paas/v4",
+        api_key="secret-value",
+        model_name="glm-4.7",
+        max_completion_tokens=128,
+        connect_timeout_seconds=3,
+    )
+
+    try:
+        client.chat(
+            [{"role": "user", "content": "ping"}],
+            timeout_seconds=2700,
+        )
+    except RuntimeError as exc:
+        assert "llm_network_unreachable" in str(exc)
+    else:
+        raise AssertionError("expected network preflight failure")
+
+
 def test_daily_market_review_ai_orchestrator_reuses_tradingagents_llm_settings():
     """Daily review LLM config should reuse the existing vn.py AI provider settings."""
     from vnpy_daily_review.ai import build_daily_review_ai_orchestrator_from_settings

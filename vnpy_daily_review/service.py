@@ -11,7 +11,10 @@ from typing import Any, Protocol
 from .domain import (
     DailyEventCatalyst,
     DailyIntradayAnomaly,
+    DailyLhbActiveSeatSnapshot,
+    DailyLhbInstitutionSnapshot,
     DailyLhbSnapshot,
+    DailyLhbStockSeatSnapshot,
     DailyLimitUpSnapshot,
     DailySectorSnapshot,
     DailyStockSnapshot,
@@ -22,6 +25,8 @@ from .signals import (
     LeaderScore,
     LeaderScoringEngine,
     LhbCapitalEngine,
+    LhbSeatAnalysisEngine,
+    LhbSeatAnalysisSignal,
     LimitUpEmotionEngine,
     MarketBreadthEngine,
     SectorRotationEngine,
@@ -40,6 +45,9 @@ class DailyReviewDataBundle:
     sectors: list[DailySectorSnapshot] = field(default_factory=list)
     limit_ups: list[DailyLimitUpSnapshot] = field(default_factory=list)
     lhb: list[DailyLhbSnapshot] = field(default_factory=list)
+    lhb_institutions: list[DailyLhbInstitutionSnapshot] = field(default_factory=list)
+    lhb_active_seats: list[DailyLhbActiveSeatSnapshot] = field(default_factory=list)
+    lhb_stock_seats: list[DailyLhbStockSeatSnapshot] = field(default_factory=list)
     intraday_anomalies: list[DailyIntradayAnomaly] = field(default_factory=list)
     events: list[DailyEventCatalyst] = field(default_factory=list)
     financial_contexts: list[dict[str, Any]] = field(default_factory=list)
@@ -144,6 +152,12 @@ class DailyReviewService:
         )
         limit_signal = LimitUpEmotionEngine().calculate(bundle.limit_ups)
         lhb_signal = LhbCapitalEngine().calculate(bundle.lhb)
+        lhb_seat_signal = LhbSeatAnalysisEngine().calculate(
+            lhb_snapshots=bundle.lhb,
+            institution_snapshots=bundle.lhb_institutions,
+            active_seats=bundle.lhb_active_seats,
+            stock_seats=bundle.lhb_stock_seats,
+        )
         leaders = LeaderScoringEngine().calculate(
             stock_snapshots=bundle.stocks,
             sector_signals=sector_signals,
@@ -151,12 +165,15 @@ class DailyReviewService:
             lhb_snapshots=bundle.lhb,
             intraday_anomalies=bundle.intraday_anomalies,
             event_catalysts=bundle.events,
+            lhb_seat_signal=lhb_seat_signal,
         )[:20]
         pack = EvidencePackBuilder().build(
             trade_date=trade_date,
             market_signal=market_signal,
             sector_signals=sector_signals[:12],
             leader_candidates=leaders,
+            lhb_capital_signal=lhb_signal,
+            lhb_seat_signal=lhb_seat_signal,
             news_catalysts=bundle.events,
             data_quality=bundle.quality_warnings,
             extra_evidence=_financial_evidence_items(
@@ -169,6 +186,7 @@ class DailyReviewService:
             leaders=leaders,
             limit_signal=limit_signal,
             lhb_net_buy_amount=lhb_signal.net_buy_amount,
+            lhb_seat_signal=lhb_seat_signal,
             run_llm=run_llm,
         )
         watch_items = [_leader_to_watch_item(leader, pack) for leader in leaders[:10]]
@@ -312,6 +330,7 @@ class DailyReviewMarkdownComposer:
         leaders: list[LeaderScore],
         limit_signal: Any,
         lhb_net_buy_amount: Decimal,
+        lhb_seat_signal: LhbSeatAnalysisSignal | None,
         run_llm: bool,
     ) -> str:
         """
@@ -335,6 +354,7 @@ class DailyReviewMarkdownComposer:
             )
             for theme in themes
         ]
+        lhb_lines = _lhb_seat_summary_lines(lhb_seat_signal)
         quality_lines = [f"- {warning}" for warning in pack.data_quality] or ["- 未发现严重数据质量告警"]
         evidence_lines = [
             f"- `{item.evidence_id}` {item.source_type}: {item.content[:120]}"
@@ -356,6 +376,7 @@ class DailyReviewMarkdownComposer:
                     f"最高连板 {limit_signal.max_board_count}，炸板率 {limit_signal.broken_board_rate}。"
                 ),
                 f"- 龙虎榜净买合计：{lhb_net_buy_amount}。",
+                *(lhb_lines or ["- 龙虎榜席位拆解：暂无机构/营业部明细。"]),
                 "",
                 "## 主线和板块",
                 *(theme_lines or ["- 暂无可用板块数据，已从个股快照中尝试推断。"]),
@@ -409,8 +430,42 @@ def _leader_to_watch_item(leader: LeaderScore, pack: EvidencePack) -> dict[str, 
         "entry_condition": leader.entry_condition,
         "avoid_condition": leader.avoid_condition,
         "position_rule": leader.position_rule,
+        "capital_type": leader.evidence_payload.get("capital_type", "none"),
+        "lhb_summary": leader.evidence_payload.get("lhb_summary", ""),
+        "lhb_reason_category": leader.evidence_payload.get("lhb_reason_category", ""),
+        "concentration_risk": leader.evidence_payload.get("concentration_risk", False),
         "evidence_ids": evidence_ids,
     }
+
+
+def _lhb_seat_summary_lines(signal: LhbSeatAnalysisSignal | None) -> list[str]:
+    if signal is None:
+        return []
+    lines = [
+        (
+            "- 龙虎榜机构净买前列："
+            f"{', '.join(signal.institution_top_buy_symbols[:8]) or '暂无'}；"
+            "机构净卖前列："
+            f"{', '.join(signal.institution_top_sell_symbols[:8]) or '暂无'}。"
+        ),
+        (
+            "- 活跃席位净买前列："
+            + (
+                "；".join(
+                    f"{item['seat_name']}({item['net_amount']})"
+                    for item in signal.active_seat_top_buy[:5]
+                )
+                or "暂无"
+            )
+            + "。"
+        ),
+        (
+            "- 高集中度/高换手观察："
+            f"{', '.join(signal.high_concentration_symbols[:8]) or '暂无'}。"
+        ),
+        f"- 上榜原因分布：{signal.reason_category_counts or {}}。",
+    ]
+    return lines
 
 
 def _financial_evidence_items(
@@ -456,6 +511,8 @@ def _role_label(role: str) -> str:
         "sector_anchor": "板块锚点",
         "limit_up_height": "连板高度",
         "trend_core": "趋势核心",
+        "institution_lhb": "机构龙虎榜",
+        "hot_money_lhb": "游资龙虎榜",
         "risk_watch": "风险观察",
     }
     return labels.get(role, role)

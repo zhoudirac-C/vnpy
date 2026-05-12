@@ -10,7 +10,13 @@ import re
 from typing import Any
 
 from .domain import DailyEventCatalyst
-from .signals import LeaderScore, MarketBreadthSignal, SectorRotationSignal
+from .signals import (
+    LeaderScore,
+    LhbCapitalSignal,
+    LhbSeatAnalysisSignal,
+    MarketBreadthSignal,
+    SectorRotationSignal,
+)
 
 
 SECRET_PATTERNS = [
@@ -124,6 +130,8 @@ class EvidencePackBuilder:
         leader_candidates: list[LeaderScore],
         risk_events: list[DailyEventCatalyst] | None = None,
         news_catalysts: list[DailyEventCatalyst] | None = None,
+        lhb_capital_signal: LhbCapitalSignal | None = None,
+        lhb_seat_signal: LhbSeatAnalysisSignal | None = None,
         data_quality: list[str] | None = None,
         extra_evidence: list[EvidenceItem] | None = None,
     ) -> EvidencePack:
@@ -133,6 +141,10 @@ class EvidencePackBuilder:
         evidence: list[EvidenceItem] = [_market_evidence(trade_date, market_signal)]
         evidence.extend(_sector_evidence(trade_date, signal) for signal in sector_signals)
         evidence.extend(_leader_evidence(trade_date, leader) for leader in leader_candidates)
+        if lhb_capital_signal is not None:
+            evidence.append(_lhb_capital_evidence(trade_date, lhb_capital_signal))
+        if lhb_seat_signal is not None:
+            evidence.extend(_lhb_seat_evidence(trade_date, lhb_seat_signal))
         risk_events = risk_events or []
         news_catalysts = news_catalysts or []
         evidence.extend(_event_evidence(event) for event in risk_events)
@@ -236,10 +248,12 @@ def _sector_evidence(trade_date: date, signal: SectorRotationSignal) -> Evidence
 
 
 def _leader_evidence(trade_date: date, leader: LeaderScore) -> EvidenceItem:
+    lhb_summary = str(leader.evidence_payload.get("lhb_summary", "") or "")
     content = (
         f"风向标{leader.symbol} {leader.name} role={leader.role}，"
         f"score={leader.score}，action={leader.watch_action}，"
-        f"entry={leader.entry_condition}，avoid={leader.avoid_condition}"
+        f"entry={leader.entry_condition}，avoid={leader.avoid_condition}，"
+        f"lhb={lhb_summary}"
     )
     return EvidenceItem(
         evidence_id="",
@@ -251,6 +265,71 @@ def _leader_evidence(trade_date: date, leader: LeaderScore) -> EvidenceItem:
         content_hash="",
         metadata=leader.evidence_payload,
     )
+
+
+def _lhb_capital_evidence(trade_date: date, signal: LhbCapitalSignal) -> EvidenceItem:
+    content = (
+        f"龙虎榜资金合计净买={signal.net_buy_amount}，"
+        f"净买前列={','.join(signal.top_net_buy_symbols[:8])}，"
+        f"净卖前列={','.join(signal.top_net_sell_symbols[:8])}"
+    )
+    return EvidenceItem(
+        evidence_id="",
+        source="signal_engine",
+        source_type="lhb_capital_flow",
+        content=content,
+        trust_score=Decimal("0.86"),
+        data_time=_close_time(trade_date),
+        content_hash="",
+        metadata=signal.evidence_payload,
+    )
+
+
+def _lhb_seat_evidence(
+    trade_date: date,
+    signal: LhbSeatAnalysisSignal,
+) -> list[EvidenceItem]:
+    items: list[EvidenceItem] = []
+    summary = (
+        f"龙虎榜席位拆解：机构净买前列={','.join(signal.institution_top_buy_symbols[:8])}，"
+        f"机构净卖前列={','.join(signal.institution_top_sell_symbols[:8])}，"
+        f"高集中度={','.join(signal.high_concentration_symbols[:8])}，"
+        f"上榜原因分布={signal.reason_category_counts}"
+    )
+    items.append(
+        EvidenceItem(
+            evidence_id="",
+            source="signal_engine",
+            source_type="lhb_seat_analysis",
+            content=summary,
+            trust_score=Decimal("0.86"),
+            data_time=_close_time(trade_date),
+            content_hash="",
+            metadata=signal.evidence_payload,
+        )
+    )
+    for symbol, payload in list(signal.symbol_payloads.items())[:30]:
+        content = (
+            f"{symbol} 龙虎榜：reason={payload.get('reason_category')}，"
+            f"capital={payload.get('capital_type')}，"
+            f"net_buy={payload.get('net_buy_amount')}，"
+            f"institution_net={payload.get('institution_net_amount')}，"
+            f"turnover_ratio={payload.get('turnover_ratio')}，"
+            f"concentration_risk={payload.get('concentration_risk')}"
+        )
+        items.append(
+            EvidenceItem(
+                evidence_id="",
+                source="signal_engine",
+                source_type="lhb_symbol_seat_analysis",
+                content=content,
+                trust_score=Decimal("0.86"),
+                data_time=_close_time(trade_date),
+                content_hash="",
+                metadata=dict(payload),
+            )
+        )
+    return items
 
 
 def _event_evidence(event: DailyEventCatalyst) -> EvidenceItem:
@@ -293,7 +372,7 @@ def _theme_payload(signal: SectorRotationSignal) -> dict[str, Any]:
 
 
 def _leader_payload(leader: LeaderScore) -> dict[str, Any]:
-    return {
+    payload = {
         "symbol": leader.symbol,
         "name": leader.name,
         "role": leader.role,
@@ -303,6 +382,16 @@ def _leader_payload(leader: LeaderScore) -> dict[str, Any]:
         "avoid_condition": leader.avoid_condition,
         "position_rule": leader.position_rule,
     }
+    extra_keys = [
+        "capital_type",
+        "lhb_summary",
+        "lhb_reason_category",
+        "concentration_risk",
+    ]
+    for key in extra_keys:
+        if key in leader.evidence_payload:
+            payload[key] = leader.evidence_payload[key]
+    return payload
 
 
 def _event_payload(event: DailyEventCatalyst) -> dict[str, Any]:

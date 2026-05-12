@@ -9,7 +9,10 @@ from typing import Any
 from .domain import (
     DailyEventCatalyst,
     DailyIntradayAnomaly,
+    DailyLhbActiveSeatSnapshot,
+    DailyLhbInstitutionSnapshot,
     DailyLhbSnapshot,
+    DailyLhbStockSeatSnapshot,
     DailyLimitUpSnapshot,
     DailySectorSnapshot,
     DailyStockSnapshot,
@@ -71,6 +74,23 @@ class LhbCapitalSignal:
     net_buy_amount: Decimal
     top_net_buy_symbols: list[str]
     top_net_sell_symbols: list[str]
+    evidence_payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class LhbSeatAnalysisSignal:
+    """
+    Dragon-tiger list institution and seat behavior signal.
+    """
+
+    institution_top_buy_symbols: list[str]
+    institution_top_sell_symbols: list[str]
+    active_seat_top_buy: list[dict[str, Any]]
+    suspected_hot_money_seats: list[str]
+    reason_category_counts: dict[str, int]
+    high_concentration_symbols: list[str]
+    symbol_payloads: dict[str, dict[str, Any]]
+    risk_tags: list[str] = field(default_factory=list)
     evidence_payload: dict[str, Any] = field(default_factory=dict)
 
 
@@ -261,6 +281,191 @@ class LhbCapitalEngine:
         )
 
 
+class LhbSeatAnalysisEngine:
+    """
+    Calculate institution, active seat, reason, and concentration signals.
+    """
+
+    def calculate(
+        self,
+        lhb_snapshots: list[DailyLhbSnapshot],
+        institution_snapshots: list[DailyLhbInstitutionSnapshot],
+        active_seats: list[DailyLhbActiveSeatSnapshot],
+        stock_seats: list[DailyLhbStockSeatSnapshot],
+    ) -> LhbSeatAnalysisSignal:
+        """
+        Summarize dragon-tiger list seat behavior.
+        """
+        lhb_by_symbol = {snapshot.symbol: snapshot for snapshot in lhb_snapshots}
+        institution_by_symbol = {
+            snapshot.symbol: snapshot
+            for snapshot in institution_snapshots
+        }
+        stock_seats_by_symbol: dict[str, list[DailyLhbStockSeatSnapshot]] = {}
+        for seat in stock_seats:
+            stock_seats_by_symbol.setdefault(seat.symbol, []).append(seat)
+
+        sorted_institutions = sorted(
+            institution_snapshots,
+            key=lambda snapshot: snapshot.net_amount,
+            reverse=True,
+        )
+        sorted_active = sorted(
+            active_seats,
+            key=lambda seat: seat.net_amount,
+            reverse=True,
+        )
+        reason_category_counts: dict[str, int] = {}
+        for snapshot in lhb_snapshots:
+            reason_category_counts[snapshot.reason_category] = (
+                reason_category_counts.get(snapshot.reason_category, 0) + 1
+            )
+        for snapshot in institution_snapshots:
+            if snapshot.symbol in lhb_by_symbol:
+                continue
+            reason_category_counts[snapshot.reason_category] = (
+                reason_category_counts.get(snapshot.reason_category, 0) + 1
+            )
+
+        symbol_payloads: dict[str, dict[str, Any]] = {}
+        risk_tags: list[str] = []
+        all_symbols = set(lhb_by_symbol) | set(institution_by_symbol) | set(stock_seats_by_symbol)
+        for symbol in all_symbols:
+            lhb = lhb_by_symbol.get(symbol)
+            institution = institution_by_symbol.get(symbol)
+            seats = stock_seats_by_symbol.get(symbol, [])
+            stock_hot_money_net = sum(
+                (
+                    seat.amount if seat.side == "buy" else -seat.amount
+                    for seat in seats
+                    if seat.seat_type_hint in {"hot_money", "broker_branch"}
+                ),
+                Decimal("0"),
+            )
+            institution_net = institution.net_amount if institution is not None else Decimal("0")
+            lhb_net = lhb.net_buy_amount if lhb is not None else Decimal("0")
+            capital_type = _capital_type(
+                institution_net=institution_net,
+                hot_money_net=stock_hot_money_net,
+                lhb_net=lhb_net,
+            )
+            concentration_risk = _has_concentration_risk(lhb) if lhb is not None else False
+            if institution is not None and institution.concentration_ratio is not None:
+                concentration_risk = (
+                    concentration_risk
+                    or abs(institution.concentration_ratio) >= Decimal("15")
+                )
+            if concentration_risk:
+                risk_tags.append(f"high_concentration:{symbol}")
+            reason_category = (
+                lhb.reason_category
+                if lhb is not None
+                else (institution.reason_category if institution is not None else "unknown")
+            )
+            symbol_payloads[symbol] = {
+                "name": (
+                    lhb.name
+                    if lhb is not None
+                    else (institution.name if institution is not None else "")
+                ),
+                "reason_category": reason_category,
+                "list_reason": (
+                    lhb.list_reason
+                    if lhb is not None
+                    else (institution.list_reason if institution is not None else "")
+                ),
+                "net_buy_amount": str(lhb_net),
+                "net_buy_ratio": (
+                    _decimal_to_text(lhb.net_buy_ratio)
+                    if lhb is not None
+                    else ""
+                ),
+                "turnover_ratio": (
+                    _decimal_to_text(lhb.turnover_ratio)
+                    if lhb is not None
+                    else _decimal_to_text(
+                        institution.concentration_ratio
+                        if institution is not None
+                        else None
+                    )
+                ),
+                "turnover_rate": (
+                    _decimal_to_text(lhb.turnover_rate)
+                    if lhb is not None
+                    else ""
+                ),
+                "institution_net_amount": str(institution_net),
+                "institution_buy_count": (
+                    institution.buy_institution_count
+                    if institution is not None
+                    else 0
+                ),
+                "institution_sell_count": (
+                    institution.sell_institution_count
+                    if institution is not None
+                    else 0
+                ),
+                "stock_hot_money_net_amount": str(stock_hot_money_net),
+                "capital_type": capital_type,
+                "concentration_risk": concentration_risk,
+                "top_seats": [
+                    {
+                        "side": seat.side,
+                        "seat_name": seat.seat_name,
+                        "seat_type_hint": seat.seat_type_hint,
+                        "amount": str(seat.amount),
+                        "success_rate": _decimal_to_text(seat.success_rate),
+                    }
+                    for seat in sorted(seats, key=lambda item: item.amount, reverse=True)[:8]
+                ],
+            }
+
+        return LhbSeatAnalysisSignal(
+            institution_top_buy_symbols=[
+                snapshot.symbol
+                for snapshot in sorted_institutions
+                if snapshot.net_amount > 0
+            ][:10],
+            institution_top_sell_symbols=[
+                snapshot.symbol
+                for snapshot in reversed(sorted_institutions)
+                if snapshot.net_amount < 0
+            ][:10],
+            active_seat_top_buy=[
+                {
+                    "seat_name": seat.seat_name,
+                    "seat_type_hint": seat.seat_type_hint,
+                    "net_amount": str(seat.net_amount),
+                    "buy_stock_count": seat.buy_stock_count,
+                    "buy_symbols": seat.buy_symbols[:8],
+                }
+                for seat in sorted_active
+                if seat.net_amount > 0
+            ][:12],
+            suspected_hot_money_seats=[
+                seat.seat_name
+                for seat in sorted_active
+                if seat.seat_type_hint in {"hot_money", "broker_branch"}
+                and seat.net_amount > 0
+            ][:12],
+            reason_category_counts=reason_category_counts,
+            high_concentration_symbols=[
+                symbol
+                for symbol, payload in symbol_payloads.items()
+                if payload["concentration_risk"]
+            ],
+            symbol_payloads=symbol_payloads,
+            risk_tags=risk_tags,
+            evidence_payload={
+                "institution_snapshot_count": len(institution_snapshots),
+                "active_seat_count": len(active_seats),
+                "stock_seat_count": len(stock_seats),
+                "reason_category_counts": reason_category_counts,
+                "symbol_payloads": symbol_payloads,
+            },
+        )
+
+
 class LeaderScoringEngine:
     """
     Calculate core watch candidates.
@@ -274,6 +479,7 @@ class LeaderScoringEngine:
         lhb_snapshots: list[DailyLhbSnapshot],
         intraday_anomalies: list[DailyIntradayAnomaly],
         event_catalysts: list[DailyEventCatalyst],
+        lhb_seat_signal: LhbSeatAnalysisSignal | None = None,
     ) -> list[LeaderScore]:
         """
         Aggregate sector, capital, anomaly, and event signals.
@@ -281,6 +487,11 @@ class LeaderScoringEngine:
         sector_by_symbol = _sector_by_symbol(sector_signals)
         limit_by_symbol = {snapshot.symbol: snapshot for snapshot in limit_up_snapshots}
         lhb_by_symbol = {snapshot.symbol: snapshot for snapshot in lhb_snapshots}
+        lhb_seat_payloads = (
+            lhb_seat_signal.symbol_payloads
+            if lhb_seat_signal is not None
+            else {}
+        )
         anomaly_score_by_symbol = _anomaly_score_by_symbol(intraday_anomalies)
         event_penalty_by_symbol = _event_penalty_by_symbol(event_catalysts)
 
@@ -291,6 +502,7 @@ class LeaderScoringEngine:
                 sector_anchor=stock.symbol in sector_by_symbol,
                 limit_snapshot=limit_by_symbol.get(stock.symbol),
                 lhb_snapshot=lhb_by_symbol.get(stock.symbol),
+                lhb_seat_payload=lhb_seat_payloads.get(stock.symbol, {}),
                 anomaly_score=anomaly_score_by_symbol.get(stock.symbol, Decimal("0")),
                 event_penalty=event_penalty_by_symbol.get(stock.symbol, Decimal("0")),
             )
@@ -418,6 +630,7 @@ def _leader_score_from_stock(
     sector_anchor: bool,
     limit_snapshot: DailyLimitUpSnapshot | None,
     lhb_snapshot: DailyLhbSnapshot | None,
+    lhb_seat_payload: dict[str, Any],
     anomaly_score: Decimal,
     event_penalty: Decimal,
 ) -> LeaderScore:
@@ -432,6 +645,18 @@ def _leader_score_from_stock(
             role = "limit_up_height"
     if lhb_snapshot is not None and lhb_snapshot.net_buy_amount > 0:
         score += min(Decimal("12"), lhb_snapshot.net_buy_amount / Decimal("10000000"))
+    capital_type = str(lhb_seat_payload.get("capital_type", "none"))
+    if capital_type == "institution_net_buy":
+        score += Decimal("10")
+        role = "institution_lhb"
+    elif capital_type == "hot_money_net_buy":
+        score += Decimal("6")
+        if role == "trend_core":
+            role = "hot_money_lhb"
+    elif capital_type == "net_sell":
+        score -= Decimal("8")
+    if bool(lhb_seat_payload.get("concentration_risk")):
+        score -= Decimal("6")
     score += min(Decimal("15"), anomaly_score)
     score -= event_penalty
     score = _clamp(score)
@@ -455,6 +680,12 @@ def _leader_score_from_stock(
             "lhb_net_buy_amount": (
                 str(lhb_snapshot.net_buy_amount) if lhb_snapshot is not None else "0"
             ),
+            "lhb_reason_category": str(
+                lhb_seat_payload.get("reason_category", "")
+            ),
+            "capital_type": capital_type,
+            "lhb_summary": _lhb_summary_text(lhb_seat_payload),
+            "concentration_risk": bool(lhb_seat_payload.get("concentration_risk")),
             "anomaly_score": str(anomaly_score),
             "event_penalty": str(event_penalty),
         },
@@ -479,6 +710,52 @@ def _entry_condition(watch_action: str) -> str:
     if watch_action == "wait_pullback":
         return "回踩关键均线或分时承接稳定后再观察"
     return "低位补涨确认并放量站稳"
+
+
+def _capital_type(
+    institution_net: Decimal,
+    hot_money_net: Decimal,
+    lhb_net: Decimal,
+) -> str:
+    if institution_net > 0:
+        return "institution_net_buy"
+    if institution_net < 0:
+        return "institution_net_sell"
+    if hot_money_net > 0:
+        return "hot_money_net_buy"
+    if lhb_net < 0:
+        return "net_sell"
+    if lhb_net > 0:
+        return "mixed_net_buy"
+    return "none"
+
+
+def _has_concentration_risk(snapshot: DailyLhbSnapshot) -> bool:
+    return bool(
+        (snapshot.turnover_ratio is not None and snapshot.turnover_ratio >= Decimal("25"))
+        or (
+            snapshot.net_buy_ratio is not None
+            and abs(snapshot.net_buy_ratio) >= Decimal("15")
+        )
+        or (snapshot.turnover_rate is not None and snapshot.turnover_rate >= Decimal("30"))
+    )
+
+
+def _lhb_summary_text(payload: dict[str, Any]) -> str:
+    if not payload:
+        return ""
+    return (
+        f"reason={payload.get('reason_category', 'unknown')}; "
+        f"capital={payload.get('capital_type', 'none')}; "
+        f"lhb_net={payload.get('net_buy_amount', '0')}; "
+        f"institution_net={payload.get('institution_net_amount', '0')}; "
+        f"turnover_ratio={payload.get('turnover_ratio', '')}; "
+        f"risk={payload.get('concentration_risk', False)}"
+    )
+
+
+def _decimal_to_text(value: Decimal | None) -> str:
+    return "" if value is None else str(value)
 
 
 def _clamp(value: Decimal) -> Decimal:

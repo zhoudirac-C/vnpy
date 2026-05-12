@@ -187,8 +187,10 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
             QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth
         )
 
-        self.watch_table = QtWidgets.QTableWidget(0, 5)
-        self.watch_table.setHorizontalHeaderLabels(["股票", "名称", "角色", "动作", "条件"])
+        self.watch_table = QtWidgets.QTableWidget(0, 7)
+        self.watch_table.setHorizontalHeaderLabels(
+            ["股票", "名称", "角色", "动作", "资金类型", "条件", "龙虎榜摘要"]
+        )
         self.watch_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
@@ -474,7 +476,9 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
                 item.get("name", ""),
                 item.get("role", ""),
                 item.get("watch_action", ""),
+                item.get("capital_type", ""),
                 item.get("entry_condition", ""),
+                item.get("lhb_summary", ""),
             ]
             for column, value in enumerate(values):
                 self.watch_table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
@@ -488,8 +492,15 @@ class DailyMarketReviewWidget(QtWidgets.QWidget):
             f"trade_date={result.trade_date.isoformat()}",
             f"message={result.message}",
             "",
-            "evidence:",
+            "lhb:",
         ]
+        lines.extend(_format_lhb_signal_lines(result.evidence))
+        lines.extend(
+            [
+                "",
+                "evidence:",
+            ]
+        )
         lines.extend(str(item) for item in result.evidence)
         lines.append("")
         lines.append("audit:")
@@ -521,6 +532,24 @@ def _extract_ai_payload(raw_text: str) -> dict[str, Any] | None:
         if isinstance(parsed, dict):
             return parsed
     return None
+
+
+def _format_lhb_signal_lines(evidence: list[dict[str, Any]]) -> list[str]:
+    """
+    Render a compact dragon-tiger list evidence summary.
+    """
+    lhb_items = [
+        item
+        for item in evidence
+        if str(item.get("source_type", "")).startswith("lhb_")
+    ]
+    if not lhb_items:
+        return ["- 暂无龙虎榜席位证据"]
+    return [
+        f"- {item.get('evidence_id', '')} {item.get('source_type', '')}: "
+        f"{str(item.get('content', ''))[:180]}"
+        for item in lhb_items[:12]
+    ]
 
 
 def _slice_json_object(text: str) -> str:

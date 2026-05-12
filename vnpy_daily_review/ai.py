@@ -8,8 +8,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
 import json
+import socket
 import time
 from typing import Any, Protocol
+from urllib.parse import urlparse
 from urllib import error, request
 
 from vnpy_tradingagents.config import TradingAgentsWorkerConfig
@@ -78,15 +80,25 @@ DAILY_REVIEW_STAGE_SPECS: tuple[DailyReviewStageSpec, ...] = (
     ),
     DailyReviewStageSpec(
         "ThemeRotationAnalyst",
-        "判断主线、分支、防御方向、退潮方向和持续性，必须引用 evidence_id。",
+        (
+            "判断主线、分支、防御方向、退潮方向和持续性；结合龙虎榜上榜原因、"
+            "机构净买/净卖、活跃营业部净买和板块共振情况，必须引用 evidence_id。"
+        ),
     ),
     DailyReviewStageSpec(
         "LeaderAnalyst",
-        "筛选风向标、趋势中军、逆势抗跌标和需要规避的后排，必须引用 evidence_id。",
+        (
+            "筛选风向标、趋势中军、逆势抗跌标和需要规避的后排；必须区分"
+            "institution_net_buy、hot_money_net_buy、mixed_net_buy、net_sell，"
+            "并说明高换手/高集中度是否只适合观察，必须引用 evidence_id。"
+        ),
     ),
     DailyReviewStageSpec(
         "RiskCritic",
-        "审查追高、缩量、财报、节假日、数据缺失和证据不足风险。",
+        (
+            "审查追高、缩量、财报、节假日、数据缺失、证据不足、龙虎榜高集中度、"
+            "机构净卖、游资一致性过强和上榜原因偏风险类的问题。"
+        ),
     ),
     DailyReviewStageSpec(
         "WatchPlanWriter",
@@ -94,7 +106,8 @@ DAILY_REVIEW_STAGE_SPECS: tuple[DailyReviewStageSpec, ...] = (
             "输出 JSON 对象，字段为 report_markdown 和 watch_items。"
             "report_markdown 使用中文 Markdown，watch_items 是明日观察列表；"
             "每个观察项必须包含 symbol/name/role/watch_action/entry_condition/"
-            "avoid_condition/position_rule/evidence_ids。"
+            "avoid_condition/position_rule/evidence_ids；如有龙虎榜证据，补充 "
+            "capital_type/lhb_summary/lhb_reason_category/concentration_risk。"
         ),
     ),
 )
@@ -151,8 +164,30 @@ class DailyReviewAIOrchestrator:
 
         stage_outputs: dict[str, str] = {}
         audits: list[dict[str, Any]] = []
+        run_started = time.perf_counter()
 
         for spec in DAILY_REVIEW_STAGE_SPECS:
+            stage_timeout = _remaining_timeout_seconds(run_started, self.timeout_seconds)
+            if stage_timeout <= 0:
+                audits.append(
+                    self._failed_audit(
+                        stage=spec.name,
+                        prompt_hash="",
+                        prompt_chars=0,
+                        attempt=1,
+                        elapsed_ms=_elapsed_ms(run_started),
+                        error_message=(
+                            "daily_review_ai_total_timeout:"
+                            f"{self.timeout_seconds}s"
+                        ),
+                    )
+                )
+                return _fallback_output(
+                    deterministic_markdown=deterministic_markdown,
+                    base_watch_items=base_watch_items,
+                    audit=audits,
+                    message=f"llm_failed_fallback_deterministic:{spec.name}:total_timeout",
+                )
             messages = _stage_messages(
                 spec=spec,
                 llm_payload=llm_payload,
@@ -168,7 +203,7 @@ class DailyReviewAIOrchestrator:
                 try:
                     response = self.client.chat(
                         messages,
-                        timeout_seconds=self.timeout_seconds,
+                        timeout_seconds=stage_timeout,
                         extra_body=self.extra_body,
                     )
                 except Exception as exc:
@@ -190,6 +225,20 @@ class DailyReviewAIOrchestrator:
                             message=(
                                 "llm_failed_fallback_deterministic:"
                                 f"{spec.name}"
+                            ),
+                        )
+                    stage_timeout = _remaining_timeout_seconds(
+                        run_started,
+                        self.timeout_seconds,
+                    )
+                    if stage_timeout <= 0:
+                        return _fallback_output(
+                            deterministic_markdown=deterministic_markdown,
+                            base_watch_items=base_watch_items,
+                            audit=audits,
+                            message=(
+                                "llm_failed_fallback_deterministic:"
+                                f"{spec.name}:total_timeout"
                             ),
                         )
                     continue
@@ -301,11 +350,13 @@ class OpenAICompatibleDailyReviewLLMClient:
         api_key: str,
         model_name: str,
         max_completion_tokens: int,
+        connect_timeout_seconds: int = 5,
     ) -> None:
         self.base_url: str = base_url.rstrip("/")
         self.api_key: str = api_key
         self.model_name: str = model_name
         self.max_completion_tokens: int = max_completion_tokens
+        self.connect_timeout_seconds: int = max(1, int(connect_timeout_seconds))
 
     def chat(
         self,
@@ -316,6 +367,10 @@ class OpenAICompatibleDailyReviewLLMClient:
         """
         POST one chat completion request.
         """
+        _assert_endpoint_reachable(
+            self.base_url,
+            timeout_seconds=min(self.connect_timeout_seconds, timeout_seconds),
+        )
         payload: dict[str, Any] = {
             "model": self.model_name,
             "messages": [dict(message) for message in messages],
@@ -419,7 +474,8 @@ def _stage_messages(
             "content": (
                 "你是A股盘后复盘分析师，只能基于用户给出的 Evidence Pack。"
                 "不要编造不存在的数据，不要输出直接下单指令；结论必须可审计，"
-                "关键判断要引用 evidence_id。"
+                "关键判断要引用 evidence_id。龙虎榜只能作为资金行为证据，"
+                "不能单独构成买入建议；高换手、高集中度、机构净卖必须显式提示风险。"
             ),
         },
         {
@@ -427,6 +483,22 @@ def _stage_messages(
             "content": json.dumps(stage_payload, ensure_ascii=False, default=str),
         },
     ]
+
+
+def _assert_endpoint_reachable(base_url: str, timeout_seconds: int) -> None:
+    """
+    Fail fast when the LLM endpoint is unreachable.
+    """
+    parsed = urlparse(base_url)
+    host = parsed.hostname
+    if not host:
+        raise RuntimeError(f"llm_invalid_base_url:{base_url}")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds):
+            return
+    except OSError as exc:
+        raise RuntimeError(f"llm_network_unreachable:{host}:{port}:{exc}") from exc
 
 
 def _parse_final_output(
@@ -463,7 +535,7 @@ def _extract_json_object(content: str) -> dict[str, Any]:
 
 
 def _normalize_watch_item(item: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    normalized = {
         "symbol": str(item.get("symbol", "")),
         "name": str(item.get("name", "")),
         "role": str(item.get("role", "")),
@@ -473,6 +545,15 @@ def _normalize_watch_item(item: Mapping[str, Any]) -> dict[str, Any]:
         "position_rule": str(item.get("position_rule", "")),
         "evidence_ids": [str(value) for value in list(item.get("evidence_ids", []) or [])],
     }
+    for key in (
+        "capital_type",
+        "lhb_summary",
+        "lhb_reason_category",
+        "concentration_risk",
+    ):
+        if key in item:
+            normalized[key] = item[key]
+    return normalized
 
 
 def _fallback_output(
@@ -508,3 +589,10 @@ def _estimate_tokens(char_count: int) -> int:
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _remaining_timeout_seconds(started: float, total_timeout_seconds: int) -> int:
+    remaining = float(total_timeout_seconds) - (time.perf_counter() - started)
+    if remaining <= 0:
+        return 0
+    return max(1, int(remaining + 0.999))
