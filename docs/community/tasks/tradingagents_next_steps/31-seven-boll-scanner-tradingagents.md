@@ -258,7 +258,7 @@ PG --> UI
     - 扫描失败只记录错误，不影响 vn.py 主程序。
     - 定时任务不请求分钟线，不承诺日内交易信号。
 
-- [ ] **P31-T09: TradingAgents Engine 扩展扫描能力**
+- [x] **P31-T09: TradingAgents Engine 扩展扫描能力**
   - 修改：`vnpy_tradingagents/engine.py`
   - 测试：`tests/test_seven_boll_engine_integration.py`
   - 内容：
@@ -411,4 +411,5 @@ PG --> UI
 | P31-T06 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py -q`，5 passed |
 | P31-T07 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_storage.py -q`，2 passed |
 | P31-T08 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scheduler.py -q`，5 passed |
-| P31-T09 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T09 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_engine_integration.py -q`，4 passed |
+| P31-T10 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |

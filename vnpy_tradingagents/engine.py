@@ -11,6 +11,7 @@ from .runtime import (
     TradingAgentsRuntimeController,
     TradingAgentsRuntimeState,
 )
+from .manual_analysis import ManualAnalysisRequest
 
 
 class RuntimeStateStorage:
@@ -43,6 +44,92 @@ class TradingAgentsEngine(BaseEngine):
         self.financial_reader: Any | None = None
         self.financial_ingestion_scheduler: Any | None = None
         self.financial_ingestion_error: str = ""
+        self.seven_boll_scan_service: Any | None = None
+        self.seven_boll_scan_repository: Any | None = None
+
+    def set_seven_boll_scan_service(self, service: Any) -> None:
+        """
+        Attach the seven-boll scanner service.
+        """
+        self.seven_boll_scan_service = service
+
+    def set_seven_boll_scan_repository(self, repository: Any) -> None:
+        """
+        Attach seven-boll scan result repository.
+        """
+        self.seven_boll_scan_repository = repository
+
+    def run_seven_boll_scan(self, request: Any | None = None) -> Any:
+        """
+        Run a seven-boll daily scan without requiring TradingAgents AI.
+        """
+        if self.seven_boll_scan_service is None:
+            raise RuntimeError("SevenBoll scan service is not configured")
+        if request is None:
+            from vnpy_seven_boll.scanner import SevenBollScanRequest
+
+            request = SevenBollScanRequest()
+        summary = self.seven_boll_scan_service.scan(request)
+        if self.seven_boll_scan_repository is not None:
+            save = getattr(self.seven_boll_scan_repository, "save_scan_summary", None)
+            if callable(save):
+                save(summary, scan_type=getattr(request, "scan_type", "manual"))
+        return summary
+
+    def load_latest_seven_boll_scan(self) -> Any:
+        """
+        Load the newest seven-boll scan summary.
+        """
+        if self.seven_boll_scan_repository is not None:
+            latest = self.seven_boll_scan_repository.load_latest_summary()
+            if latest is not None:
+                return latest
+        if self.seven_boll_scan_service is not None:
+            return getattr(self.seven_boll_scan_service, "latest_summary", None)
+        return None
+
+    def list_seven_boll_scan_history(self, limit: int = 50) -> list[Any]:
+        """
+        List seven-boll scan run history.
+        """
+        if self.seven_boll_scan_repository is None:
+            latest = self.load_latest_seven_boll_scan()
+            return [latest] if latest is not None else []
+        return self.seven_boll_scan_repository.list_scan_runs(limit)
+
+    def run_scan_analysis(self, vt_symbol: str) -> str:
+        """
+        Trigger one TradingAgents manual analysis from a seven-boll scan row.
+        """
+        result = self._find_seven_boll_scan_result(vt_symbol)
+        if result is None:
+            return ""
+        bar_datetime = result.bar_datetime if isinstance(result.bar_datetime, datetime) else datetime.now()
+        analysis_result = self.run_manual_analysis(
+            ManualAnalysisRequest(
+                vt_symbol=result.vt_symbol,
+                start=bar_datetime,
+                end=bar_datetime,
+                mode="seven_boll_scan_analysis",
+                context_overrides={"seven_boll_scan": result.to_context()},
+            )
+        )
+        response = getattr(analysis_result, "response", None)
+        if response is not None and getattr(response, "run_id", ""):
+            return response.run_id
+        request = getattr(analysis_result, "request", None)
+        return getattr(request, "run_id", "")
+
+    def run_batch_scan_analysis(self, symbols: list[str] | tuple[str, ...]) -> list[str]:
+        """
+        Trigger TradingAgents manual analysis for selected scan symbols.
+        """
+        run_ids: list[str] = []
+        for vt_symbol in symbols:
+            run_id = self.run_scan_analysis(vt_symbol)
+            if run_id:
+                run_ids.append(run_id)
+        return run_ids
 
     def set_state_storage(self, storage: RuntimeStateStorage) -> None:
         """
@@ -279,6 +366,16 @@ class TradingAgentsEngine(BaseEngine):
         """
         if self.state_storage:
             self.state_storage.save_state(self.runtime.state)
+
+    def _find_seven_boll_scan_result(self, vt_symbol: str) -> Any | None:
+        summary = self.load_latest_seven_boll_scan()
+        if summary is None:
+            return None
+        target = str(vt_symbol or "").strip().upper()
+        for result in getattr(summary, "all_candidates", []):
+            if str(getattr(result, "vt_symbol", "")).upper() == target:
+                return result
+        return None
 
 
 def _bool_setting(value: Any, default: bool) -> bool:
