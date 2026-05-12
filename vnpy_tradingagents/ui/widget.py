@@ -47,6 +47,17 @@ FINANCIAL_COLUMNS: list[str] = [
     "来源",
     "质量",
 ]
+SEVEN_BOLL_TAB_TITLE: str = "七轨扫描"
+SEVEN_BOLL_COLUMNS: list[str] = [
+    "股票",
+    "信号类型",
+    "分数",
+    "regime",
+    "操作建议",
+    "analysis_run_id",
+    "analysis_status",
+    "查看报告",
+]
 CONFIG_TAB_TITLE: str = "配置"
 TRADINGAGENTS_API_KEY_FIELD: str = "tradingagents.api_key"
 TRADINGAGENTS_CONFIG_PREFIXES: tuple[str, ...] = (
@@ -57,6 +68,7 @@ TRADINGAGENTS_CONFIG_PREFIXES: tuple[str, ...] = (
     "news.llm_classifier.",
     "financial.ingestion.",
     "financial.context.",
+    "seven_boll.",
 )
 
 
@@ -268,6 +280,21 @@ def build_news_event_detail_text(event: NewsEvent) -> str:
     )
 
 
+def build_seven_boll_scan_summary_text(summary: Any) -> str:
+    """
+    Render a compact seven-boll scan summary for the UI.
+    """
+    if summary is None:
+        return "status=empty"
+    run_id = _value(summary, "run_id", "")
+    status = _value(summary, "status", "")
+    total = _value(summary, "total_symbols", 0)
+    scanned = _value(summary, "scanned_symbols", 0)
+    buy = len(_value(summary, "buy_candidates", []) or [])
+    sell = len(_value(summary, "sell_candidates", []) or [])
+    return f"run={run_id} status={status} total={total} scanned={scanned} buy={buy} sell={sell}"
+
+
 def _build_financial_context_markdown(financials: Any) -> str:
     """
     Render the financial context versions used by an analysis run.
@@ -401,6 +428,19 @@ def _format_optional_float(value: float | None) -> str:
     if value is None:
         return "-"
     return f"{value:.2f}"
+
+
+def _value(source: Any, name: str, default: Any = None) -> Any:
+    if isinstance(source, dict):
+        return source.get(name, default)
+    return getattr(source, name, default)
+
+
+def _split_ui_symbols(value: str) -> tuple[str, ...]:
+    text = str(value or "")
+    for sep in (";", "，", "\n"):
+        text = text.replace(sep, ",")
+    return tuple(item.strip() for item in text.split(",") if item.strip())
 
 
 def _set_markdown(widget: QtWidgets.QTextBrowser, markdown: str) -> None:
@@ -573,6 +613,22 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.financial_detail_text.setReadOnly(True)
         self.financial_status_text = QtWidgets.QPlainTextEdit()
         self.financial_status_text.setReadOnly(True)
+        self.seven_boll_symbol_edit = QtWidgets.QLineEdit()
+        self.seven_boll_symbol_edit.setPlaceholderText("可选：600519.SSE,000001.SZSE")
+        self.seven_boll_scan_button = QtWidgets.QPushButton("手动扫描")
+        self.seven_boll_scan_button.clicked.connect(self.run_seven_boll_scan)
+        self.seven_boll_refresh_button = QtWidgets.QPushButton("刷新结果")
+        self.seven_boll_refresh_button.clicked.connect(self.refresh_seven_boll_scan)
+        self.seven_boll_analysis_button = QtWidgets.QPushButton("单点分析")
+        self.seven_boll_analysis_button.clicked.connect(self.run_selected_seven_boll_analysis)
+        self.seven_boll_batch_analysis_button = QtWidgets.QPushButton("批量分析")
+        self.seven_boll_batch_analysis_button.clicked.connect(self.run_batch_seven_boll_analysis)
+        self.seven_boll_summary_text = QtWidgets.QPlainTextEdit()
+        self.seven_boll_summary_text.setReadOnly(True)
+        self.seven_boll_buy_table = QtWidgets.QTableWidget(0, len(SEVEN_BOLL_COLUMNS))
+        self.seven_boll_buy_table.setHorizontalHeaderLabels(SEVEN_BOLL_COLUMNS)
+        self.seven_boll_sell_table = QtWidgets.QTableWidget(0, len(SEVEN_BOLL_COLUMNS))
+        self.seven_boll_sell_table.setHorizontalHeaderLabels(SEVEN_BOLL_COLUMNS)
         self.report_browser = QtWidgets.QTextBrowser()
         self.report_browser.setOpenExternalLinks(True)
         self.config_widgets: dict[str, tuple[QtWidgets.QLineEdit, type]] = {}
@@ -593,12 +649,14 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.history_tab = self.create_history_tab()
         self.news_tab = self.create_news_tab()
         self.financial_tab = self.create_financial_tab()
+        self.seven_boll_tab = self.create_seven_boll_tab()
         self.report_tab = self.create_report_tab()
         self.config_tab = self.create_config_tab()
         self.tabs.addTab(self.control_tab, "运行控制")
         self.tabs.addTab(self.history_tab, "分析历史")
         self.tabs.addTab(self.news_tab, NEWS_TAB_TITLE)
         self.tabs.addTab(self.financial_tab, FINANCIAL_TAB_TITLE)
+        self.tabs.addTab(self.seven_boll_tab, SEVEN_BOLL_TAB_TITLE)
         self.tabs.addTab(self.report_tab, REPORT_TAB_TITLE)
         self.tabs.addTab(self.config_tab, CONFIG_TAB_TITLE)
 
@@ -715,6 +773,33 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 3)
         splitter.setStretchFactor(2, 1)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(filter_layout)
+        layout.addWidget(splitter)
+        widget.setLayout(layout)
+        return widget
+
+    def create_seven_boll_tab(self) -> QtWidgets.QWidget:
+        """
+        Create seven-boll daily scan tab.
+        """
+        widget = QtWidgets.QWidget()
+        filter_layout = QtWidgets.QHBoxLayout()
+        filter_layout.addWidget(QtWidgets.QLabel("股票池"))
+        filter_layout.addWidget(self.seven_boll_symbol_edit)
+        filter_layout.addWidget(self.seven_boll_scan_button)
+        filter_layout.addWidget(self.seven_boll_refresh_button)
+        filter_layout.addWidget(self.seven_boll_analysis_button)
+        filter_layout.addWidget(self.seven_boll_batch_analysis_button)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        splitter.addWidget(self.seven_boll_summary_text)
+        splitter.addWidget(self.seven_boll_buy_table)
+        splitter.addWidget(self.seven_boll_sell_table)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(2, 3)
 
         layout = QtWidgets.QVBoxLayout()
         layout.addLayout(filter_layout)
@@ -922,6 +1007,100 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.replay_status_text.setPlainText(
             load_replay_status_panel_text(storage, run_id)
         )
+
+    def run_seven_boll_scan(self) -> None:
+        """
+        Trigger a manual seven-boll daily scan.
+        """
+        try:
+            from vnpy_seven_boll.scanner import SevenBollScanRequest
+
+            symbols = _split_ui_symbols(self.seven_boll_symbol_edit.text())
+            summary = self.engine.run_seven_boll_scan(SevenBollScanRequest(symbols=symbols))
+        except Exception as exc:
+            self.seven_boll_summary_text.setPlainText(f"status=failed error={exc}")
+            return
+        self.show_seven_boll_scan(summary)
+
+    def refresh_seven_boll_scan(self) -> None:
+        """
+        Load the latest persisted seven-boll scan.
+        """
+        try:
+            summary = self.engine.load_latest_seven_boll_scan()
+        except Exception as exc:
+            self.seven_boll_summary_text.setPlainText(f"status=failed error={exc}")
+            return
+        self.show_seven_boll_scan(summary)
+
+    def show_seven_boll_scan(self, summary: Any) -> None:
+        """
+        Render seven-boll scan summary and candidate tables.
+        """
+        self.seven_boll_summary_text.setPlainText(build_seven_boll_scan_summary_text(summary))
+        self._populate_seven_boll_table(self.seven_boll_buy_table, _value(summary, "buy_candidates", []) or [])
+        self._populate_seven_boll_table(self.seven_boll_sell_table, _value(summary, "sell_candidates", []) or [])
+
+    def run_selected_seven_boll_analysis(self) -> None:
+        """
+        Trigger analysis for the selected seven-boll candidate.
+        """
+        vt_symbol = self._selected_seven_boll_symbol()
+        if not vt_symbol:
+            self.seven_boll_summary_text.setPlainText("status=invalid error=missing selected symbol")
+            return
+        try:
+            run_id = self.engine.run_scan_analysis(vt_symbol)
+        except Exception as exc:
+            self.seven_boll_summary_text.setPlainText(f"status=failed error={exc}")
+            return
+        self.seven_boll_summary_text.setPlainText(f"analysis_status=queued run_id={run_id}")
+
+    def run_batch_seven_boll_analysis(self) -> None:
+        """
+        Trigger batch analysis for current buy/sell candidates.
+        """
+        symbols = self._all_visible_seven_boll_symbols()
+        try:
+            run_ids = self.engine.run_batch_scan_analysis(symbols)
+        except Exception as exc:
+            self.seven_boll_summary_text.setPlainText(f"status=failed error={exc}")
+            return
+        self.seven_boll_summary_text.setPlainText("analysis_status=queued run_ids=" + ",".join(run_ids))
+
+    def _populate_seven_boll_table(self, table: QtWidgets.QTableWidget, candidates: list[Any]) -> None:
+        table.setRowCount(len(candidates))
+        for row, result in enumerate(candidates):
+            values = [
+                _value(result, "vt_symbol", ""),
+                ",".join(_value(result, "signal_types", ()) or ()),
+                str(_value(result, "score", "")),
+                _value(result, "regime", ""),
+                _value(result, "action", ""),
+                _value(result, "report_run_id", ""),
+                _value(result, "analysis_status", "pending"),
+                "查看报告",
+            ]
+            for column, value in enumerate(values):
+                table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
+        table.resizeColumnsToContents()
+
+    def _selected_seven_boll_symbol(self) -> str:
+        for table in (self.seven_boll_buy_table, self.seven_boll_sell_table):
+            row = table.currentRow()
+            if row >= 0:
+                item = table.item(row, 0)
+                return item.text() if item is not None else ""
+        return ""
+
+    def _all_visible_seven_boll_symbols(self) -> list[str]:
+        symbols: list[str] = []
+        for table in (self.seven_boll_buy_table, self.seven_boll_sell_table):
+            for row in range(table.rowCount()):
+                item = table.item(row, 0)
+                if item is not None and item.text():
+                    symbols.append(item.text())
+        return symbols
 
     def search_news_events(self) -> None:
         """

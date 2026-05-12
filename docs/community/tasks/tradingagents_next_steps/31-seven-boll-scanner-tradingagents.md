@@ -273,7 +273,7 @@ PG --> UI
     - 单点分析和批量分析都能返回 run id。
     - 未配置 TradingAgents 时，扫描功能仍可正常使用。
 
-- [ ] **P31-T10: TradingAgents 分析管理页新增七轨扫描 Tab**
+- [x] **P31-T10: TradingAgents 分析管理页新增七轨扫描 Tab**
   - 修改：`vnpy_tradingagents/ui/widget.py`
   - 测试：`tests/test_seven_boll_ui.py`
   - 内容：
@@ -336,7 +336,7 @@ PG --> UI
     - 大模型分析耗时较长时，界面有明确状态，不会误以为卡死。
     - 同一股票重复点分析时，要有最小防重策略或直接给出“已有运行中任务”提示。
 
-- [ ] **P31-T13: 配置项收口**
+- [x] **P31-T13: 配置项收口**
   - 修改：`vnpy/trader/setting.py`
   - 修改：`vnpy/trader/ui/widget.py`
   - 修改：`vnpy_tradingagents/ui/widget.py`
@@ -412,4 +412,7 @@ PG --> UI
 | P31-T07 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_storage.py -q`，2 passed |
 | P31-T08 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scheduler.py -q`，5 passed |
 | P31-T09 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_engine_integration.py -q`，4 passed |
-| P31-T10 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T10 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py -q`，2 passed |
+| P31-T11 至 P31-T12 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T13 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_ui.py tests/test_seven_boll_scanner.py -q`，7 passed |
+| P31-T14 | 2026-05-12 | 未开始 | 未开始 |

@@ -337,7 +337,10 @@ def build_scan_request_from_settings(
     source = settings or SETTINGS
     return SevenBollScanRequest(
         interval=Interval.DAILY,
-        lookback_days=_int_setting(source.get("seven_boll.scan.lookback_days", 260), 260),
+        lookback_days=_int_setting(
+            source.get("seven_boll.scan.lookback_bars", source.get("seven_boll.scan.lookback_days", 250)),
+            250,
+        ),
         max_symbols=_int_setting(source.get("seven_boll.scan.max_symbols", 0), 0),
         min_buy_score=float(source.get("seven_boll.scan.min_buy_score", 65.0) or 65.0),
         min_sell_score=float(source.get("seven_boll.scan.min_sell_score", 65.0) or 65.0),
