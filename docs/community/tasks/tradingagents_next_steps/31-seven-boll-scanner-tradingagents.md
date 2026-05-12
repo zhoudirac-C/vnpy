@@ -139,7 +139,7 @@ PG --> UI
     - 对同一组历史 bars，多次运行结果一致。
     - `buy` 和 `sell` 规则不会同时高分冲突；如冲突，必须有统一优先级。
 
-- [ ] **P31-T04: CTA 可见策略与回测策略**
+- [x] **P31-T04: CTA 可见策略与回测策略**
   - 新增：`strategies/seven_boll_signal_strategy.py`
   - 测试：`tests/test_seven_boll_cta_strategy.py`
   - 内容：
@@ -163,7 +163,7 @@ PG --> UI
     - 能在 `功能 -> CTA策略` 下拉框中看到。
     - 能正常初始化、启动、停止、在回测里读取日线 K 线。
 
-- [ ] **P31-T05: 回测闭环验证**
+- [x] **P31-T05: 回测闭环验证**
   - 新增：`tests/test_seven_boll_backtest_strategy.py`
   - 新增：`docs/community/ops/validation_results/<date>-seven-boll-backtest.md`
   - 内容：
@@ -404,6 +404,8 @@ PG --> UI
 | 任务 | 日期 | 提交 | 验证 |
 | --- | --- | --- | --- |
 | P31-T01 | 2026-05-12 | 未开始 | 未开始 |
-| P31-T02 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
-| P31-T03 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
-| P31-T04 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |
+| P31-T02 | 2026-05-12 | `1d247adb` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
+| P31-T03 | 2026-05-12 | `1d247adb` | `uv run --with pytest python -m pytest tests/test_seven_boll_indicator.py tests/test_seven_boll_signals.py -q`，5 passed |
+| P31-T04 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_cta_strategy.py -q`，5 passed |
+| P31-T05 | 2026-05-12 | 未提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_backtest_strategy.py -q`，1 passed；见 `docs/community/ops/validation_results/20260512-seven-boll-backtest.md` |
+| P31-T06 至 P31-T14 | 2026-05-12 | 未开始 | 未开始 |

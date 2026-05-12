@@ -54,6 +54,16 @@ def test_signal_engine_applies_risk_first_priority_when_buy_and_sell_conflict() 
     assert result.action == "sell_watch"
 
 
+def test_squeeze_breakout_is_not_reduced_before_top_or_overheat() -> None:
+    bars, points = _moderate_squeeze_breakout_case()
+
+    result = evaluate_seven_boll_signals(bars, points, SevenBollIndicatorConfig(squeeze_percentile=25))
+
+    assert result is not None
+    assert [signal.signal_type for signal in result.signals] == ["squeeze_breakout_long"]
+    assert result.action == "buy_watch"
+
+
 def _trend_pullback_case() -> tuple[list[BarData], list[SevenBollPoint | None]]:
     points = [_point(index=0, close=108, zscore=1.6, regime="trend_up", mid_slope=3)]
     points.append(
@@ -136,6 +146,26 @@ def _conflict_case() -> tuple[list[BarData], list[SevenBollPoint | None]]:
         )
     )
     return _bars_for_points(points, latest_open=118, latest_volume=3000), points
+
+
+def _moderate_squeeze_breakout_case() -> tuple[list[BarData], list[SevenBollPoint | None]]:
+    points = [_point(index=0, close=100.2, bandwidth_percentile=8, bandwidth_slope=-0.01, regime="squeeze")]
+    points.append(
+        _point(
+            index=1,
+            close=100.75,
+            high=100.85,
+            low=100.55,
+            mid=100,
+            dev=0.35,
+            zscore=2.14,
+            bandwidth_percentile=20,
+            bandwidth_slope=0.01,
+            regime="squeeze",
+            volume=3000,
+        )
+    )
+    return _bars_for_points(points, latest_volume=3000), points
 
 
 def _point(

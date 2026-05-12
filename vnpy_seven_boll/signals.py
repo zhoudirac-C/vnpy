@@ -260,7 +260,7 @@ def _is_overheat_reduce(
     upper_shadow = latest.high - max(open_price, latest.close)
     body = abs(latest.close - open_price)
     long_upper_shadow = upper_shadow > max(body, latest.dev * 0.3)
-    near_top = latest.close >= latest.top_band * (1 - cfg.pullback_tolerance)
+    near_top = latest.close >= latest.top_band
     overheated = latest.zscore >= 2.6
     volume_hot = volume_ratio >= cfg.volume_breakout_ratio
     return (near_top or overheated) and (long_upper_shadow or volume_hot)
