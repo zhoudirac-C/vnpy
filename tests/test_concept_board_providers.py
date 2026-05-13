@@ -81,3 +81,81 @@ def test_akshare_concept_provider_maps_boards_and_members_from_fallback_source()
     assert [(member.vt_symbol, member.name) for member in members] == [
         ("603112.SSE", "华翔股份")
     ]
+
+
+def test_akshare_concept_provider_retries_transient_board_disconnects() -> None:
+    from vnpy_router.providers.concepts import AkshareConceptProvider
+
+    class FakeFrame:
+        def to_dict(self, orient):
+            assert orient == "records"
+            return [{"板块代码": "BK1001", "板块名称": "机器人概念"}]
+
+    class FlakyAkshare:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def stock_board_concept_name_em(self):
+            self.calls += 1
+            if self.calls < 3:
+                raise ConnectionError("remote disconnected")
+            return FakeFrame()
+
+    sleeps: list[float] = []
+    akshare = FlakyAkshare()
+    provider = AkshareConceptProvider(
+        akshare=akshare,
+        max_retries=3,
+        retry_backoff_seconds=2,
+        sleeper=sleeps.append,
+    )
+
+    boards = provider.list_boards("concept")
+
+    assert [board.board_name for board in boards] == ["机器人概念"]
+    assert akshare.calls == 3
+    assert sleeps == [2, 4]
+    assert provider.degraded_reason == ""
+
+
+def test_akshare_concept_provider_retries_member_fetches() -> None:
+    from vnpy_router.concepts import ConceptBoard
+    from vnpy_router.providers.concepts import AkshareConceptProvider
+
+    class FakeFrame:
+        def to_dict(self, orient):
+            assert orient == "records"
+            return [{"代码": "603112", "名称": "华翔股份"}]
+
+    class FlakyAkshare:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def stock_board_concept_cons_em(self, symbol):
+            self.calls += 1
+            if self.calls == 1:
+                raise ConnectionError("remote disconnected")
+            return FakeFrame()
+
+    sleeps: list[float] = []
+    akshare = FlakyAkshare()
+    provider = AkshareConceptProvider(
+        akshare=akshare,
+        max_retries=2,
+        retry_backoff_seconds=1.5,
+        sleeper=sleeps.append,
+    )
+    board = ConceptBoard(
+        board_type="concept",
+        board_code="BK1001",
+        board_name="机器人概念",
+        provider_name="akshare",
+    )
+
+    members = provider.list_members(board)
+
+    assert [(member.vt_symbol, member.name) for member in members] == [
+        ("603112.SSE", "华翔股份")
+    ]
+    assert akshare.calls == 2
+    assert sleeps == [1.5]

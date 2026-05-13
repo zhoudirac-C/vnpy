@@ -26,6 +26,13 @@ P32-T12 前端手动触发概念入库补充验证：
 - 局部 UI/引擎测试：`22 passed in 0.65s`
 - P32 相关集合验证：`64 passed in 0.97s`
 
+P32-T13 AKShare 重试和分批拉取补充验证：
+
+- AKShare 板块列表接口断连后按 2、4 秒退避重试并成功。
+- AKShare 成分股接口断连后按配置退避重试并成功。
+- 概念入库服务默认每轮处理 20 个板块；单测覆盖 5 个板块按 2、2、1、2 游标分批推进。
+- P32 相关集合验证：`67 passed in 1.26s`。
+
 ## 已知未通过项
 
 - `uv run --with pytest python -m pytest tests -q` 在收集 `tests/test_alpha101.py` 时失败：当前环境缺少可选依赖 `polars`。该错误发生在测试收集阶段，与 P32 改动无关。

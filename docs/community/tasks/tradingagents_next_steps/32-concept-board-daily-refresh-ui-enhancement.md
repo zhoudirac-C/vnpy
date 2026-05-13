@@ -321,6 +321,23 @@ ConceptDB --> UI
     - 概念拉取长时间运行时不冻结 vn.py 前端。
     - 状态栏展示 provider、board/member/link 计数、degraded source 和错误。
 
+- [x] **P32-T13: AKShare 重试和概念板块分批拉取**
+  - 修改：`vnpy_router/providers/concepts.py`
+  - 修改：`vnpy_tradingagents/concept_ingestion.py`
+  - 修改：`vnpy/trader/setting.py`
+  - 修改：`vnpy_tradingagents/ui/widget.py`
+  - 测试：`tests/test_concept_board_providers.py`
+  - 测试：`tests/test_concept_board_ingestion.py`
+  - 内容：
+    - AKShare 板块列表和成分股接口增加重试。
+    - 默认 `concept.ingestion.akshare.max_retries=3`。
+    - 默认 `concept.ingestion.akshare.retry_backoff_seconds=2.0`，实际按 2、4、8 秒指数退避。
+    - 默认 `concept.ingestion.max_boards_per_run=20`，后台按游标分批推进；同一 vn.py 进程内多次点击会继续下一批板块。
+  - 验收：
+    - AKShare 临时断连会重试后继续。
+    - 全量概念入库不会默认一次性请求所有板块成分。
+    - 配置页给出中文说明。
+
 ## 推荐实施顺序
 
 1. 先做 `P32-T01` 到 `P32-T04`，把概念板块主数据和券商优先 provider 链打通。
@@ -348,3 +365,4 @@ ConceptDB --> UI
 | P32-T08/P32-T09/P32-T10 | 2026-05-13 | 待提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_ui.py tests/test_stock_display.py tests/test_tradingagents_ui.py -q` |
 | P32-T11 | 2026-05-13 | 待提交 | `docs/community/ops/validation_results/2026-05-13-concept-board-daily-refresh-ui.md` |
 | P32-T12 | 2026-05-13 | 待提交 | `uv run --with pytest python -m pytest tests/test_concept_board_ingestion.py::test_tradingagents_engine_delegates_concept_ingestion_scheduler tests/test_concept_board_ingestion.py::test_tradingagents_ui_declares_concept_ingestion_manual_controls -q` |
+| P32-T13 | 2026-05-13 | 待提交 | `uv run --with pytest python -m pytest tests/test_concept_board_domain.py tests/test_concept_board_storage.py tests/test_concept_board_providers.py tests/test_concept_board_ingestion.py tests/test_data_router.py tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_ui.py tests/test_stock_display.py tests/test_tradingagents_ui.py -q` |

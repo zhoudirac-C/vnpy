@@ -34,6 +34,7 @@ class ConceptBoardIngestionService:
         self.max_boards_per_run = max(0, int(max_boards_per_run or 0))
         self.max_concepts_per_symbol = max(1, int(max_concepts_per_symbol or 3))
         self.latest_summary: ConceptIngestionSummary | None = None
+        self._board_cursors: dict[tuple[str, str], int] = {}
 
     def run_once(self, board_type: str = "concept") -> ConceptIngestionSummary:
         """
@@ -58,7 +59,7 @@ class ConceptBoardIngestionService:
                     degraded_sources.append(f"{provider_name}:empty")
                 continue
 
-            selected_boards = boards[: self.max_boards_per_run] if self.max_boards_per_run else boards
+            selected_boards = self._select_board_batch(provider_name, board_type, boards)
             members: list[ConceptBoardMember] = []
             for board in selected_boards:
                 try:
@@ -89,6 +90,25 @@ class ConceptBoardIngestionService:
             errors=tuple(errors),
         )
         return self.latest_summary
+
+    def _select_board_batch(
+        self,
+        provider_name: str,
+        board_type: str,
+        boards: Sequence[ConceptBoard],
+    ) -> list[ConceptBoard]:
+        board_list = list(boards)
+        if not board_list:
+            return []
+        if self.max_boards_per_run <= 0 or self.max_boards_per_run >= len(board_list):
+            return board_list
+
+        key = (provider_name, board_type)
+        start = self._board_cursors.get(key, 0) % len(board_list)
+        end = min(start + self.max_boards_per_run, len(board_list))
+        selected = board_list[start:end]
+        self._board_cursors[key] = 0 if end >= len(board_list) else end
+        return selected
 
 
 class ConceptBoardIngestionScheduler:
@@ -230,6 +250,11 @@ def build_concept_ingestion_service(
         catalog_path=source.get("concept.ingestion.catalog_path", "")
         or source.get("news.entity.catalog_path", "")
         or source.get("financial.ingestion.catalog_path", ""),
+        akshare_max_retries=_to_int(source.get("concept.ingestion.akshare.max_retries", 3), 3),
+        akshare_retry_backoff_seconds=_to_float(
+            source.get("concept.ingestion.akshare.retry_backoff_seconds", 2.0),
+            2.0,
+        ),
     )
     return ConceptBoardIngestionService(
         providers=providers,
@@ -272,6 +297,13 @@ def _split_names(value: Any) -> list[str]:
 def _to_int(value: Any, default: int) -> int:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return default
 

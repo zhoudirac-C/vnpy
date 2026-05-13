@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 from vnpy_router.concepts import ConceptBoard, ConceptBoardMember, normalize_vt_symbol
@@ -186,9 +187,15 @@ class AkshareConceptProvider:
         self,
         akshare: Any | None = None,
         akshare_loader: Callable[[], Any | None] | None = None,
+        max_retries: int = 3,
+        retry_backoff_seconds: float = 2.0,
+        sleeper: Callable[[float], None] | None = None,
     ) -> None:
         self._akshare = akshare
         self._akshare_loader = akshare_loader or _load_akshare
+        self.max_retries = max(0, int(max_retries or 0))
+        self.retry_backoff_seconds = max(0.0, float(retry_backoff_seconds or 0))
+        self.sleeper = sleeper or sleep
         self.degraded_reason: str = ""
 
     def list_boards(self, board_type: str = "concept") -> Sequence[ConceptBoard]:
@@ -207,9 +214,13 @@ class AkshareConceptProvider:
             return []
 
         try:
-            rows = _records(endpoint())
+            rows = _records(
+                self._call_with_retry(endpoint, failure_scope="board")
+            )
         except Exception as exc:
-            self.degraded_reason = f"akshare_board_fetch_failed:{exc}"
+            self.degraded_reason = (
+                f"akshare_board_fetch_failed_after_{self.max_retries}_retries:{exc}"
+            )
             return []
 
         boards: list[ConceptBoard] = []
@@ -243,12 +254,20 @@ class AkshareConceptProvider:
             self.degraded_reason = f"akshare_endpoint_unavailable:{endpoint_name}"
             return []
 
+        def fetch_members() -> Any:
+            try:
+                return endpoint(symbol=board.board_name)
+            except TypeError:
+                return endpoint(board.board_name)
+
         try:
-            rows = _records(endpoint(symbol=board.board_name))
-        except TypeError:
-            rows = _records(endpoint(board.board_name))
+            rows = _records(
+                self._call_with_retry(fetch_members, failure_scope=f"member:{board.board_name}")
+            )
         except Exception as exc:
-            self.degraded_reason = f"akshare_member_fetch_failed:{exc}"
+            self.degraded_reason = (
+                f"akshare_member_fetch_failed_after_{self.max_retries}_retries:{exc}"
+            )
             return []
 
         members: list[ConceptBoardMember] = []
@@ -284,10 +303,30 @@ class AkshareConceptProvider:
             self.degraded_reason = ""
         return self._akshare
 
+    def _call_with_retry(self, func: Callable[[], Any], failure_scope: str) -> Any:
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                value = func()
+                self.degraded_reason = ""
+                return value
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.max_retries:
+                    break
+                delay = self.retry_backoff_seconds * (2 ** attempt)
+                if delay > 0:
+                    self.sleeper(delay)
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"akshare_{failure_scope}_retry_failed")
+
 
 def build_concept_providers(
     provider_names: Sequence[str],
     catalog_path: str | Path | None = None,
+    akshare_max_retries: int = 3,
+    akshare_retry_backoff_seconds: float = 2.0,
 ) -> list[Any]:
     """
     Build providers in configured priority order.
@@ -300,7 +339,12 @@ def build_concept_providers(
         elif normalized in {"local", "local_catalog", "catalog", "local_security_catalog"}:
             providers.append(LocalConceptCatalogProvider(catalog_path))
         elif normalized == "akshare":
-            providers.append(AkshareConceptProvider())
+            providers.append(
+                AkshareConceptProvider(
+                    max_retries=akshare_max_retries,
+                    retry_backoff_seconds=akshare_retry_backoff_seconds,
+                )
+            )
     return providers
 
 

@@ -128,9 +128,11 @@ CONCEPT_CONFIG_HELP_TEXT: dict[str, str] = {
     "concept.ingestion.providers": "概念板块来源优先级，默认 broker,local_catalog,akshare；先用券商/QMT/XT，失败后再用本地 catalog，最后才用 AKShare 兜底。",
     "concept.ingestion.schedule": "概念板块每日刷新时间，逗号分隔；概念是低频主数据，不跟随每次七轨扫描全量拉取。",
     "concept.ingestion.catalog_path": "本地股票主数据 catalog 路径；可复用 news.entity.catalog_path 或 financial.ingestion.catalog_path。",
-    "concept.ingestion.max_boards_per_run": "单次最多拉取板块数；0 表示不限制，AKShare 兜底时建议先限制以避免接口限流。",
+    "concept.ingestion.max_boards_per_run": "单次最多拉取板块数；默认 20，后台按游标分批推进；0 表示不限制，可能触发 AKShare 限流或断连。",
     "concept.ingestion.max_concepts_per_symbol": "每只股票写回 security_entity.concept_tags 的前 N 个概念。",
     "concept.ingestion.refresh_interval_hours": "概念板块建议刷新间隔小时数；用于运维判断低频主数据是否过期。",
+    "concept.ingestion.akshare.max_retries": "AKShare 兜底接口失败后的最大重试次数；默认 3 次。",
+    "concept.ingestion.akshare.retry_backoff_seconds": "AKShare 重试基础间隔秒数；默认 2 秒，实际按 2、4、8 秒指数退避。",
 }
 CONFIG_TAB_TITLE: str = "配置"
 TRADINGAGENTS_API_KEY_FIELD: str = "tradingagents.api_key"
