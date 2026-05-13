@@ -16,9 +16,15 @@ uv run --with pytest python -m pytest tests/test_concept_board_domain.py tests/t
 uv run --with pytest python -m pytest tests/test_data_router.py tests/test_seven_boll_scanner.py -q
 uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_ui.py tests/test_stock_display.py tests/test_tradingagents_ui.py -q
 uv run --with pytest python -m pytest tests/test_concept_board_domain.py tests/test_concept_board_storage.py tests/test_concept_board_providers.py tests/test_concept_board_ingestion.py tests/test_data_router.py tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_ui.py tests/test_stock_display.py tests/test_tradingagents_ui.py -q
+uv run --with pytest python -m pytest tests/test_concept_board_ingestion.py tests/test_seven_boll_ui.py tests/test_tradingagents_ui.py -q
 ```
 
 最后一条 P32 相关集合验证结果：`62 passed in 1.49s`。
+
+P32-T12 前端手动触发概念入库补充验证：
+
+- 局部 UI/引擎测试：`22 passed in 0.65s`
+- P32 相关集合验证：`64 passed in 0.97s`
 
 ## 已知未通过项
 

@@ -64,6 +64,56 @@ def test_concept_ingestion_settings_are_owned_by_tradingagents_config_tab() -> N
     assert "AKShare" in CONCEPT_CONFIG_HELP_TEXT["concept.ingestion.providers"]
 
 
+def test_tradingagents_engine_delegates_concept_ingestion_scheduler() -> None:
+    from vnpy.event import EventEngine
+    from vnpy_tradingagents.engine import TradingAgentsEngine
+
+    engine = TradingAgentsEngine(None, EventEngine())  # type: ignore[arg-type]
+    scheduler = FakeConceptScheduler()
+
+    engine.set_concept_ingestion_scheduler(scheduler)
+
+    assert engine.trigger_concept_ingestion() == "concept_ingestion_triggered"
+    assert engine.get_concept_ingestion_status()["state"] == "running"
+    assert engine.cancel_concept_ingestion() is True
+    assert scheduler.triggered == 1
+    assert scheduler.cancelled == 1
+
+
+def test_tradingagents_ui_declares_concept_ingestion_manual_controls() -> None:
+    from pathlib import Path
+    from vnpy_tradingagents.ui.widget import build_concept_ingestion_status_text
+
+    source = Path("vnpy_tradingagents/ui/widget.py").read_text(encoding="utf-8")
+
+    assert "self.concept_ingestion_trigger_button = QtWidgets.QPushButton(\"拉取概念入库\")" in source
+    assert "self.concept_ingestion_trigger_button.clicked.connect(self.trigger_concept_ingestion)" in source
+    assert "self.concept_ingestion_timer.timeout.connect(self.refresh_concept_ingestion_status)" in source
+    assert "self._set_concept_ingestion_running(True)" in source
+
+    text = build_concept_ingestion_status_text(
+        {
+            "state": "running",
+            "active": True,
+            "enabled": True,
+            "schedule_times": ["09:00"],
+            "last_summary": {
+                "provider_name": "akshare",
+                "board_count": 5,
+                "member_count": 300,
+                "link_count": 300,
+                "updated_symbols": ["603112.SSE"],
+                "degraded_sources": ["broker_xt:broker_xt_unavailable"],
+                "errors": [],
+            },
+        }
+    )
+    assert "concept_ingestion_status=running" in text
+    assert "provider=akshare" in text
+    assert "board_count=5" in text
+    assert "broker_xt:broker_xt_unavailable" in text
+
+
 class EmptyProvider:
     def __init__(self, provider_name: str, degraded_reason: str = "") -> None:
         self.provider_name = provider_name
@@ -88,3 +138,20 @@ class StaticProvider:
 
     def list_members(self, board):
         return self.members.get(board.board_id, [])
+
+
+class FakeConceptScheduler:
+    def __init__(self) -> None:
+        self.triggered = 0
+        self.cancelled = 0
+
+    def trigger(self):
+        self.triggered += 1
+        return True
+
+    def status(self):
+        return {"state": "running"}
+
+    def cancel(self):
+        self.cancelled += 1
+        return True

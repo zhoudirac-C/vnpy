@@ -308,6 +308,19 @@ ConceptDB --> UI
     - 文档明确哪些是代码级验证，哪些需要券商真实环境验证。
     - 未安装券商 SDK 时，不宣称券商概念生产可用。
 
+- [x] **P32-T12: 前端手动触发概念入库**
+  - 修改：`vnpy_tradingagents/ui/widget.py`
+  - 修改：`tests/test_concept_board_ingestion.py`
+  - 内容：
+    - 在七轨扫描页增加 `拉取概念入库` 按钮。
+    - 点击后立即置灰，按钮文案改为 `概念拉取中...`。
+    - 复用 `ConceptBoardIngestionScheduler.trigger()` 后台异步执行，不阻塞 UI 线程。
+    - 增加 `刷新概念状态` 和 3 秒定时轮询，任务完成/失败后恢复按钮。
+  - 验收：
+    - UI 不直接调用 AKShare/券商 SDK。
+    - 概念拉取长时间运行时不冻结 vn.py 前端。
+    - 状态栏展示 provider、board/member/link 计数、degraded source 和错误。
+
 ## 推荐实施顺序
 
 1. 先做 `P32-T01` 到 `P32-T04`，把概念板块主数据和券商优先 provider 链打通。
@@ -334,3 +347,4 @@ ConceptDB --> UI
 | P32-T06/P32-T07 | 2026-05-13 | 待提交 | `uv run --with pytest python -m pytest tests/test_data_router.py tests/test_seven_boll_scanner.py -q` |
 | P32-T08/P32-T09/P32-T10 | 2026-05-13 | 待提交 | `uv run --with pytest python -m pytest tests/test_seven_boll_scanner.py tests/test_seven_boll_storage.py tests/test_seven_boll_ui.py tests/test_stock_display.py tests/test_tradingagents_ui.py -q` |
 | P32-T11 | 2026-05-13 | 待提交 | `docs/community/ops/validation_results/2026-05-13-concept-board-daily-refresh-ui.md` |
+| P32-T12 | 2026-05-13 | 待提交 | `uv run --with pytest python -m pytest tests/test_concept_board_ingestion.py::test_tradingagents_engine_delegates_concept_ingestion_scheduler tests/test_concept_board_ingestion.py::test_tradingagents_ui_declares_concept_ingestion_manual_controls -q` |

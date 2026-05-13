@@ -580,6 +580,35 @@ def build_financial_ingestion_status_text(status: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_concept_ingestion_status_text(status: dict[str, Any]) -> str:
+    """
+    Render concept-ingestion scheduler progress for the seven-boll tab.
+    """
+    summary = status.get("last_summary") or {}
+    errors = summary.get("errors") or []
+    lines = [
+        f"concept_ingestion_status={status.get('state', '-')}",
+        f"enabled={status.get('enabled', '-')}",
+        f"active={status.get('active', '-')}",
+        "schedule_times=" + ",".join(str(item) for item in status.get("schedule_times", [])),
+        f"last_started_at={status.get('last_started_at', '-')}",
+        f"last_finished_at={status.get('last_finished_at', '-')}",
+        f"last_error={status.get('last_error', '')}",
+        f"cancel_requested={status.get('cancel_requested', False)}",
+        f"provider={summary.get('provider_name', '-')}",
+        f"board_count={summary.get('board_count', 0)}",
+        f"member_count={summary.get('member_count', 0)}",
+        f"link_count={summary.get('link_count', 0)}",
+        f"updated_symbols={len(summary.get('updated_symbols') or [])}",
+    ]
+    degraded_sources = summary.get("degraded_sources") or []
+    if degraded_sources:
+        lines.append("degraded_sources=" + ",".join(str(item) for item in degraded_sources))
+    if errors:
+        lines.append("errors=" + ",".join(str(item) for item in errors))
+    return "\n".join(lines)
+
+
 def _json_text(data: Any) -> str:
     """
     Convert arbitrary JSON-like data to readable text.
@@ -866,6 +895,15 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.seven_boll_search_edit.textChanged.connect(self.apply_seven_boll_filter)
         self.seven_boll_clear_search_button = QtWidgets.QPushButton("清空搜索")
         self.seven_boll_clear_search_button.clicked.connect(self.seven_boll_search_edit.clear)
+        self.concept_ingestion_trigger_button = QtWidgets.QPushButton("拉取概念入库")
+        self.concept_ingestion_trigger_button.clicked.connect(self.trigger_concept_ingestion)
+        self.concept_ingestion_status_button = QtWidgets.QPushButton("刷新概念状态")
+        self.concept_ingestion_status_button.clicked.connect(self.refresh_concept_ingestion_status)
+        self.concept_ingestion_status_label = QtWidgets.QLabel("concept_ingestion_status=idle")
+        self.concept_ingestion_status_label.setMinimumWidth(260)
+        self.concept_ingestion_timer = QtCore.QTimer(self)
+        self.concept_ingestion_timer.setInterval(3000)
+        self.concept_ingestion_timer.timeout.connect(self.refresh_concept_ingestion_status)
         self.seven_boll_summary_text = QtWidgets.QPlainTextEdit()
         self.seven_boll_summary_text.setReadOnly(True)
         self.seven_boll_buy_table = QtWidgets.QTableWidget(0, len(SEVEN_BOLL_COLUMNS))
@@ -1047,6 +1085,9 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         filter_layout.addWidget(QtWidgets.QLabel("搜索"))
         filter_layout.addWidget(self.seven_boll_search_edit)
         filter_layout.addWidget(self.seven_boll_clear_search_button)
+        filter_layout.addWidget(self.concept_ingestion_trigger_button)
+        filter_layout.addWidget(self.concept_ingestion_status_button)
+        filter_layout.addWidget(self.concept_ingestion_status_label)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         splitter.addWidget(self.seven_boll_summary_text)
@@ -1413,6 +1454,50 @@ class TradingAgentsWidget(QtWidgets.QWidget):
                 for result in self.seven_boll_sell_candidates
                 if candidate_matches_seven_boll_search(result, query)
             ],
+        )
+
+    def trigger_concept_ingestion(self) -> None:
+        """
+        Trigger concept-board ingestion asynchronously and gray out the button.
+        """
+        self._set_concept_ingestion_running(True)
+        try:
+            message = self.engine.trigger_concept_ingestion()
+        except Exception as exc:
+            self._set_concept_ingestion_running(False)
+            self.concept_ingestion_status_label.setText(f"concept_ingestion_status=failed error={exc}")
+            return
+        self.concept_ingestion_status_label.setText(f"concept_ingestion_status=triggered {message}")
+        if not self.concept_ingestion_timer.isActive():
+            self.concept_ingestion_timer.start()
+        self.refresh_concept_ingestion_status()
+
+    def refresh_concept_ingestion_status(self) -> None:
+        """
+        Refresh async concept-ingestion status and restore the trigger button.
+        """
+        try:
+            status = self.engine.get_concept_ingestion_status()
+        except Exception as exc:
+            self._set_concept_ingestion_running(False)
+            self.concept_ingestion_status_label.setText(f"concept_ingestion_status=failed error={exc}")
+            return
+
+        state = str(status.get("state", ""))
+        running = state in {"running", "cancel_requested"}
+        self._set_concept_ingestion_running(running)
+        if running and not self.concept_ingestion_timer.isActive():
+            self.concept_ingestion_timer.start()
+        elif not running and self.concept_ingestion_timer.isActive():
+            self.concept_ingestion_timer.stop()
+        self.concept_ingestion_status_label.setText(
+            build_concept_ingestion_status_text(status).replace("\n", " ")
+        )
+
+    def _set_concept_ingestion_running(self, running: bool) -> None:
+        self.concept_ingestion_trigger_button.setEnabled(not running)
+        self.concept_ingestion_trigger_button.setText(
+            "概念拉取中..." if running else "拉取概念入库"
         )
 
     def run_selected_seven_boll_analysis(self) -> None:
