@@ -14,6 +14,7 @@ from ..engine import TradingAgentsEngine
 from ..manual_analysis import ManualAnalysisRequest, ManualAnalysisResult
 from ..monitoring import ReplayRunStatus
 from ..runtime import TradingAgentsMode, TradingAgentsRuntimeState
+from ..stock_display import StockDisplayResolver
 from ..storage import AgentAnalysisRecord
 
 
@@ -54,6 +55,10 @@ SEVEN_BOLL_COLUMNS: list[str] = [
     "股票",
     "名称",
     "最相关概念",
+    "当前价",
+    "中轨",
+    "七轨位置",
+    "日K时间",
     "信号类型",
     "分数",
     "regime",
@@ -65,6 +70,10 @@ SEVEN_BOLL_COLUMNS: list[str] = [
 SEVEN_BOLL_SYMBOL_COLUMN: int = SEVEN_BOLL_COLUMNS.index("股票")
 SEVEN_BOLL_NAME_COLUMN: int = SEVEN_BOLL_COLUMNS.index("名称")
 SEVEN_BOLL_CONCEPT_COLUMN: int = SEVEN_BOLL_COLUMNS.index("最相关概念")
+SEVEN_BOLL_CURRENT_PRICE_COLUMN: int = SEVEN_BOLL_COLUMNS.index("当前价")
+SEVEN_BOLL_MID_COLUMN: int = SEVEN_BOLL_COLUMNS.index("中轨")
+SEVEN_BOLL_RAIL_ZONE_COLUMN: int = SEVEN_BOLL_COLUMNS.index("七轨位置")
+SEVEN_BOLL_BAR_TIME_COLUMN: int = SEVEN_BOLL_COLUMNS.index("日K时间")
 SEVEN_BOLL_ANALYSIS_RUN_COLUMN: int = SEVEN_BOLL_COLUMNS.index("analysis_run_id")
 SEVEN_BOLL_ANALYSIS_STATUS_COLUMN: int = SEVEN_BOLL_COLUMNS.index("analysis_status")
 SEVEN_BOLL_REPORT_COLUMN: int = SEVEN_BOLL_COLUMNS.index("查看报告")
@@ -86,6 +95,16 @@ SEVEN_BOLL_REGIME_LABELS: dict[str, str] = {
     "expansion_up": "向上扩张",
     "expansion_down": "向下扩张",
 }
+SEVEN_BOLL_RAIL_ZONE_LABELS: dict[str, str] = {
+    "above_top": "上破七轨",
+    "top_to_upper2": "七轨到二轨上方",
+    "upper2_to_upper1": "二轨到一轨",
+    "upper1_to_mid": "一轨到中轨",
+    "mid_to_lower1": "中轨到下一轨",
+    "lower1_to_lower2": "下一轨到下二轨",
+    "lower2_to_bottom": "下二轨到下七轨",
+    "below_bottom": "跌破下七轨",
+}
 SEVEN_BOLL_CONFIG_HELP_TEXT: dict[str, str] = {
     "seven_boll.scan.enabled": "是否启用七轨布林线定时扫描；手动扫描按钮不受此开关影响。",
     "seven_boll.scan.schedule": "定时扫描时间，逗号分隔；默认 11:35 午盘预览、15:05 收盘正式扫描。",
@@ -94,6 +113,8 @@ SEVEN_BOLL_CONFIG_HELP_TEXT: dict[str, str] = {
     "seven_boll.scan.min_buy_score": "买点候选最低分；低于该分数不会进入买点候选表。",
     "seven_boll.scan.min_sell_score": "卖点候选最低分；低于该分数不会进入卖点候选表。",
     "seven_boll.scan.symbols": "固定扫描股票池，逗号分隔；留空时按全市场股票池自动扫描。",
+    "seven_boll.scan.refresh_latest_daily": "今天扫描时是否通过 router datafeed 强刷当日 DAILY 最新日 K；只影响日线，不做分时扫描。",
+    "seven_boll.scan.latest_daily_ttl_seconds": "当日 DAILY 快照刷新 TTL；未超过 TTL 时复用缓存，0 表示每次手动扫描都强刷今天日 K。",
     "seven_boll.indicator.window": "布林线中轨均线窗口 N；默认 20 根日 K。",
     "seven_boll.indicator.std_ma_window": "标准差平滑窗口；默认 5，用于计算 DEV。",
     "seven_boll.indicator.squeeze_lookback": "收口分位数回看窗口；默认 120 根日 K。",
@@ -101,6 +122,15 @@ SEVEN_BOLL_CONFIG_HELP_TEXT: dict[str, str] = {
     "seven_boll.indicator.squeeze_percentile": "收口突破阈值分位数；越小越严格。",
     "seven_boll.indicator.pullback_tolerance": "趋势回踩容忍度；默认 0.01 表示二轨附近 1% 内。",
     "seven_boll.indicator.volume_breakout_ratio": "突破放量倍数；默认 1.5 倍成交量均线。",
+}
+CONCEPT_CONFIG_HELP_TEXT: dict[str, str] = {
+    "concept.ingestion.enabled": "是否启用概念板块入库定时任务；关闭后不影响已入库概念在七轨扫描中展示。",
+    "concept.ingestion.providers": "概念板块来源优先级，默认 broker,local_catalog,akshare；先用券商/QMT/XT，失败后再用本地 catalog，最后才用 AKShare 兜底。",
+    "concept.ingestion.schedule": "概念板块每日刷新时间，逗号分隔；概念是低频主数据，不跟随每次七轨扫描全量拉取。",
+    "concept.ingestion.catalog_path": "本地股票主数据 catalog 路径；可复用 news.entity.catalog_path 或 financial.ingestion.catalog_path。",
+    "concept.ingestion.max_boards_per_run": "单次最多拉取板块数；0 表示不限制，AKShare 兜底时建议先限制以避免接口限流。",
+    "concept.ingestion.max_concepts_per_symbol": "每只股票写回 security_entity.concept_tags 的前 N 个概念。",
+    "concept.ingestion.refresh_interval_hours": "概念板块建议刷新间隔小时数；用于运维判断低频主数据是否过期。",
 }
 CONFIG_TAB_TITLE: str = "配置"
 TRADINGAGENTS_API_KEY_FIELD: str = "tradingagents.api_key"
@@ -112,6 +142,7 @@ TRADINGAGENTS_CONFIG_PREFIXES: tuple[str, ...] = (
     "news.llm_classifier.",
     "financial.ingestion.",
     "financial.context.",
+    "concept.ingestion.",
     "seven_boll.",
 )
 
@@ -390,6 +421,46 @@ def format_regime_display(regime: Any) -> str:
     return SEVEN_BOLL_REGIME_LABELS.get(text, text)
 
 
+def format_rail_zone_display(rail_zone: Any) -> str:
+    """
+    Display rail-zone ids as Chinese labels while preserving unknown ids.
+    """
+    text = str(rail_zone or "")
+    return SEVEN_BOLL_RAIL_ZONE_LABELS.get(text, text)
+
+
+def build_boll_point_display(result: Any) -> dict[str, str]:
+    """
+    Extract compact seven-boll point values for candidate tables.
+    """
+    point = _value(result, "boll_point", {}) or {}
+    return {
+        "current_price": _format_price(point.get("current_price", _value(result, "close", ""))),
+        "mid": _format_price(point.get("mid", "")),
+        "rail_zone": format_rail_zone_display(point.get("rail_zone", _value(result, "rail_zone", ""))),
+        "bar_datetime": _format_datetime_text(point.get("bar_datetime", _value(result, "bar_datetime", ""))),
+    }
+
+
+def candidate_matches_seven_boll_search(result: Any, query: str) -> bool:
+    """
+    Return whether a seven-boll candidate matches the fuzzy UI search.
+    """
+    text = str(query or "").strip().lower()
+    if not text:
+        return True
+    fields = [
+        _value(result, "vt_symbol", ""),
+        _value(result, "name", ""),
+        _value(result, "concept", ""),
+        format_signal_types_display(_value(result, "signal_types", ()) or ()),
+        format_regime_display(_value(result, "regime", "")),
+        format_rail_zone_display(_value(result, "rail_zone", "")),
+        _value(result, "action", ""),
+    ]
+    return text in " ".join(str(field).lower() for field in fields)
+
+
 def _build_financial_context_markdown(financials: Any) -> str:
     """
     Render the financial context versions used by an analysis run.
@@ -525,6 +596,22 @@ def _format_optional_float(value: float | None) -> str:
     return f"{value:.2f}"
 
 
+def _format_price(value: Any) -> str:
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _format_datetime_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if " " in text:
+        return text.split(" ", 1)[0]
+    return text.split("T", 1)[0]
+
+
 def _value(source: Any, name: str, default: Any = None) -> Any:
     if isinstance(source, dict):
         return source.get(name, default)
@@ -657,9 +744,12 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.main_engine: MainEngine = main_engine
         self.event_engine: EventEngine = event_engine
         self.engine: TradingAgentsEngine = main_engine.get_engine("TradingAgents")
+        self.stock_display_resolver = StockDisplayResolver(main_engine=main_engine)
         self.history_records: list[AgentAnalysisRecord] = []
         self.news_records: list[NewsEvent] = []
         self.financial_context: dict[str, Any] = {}
+        self.seven_boll_buy_candidates: list[Any] = []
+        self.seven_boll_sell_candidates: list[Any] = []
         self.seven_boll_scan_worker: SevenBollScanWorker | None = None
 
         self.setWindowTitle(self.workspace_title)
@@ -771,6 +861,11 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         self.seven_boll_analysis_button.clicked.connect(self.run_selected_seven_boll_analysis)
         self.seven_boll_batch_analysis_button = QtWidgets.QPushButton("批量分析")
         self.seven_boll_batch_analysis_button.clicked.connect(self.run_batch_seven_boll_analysis)
+        self.seven_boll_search_edit = QtWidgets.QLineEdit()
+        self.seven_boll_search_edit.setPlaceholderText("搜索代码/名称/概念/信号/趋势")
+        self.seven_boll_search_edit.textChanged.connect(self.apply_seven_boll_filter)
+        self.seven_boll_clear_search_button = QtWidgets.QPushButton("清空搜索")
+        self.seven_boll_clear_search_button.clicked.connect(self.seven_boll_search_edit.clear)
         self.seven_boll_summary_text = QtWidgets.QPlainTextEdit()
         self.seven_boll_summary_text.setReadOnly(True)
         self.seven_boll_buy_table = QtWidgets.QTableWidget(0, len(SEVEN_BOLL_COLUMNS))
@@ -949,6 +1044,9 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         filter_layout.addWidget(self.seven_boll_refresh_button)
         filter_layout.addWidget(self.seven_boll_analysis_button)
         filter_layout.addWidget(self.seven_boll_batch_analysis_button)
+        filter_layout.addWidget(QtWidgets.QLabel("搜索"))
+        filter_layout.addWidget(self.seven_boll_search_edit)
+        filter_layout.addWidget(self.seven_boll_clear_search_button)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         splitter.addWidget(self.seven_boll_summary_text)
@@ -1024,7 +1122,11 @@ class TradingAgentsWidget(QtWidgets.QWidget):
             field_value = settings.get(field_name, SETTINGS.get(field_name, ""))
             field_type = type(SETTINGS.get(field_name, field_value))
             edit = QtWidgets.QLineEdit(str(field_value))
-            inline_help = SEVEN_BOLL_CONFIG_HELP_TEXT.get(field_name, "")
+            inline_help = (
+                SEVEN_BOLL_CONFIG_HELP_TEXT.get(field_name)
+                or CONCEPT_CONFIG_HELP_TEXT.get(field_name)
+                or ""
+            )
             if inline_help:
                 help_label = QtWidgets.QLabel(inline_help)
                 help_label.setWordWrap(True)
@@ -1287,8 +1389,31 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         Render seven-boll scan summary and candidate tables.
         """
         self.seven_boll_summary_text.setPlainText(build_seven_boll_scan_summary_text(summary))
-        self._populate_seven_boll_table(self.seven_boll_buy_table, _value(summary, "buy_candidates", []) or [])
-        self._populate_seven_boll_table(self.seven_boll_sell_table, _value(summary, "sell_candidates", []) or [])
+        self.seven_boll_buy_candidates = list(_value(summary, "buy_candidates", []) or [])
+        self.seven_boll_sell_candidates = list(_value(summary, "sell_candidates", []) or [])
+        self.apply_seven_boll_filter()
+
+    def apply_seven_boll_filter(self) -> None:
+        """
+        Filter displayed seven-boll candidates without modifying scan results.
+        """
+        query = self.seven_boll_search_edit.text() if hasattr(self, "seven_boll_search_edit") else ""
+        self._populate_seven_boll_table(
+            self.seven_boll_buy_table,
+            [
+                result
+                for result in self.seven_boll_buy_candidates
+                if candidate_matches_seven_boll_search(result, query)
+            ],
+        )
+        self._populate_seven_boll_table(
+            self.seven_boll_sell_table,
+            [
+                result
+                for result in self.seven_boll_sell_candidates
+                if candidate_matches_seven_boll_search(result, query)
+            ],
+        )
 
     def run_selected_seven_boll_analysis(self) -> None:
         """
@@ -1403,10 +1528,15 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         for row, result in enumerate(candidates):
             vt_symbol = _value(result, "vt_symbol", "")
             name = _value(result, "name", "")
+            point_display = build_boll_point_display(result)
             values = [
-                format_stock_display(vt_symbol, name),
+                self.stock_display_resolver.display(vt_symbol, name),
                 name,
                 _value(result, "concept", ""),
+                point_display["current_price"],
+                point_display["mid"],
+                point_display["rail_zone"],
+                point_display["bar_datetime"],
                 format_signal_types_display(_value(result, "signal_types", ()) or ()),
                 str(_value(result, "score", "")),
                 format_regime_display(_value(result, "regime", "")),
@@ -1559,7 +1689,7 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         for row, event in enumerate(self.news_records):
             values = [
                 str(event.occurred_at),
-                event.vt_symbol,
+                self.stock_display_resolver.display(event.vt_symbol),
                 event.event_type,
                 event.title,
                 event.source or event.provider_name,
@@ -1716,7 +1846,7 @@ class TradingAgentsWidget(QtWidgets.QWidget):
         for row, record in enumerate(self.history_records):
             values = [
                 str(record.created_at),
-                record.vt_symbol,
+                self.stock_display_resolver.display(record.vt_symbol),
                 record.mode,
                 record.rating or "-",
                 record.action or "-",

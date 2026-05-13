@@ -287,6 +287,47 @@ def test_data_provider_router_writes_provider_result_to_snapshot_cache():
     assert second_bars[0].extra["provider_name"] == "akshare"
 
 
+def test_data_provider_router_refresh_bar_history_bypasses_snapshot_cache():
+    """refresh_bar_history should force provider fetch and update snapshot cache."""
+    from vnpy_router.router import DataProviderRouter
+
+    cached_bar = _bar(gateway_name="local_file")
+    fresh_bar = _bar(gateway_name="akshare")
+    fresh_bar.close_price = 1701
+    cache = MemorySnapshotCache(rows=[_bar_to_snapshot_row(cached_bar)])
+    provider = FakeProvider([fresh_bar])
+    router = DataProviderRouter(
+        [provider],
+        snapshot_reader=cache,
+        snapshot_storage=cache,
+    )
+
+    cached = router.query_bar_history(_history_request())
+    refreshed = router.refresh_bar_history(_history_request())
+
+    assert cached[0].gateway_name == "local_file"
+    assert refreshed[0].gateway_name == "akshare"
+    assert refreshed[0].close_price == 1701
+    assert provider.query_count == 1
+    assert cache.save_count == 1
+
+
+def test_datafeed_exposes_refresh_bar_history_adapter(monkeypatch, tmp_path):
+    """Router datafeed should expose refresh_bar_history through vn.py datafeed boundary."""
+    from vnpy_router import datafeed as datafeed_module
+
+    monkeypatch.setitem(SETTINGS, "router.local_path", str(tmp_path))
+    monkeypatch.setitem(SETTINGS, "router.providers", "local_file")
+
+    datafeed = datafeed_module.Datafeed()
+    datafeed.router = FakeRouter([_bar()])
+
+    bars = datafeed.refresh_bar_history(_history_request())
+
+    assert bars[0].vt_symbol == "600519.SSE"
+    assert datafeed.router.refresh_requests
+
+
 def test_postgres_snapshot_storage_saves_bar_with_provider_metadata():
     """PostgresSnapshotStorage should persist provider metadata with bar data."""
     from vnpy_router.storage import PostgresSnapshotStorage
@@ -670,6 +711,18 @@ class FakeProvider:
 
     def query_bar_history(self, req, output=print) -> list[BarData]:
         self.query_count += 1
+        return self.bars
+
+
+class FakeRouter:
+    """Tiny router fake for datafeed adapter tests."""
+
+    def __init__(self, bars: list[BarData]) -> None:
+        self.bars = bars
+        self.refresh_requests = []
+
+    def refresh_bar_history(self, req, output=print) -> list[BarData]:
+        self.refresh_requests.append(req)
         return self.bars
 
 

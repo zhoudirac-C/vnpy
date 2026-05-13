@@ -8,19 +8,26 @@ def test_tradingagents_ui_declares_seven_boll_scan_tab_and_columns() -> None:
     from vnpy_tradingagents.ui.widget import (
         SEVEN_BOLL_ANALYSIS_RUN_COLUMN,
         SEVEN_BOLL_ANALYSIS_STATUS_COLUMN,
+        SEVEN_BOLL_BAR_TIME_COLUMN,
         SEVEN_BOLL_BUY_TABLE_TITLE,
         SEVEN_BOLL_COLUMNS,
         SEVEN_BOLL_CONCEPT_COLUMN,
         SEVEN_BOLL_CONFIG_HELP_TEXT,
+        SEVEN_BOLL_CURRENT_PRICE_COLUMN,
+        SEVEN_BOLL_MID_COLUMN,
         SEVEN_BOLL_NAME_COLUMN,
+        SEVEN_BOLL_RAIL_ZONE_COLUMN,
         SEVEN_BOLL_REPORT_COLUMN,
         SEVEN_BOLL_RUNNING_STATUSES,
         SEVEN_BOLL_SYMBOL_COLUMN,
         SEVEN_BOLL_SELL_TABLE_TITLE,
         SEVEN_BOLL_TAB_TITLE,
         TRADINGAGENTS_CONFIG_PREFIXES,
+        build_boll_point_display,
         build_seven_boll_progress_text,
         build_seven_boll_scan_summary_text,
+        candidate_matches_seven_boll_search,
+        format_rail_zone_display,
         format_regime_display,
         format_signal_types_display,
         format_stock_display,
@@ -33,6 +40,10 @@ def test_tradingagents_ui_declares_seven_boll_scan_tab_and_columns() -> None:
     assert SEVEN_BOLL_SYMBOL_COLUMN == 0
     assert SEVEN_BOLL_NAME_COLUMN == 1
     assert SEVEN_BOLL_CONCEPT_COLUMN == 2
+    assert SEVEN_BOLL_CURRENT_PRICE_COLUMN == SEVEN_BOLL_COLUMNS.index("当前价")
+    assert SEVEN_BOLL_MID_COLUMN == SEVEN_BOLL_COLUMNS.index("中轨")
+    assert SEVEN_BOLL_RAIL_ZONE_COLUMN == SEVEN_BOLL_COLUMNS.index("七轨位置")
+    assert SEVEN_BOLL_BAR_TIME_COLUMN == SEVEN_BOLL_COLUMNS.index("日K时间")
     assert "信号类型" in SEVEN_BOLL_COLUMNS
     assert "analysis_status" in SEVEN_BOLL_COLUMNS
     assert SEVEN_BOLL_ANALYSIS_RUN_COLUMN == SEVEN_BOLL_COLUMNS.index("analysis_run_id")
@@ -54,6 +65,32 @@ def test_tradingagents_ui_declares_seven_boll_scan_tab_and_columns() -> None:
     assert format_regime_display("trend_up") == "上升趋势"
     assert format_regime_display("extreme_overbought") == "极端超买"
     assert format_regime_display("unknown_regime") == "unknown_regime"
+    assert format_rail_zone_display("upper2_to_upper1") == "二轨到一轨"
+    point_display = build_boll_point_display(
+        {
+            "close": 100,
+            "bar_datetime": "2026-05-13 15:00:00",
+            "rail_zone": "upper2_to_upper1",
+            "boll_point": {"current_price": 101.2, "mid": 95, "rail_zone": "upper2_to_upper1"},
+        }
+    )
+    assert point_display["current_price"] == "101.20"
+    assert point_display["mid"] == "95.00"
+    assert point_display["rail_zone"] == "二轨到一轨"
+
+    candidate = {
+        "vt_symbol": "603112.SSE",
+        "name": "华翔股份",
+        "concept": "机器人概念,光伏概念",
+        "signal_types": ("trend_pullback_long",),
+        "regime": "trend_up",
+        "rail_zone": "upper2_to_upper1",
+    }
+    assert candidate_matches_seven_boll_search(candidate, "华翔")
+    assert candidate_matches_seven_boll_search(candidate, "机器人")
+    assert candidate_matches_seven_boll_search(candidate, "趋势回踩")
+    assert candidate_matches_seven_boll_search(candidate, "上升趋势")
+    assert not candidate_matches_seven_boll_search(candidate, "白酒")
 
     text = build_seven_boll_scan_summary_text(
         {
@@ -94,6 +131,8 @@ def test_tradingagents_widget_wires_seven_boll_scan_tab() -> None:
     assert "self.seven_boll_cancel_button.clicked.connect(self.cancel_seven_boll_scan)" in source
     assert "self.seven_boll_analysis_button.clicked.connect(self.run_selected_seven_boll_analysis)" in source
     assert "self.seven_boll_batch_analysis_button.clicked.connect(self.run_batch_seven_boll_analysis)" in source
+    assert "self.seven_boll_search_edit.textChanged.connect(self.apply_seven_boll_filter)" in source
+    assert "candidate_matches_seven_boll_search" in source
     assert "self._create_titled_section(SEVEN_BOLL_BUY_TABLE_TITLE" in source
     assert "self._create_titled_section(SEVEN_BOLL_SELL_TABLE_TITLE" in source
     assert "cellClicked.connect(self.handle_seven_boll_cell_clicked)" in source

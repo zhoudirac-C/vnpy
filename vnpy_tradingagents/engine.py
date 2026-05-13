@@ -44,6 +44,8 @@ class TradingAgentsEngine(BaseEngine):
         self.financial_reader: Any | None = None
         self.financial_ingestion_scheduler: Any | None = None
         self.financial_ingestion_error: str = ""
+        self.concept_ingestion_scheduler: Any | None = None
+        self.concept_ingestion_error: str = ""
         self.seven_boll_scan_service: Any | None = None
         self.seven_boll_scan_repository: Any | None = None
 
@@ -286,6 +288,55 @@ class TradingAgentsEngine(BaseEngine):
         """
         self.financial_ingestion_error = error
 
+    def set_concept_ingestion_scheduler(self, scheduler: Any) -> None:
+        """
+        Attach optional concept-board ingestion scheduler.
+        """
+        self.concept_ingestion_scheduler = scheduler
+        self.concept_ingestion_error = ""
+
+    def set_concept_ingestion_error(self, error: str) -> None:
+        """
+        Store optional concept-ingestion startup diagnostics for the UI.
+        """
+        self.concept_ingestion_error = error
+
+    def trigger_concept_ingestion(self) -> str:
+        """
+        Trigger a one-off concept-board ingestion run from the UI.
+        """
+        if self.concept_ingestion_scheduler is None:
+            raise RuntimeError("TradingAgents concept ingestion scheduler is not configured")
+        accepted = self.concept_ingestion_scheduler.trigger()
+        if accepted is False:
+            return "concept_ingestion_busy"
+        return "concept_ingestion_triggered"
+
+    def get_concept_ingestion_status(self) -> dict[str, Any]:
+        """
+        Return concept-ingestion scheduler status for the UI.
+        """
+        if self.concept_ingestion_scheduler is None:
+            return {
+                "state": "unconfigured",
+                "last_error": self.concept_ingestion_error,
+            }
+        status = getattr(self.concept_ingestion_scheduler, "status", None)
+        if not callable(status):
+            return {"state": "unknown"}
+        return status()
+
+    def cancel_concept_ingestion(self) -> bool:
+        """
+        Request cancellation of the current concept-ingestion run.
+        """
+        if self.concept_ingestion_scheduler is None:
+            return False
+        cancel = getattr(self.concept_ingestion_scheduler, "cancel", None)
+        if not callable(cancel):
+            return False
+        return bool(cancel())
+
     def trigger_financial_ingestion(self, symbols: list[str] | tuple[str, ...] | None = None) -> str:
         """
         Trigger a one-off financial ingestion run from the UI.
@@ -362,7 +413,11 @@ class TradingAgentsEngine(BaseEngine):
         """
         Stop background TradingAgents workers before vn.py exits.
         """
-        for scheduler in (self.news_ingestion_scheduler, self.financial_ingestion_scheduler):
+        for scheduler in (
+            self.news_ingestion_scheduler,
+            self.financial_ingestion_scheduler,
+            self.concept_ingestion_scheduler,
+        ):
             if scheduler is None:
                 continue
             stop = getattr(scheduler, "stop", None)

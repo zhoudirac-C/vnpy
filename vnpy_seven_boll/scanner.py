@@ -4,6 +4,8 @@ Full-market seven-rail Bollinger scanner.
 
 from __future__ import annotations
 
+import json
+
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -82,6 +84,7 @@ class SevenBollScanResult:
     regime: str
     bar_datetime: Any
     interval: str
+    boll_point: dict[str, Any] = field(default_factory=dict)
     concept: str = ""
     report_run_id: str = ""
 
@@ -108,6 +111,7 @@ class SevenBollScanResult:
             "regime": self.regime,
             "bar_datetime": str(self.bar_datetime),
             "interval": self.interval,
+            "boll_point": dict(self.boll_point),
         }
 
 
@@ -318,9 +322,16 @@ class VnpySevenBollHistoryProvider:
         symbol, exchange = _parse_vt_symbol(normalized)
         start = request.end - timedelta(days=max(request.lookback_days, request.config.window * 3))
         bars = self._load_database_bars(symbol, exchange, request.interval, start, request.end)
-        if bars:
-            return bars
-        return self._load_datafeed_bars(symbol, exchange, request.interval, start, request.end)
+        if not bars:
+            bars = self._load_datafeed_bars(symbol, exchange, request.interval, start, request.end)
+        return self._refresh_latest_daily_bar_if_needed(
+            normalized,
+            symbol,
+            exchange,
+            request,
+            start,
+            bars,
+        )
 
     def load_name(self, vt_symbol: str) -> str:
         normalized = _normalize_vt_symbol(vt_symbol)
@@ -345,12 +356,14 @@ class VnpySevenBollHistoryProvider:
         if normalized in self._concept_cache:
             return self._concept_cache[normalized]
 
-        entity = self._security_entity_from_catalog(normalized)
-        concept = _concept_from_security_entity(entity)
+        concept = ",".join(self._security_concepts_from_database(normalized))
         if not concept:
             concept = _concept_from_security_metadata(
                 self._security_entity_from_database(normalized)
             )
+        if not concept:
+            entity = self._security_entity_from_catalog(normalized)
+            concept = _concept_from_security_entity(entity)
         self._concept_cache[normalized] = concept
         return concept
 
@@ -395,6 +408,80 @@ class VnpySevenBollHistoryProvider:
             return list(datafeed.query_bar_history(req, output=lambda _message: None) or [])
         except Exception:
             return []
+
+    def _refresh_latest_daily_bar_if_needed(
+        self,
+        vt_symbol: str,
+        symbol: str,
+        exchange: Exchange,
+        request: SevenBollScanRequest,
+        start: datetime,
+        bars: list[BarData],
+    ) -> list[BarData]:
+        if request.interval != Interval.DAILY:
+            return bars
+        if not _bool_setting(self.settings.get("seven_boll.scan.refresh_latest_daily", True), True):
+            return bars
+        if request.end.date() != datetime.now().date():
+            return bars
+
+        datafeed = self._datafeed_or_none()
+        refresh_bar_history = getattr(datafeed, "refresh_bar_history", None)
+        if not callable(refresh_bar_history):
+            return bars
+
+        ttl_seconds = _int_setting(
+            self.settings.get("seven_boll.scan.latest_daily_ttl_seconds", 900),
+            900,
+        )
+        if ttl_seconds > 0 and self._latest_daily_snapshot_fresh(vt_symbol, ttl_seconds):
+            return bars
+
+        refresh_start = max(start, request.end.replace(hour=0, minute=0, second=0, microsecond=0))
+        req = HistoryRequest(
+            symbol=symbol,
+            exchange=exchange,
+            interval=Interval.DAILY,
+            start=refresh_start,
+            end=request.end,
+        )
+        try:
+            init = getattr(datafeed, "init", None)
+            if callable(init):
+                init(output=lambda _message: None)
+            refreshed = list(refresh_bar_history(req, output=lambda _message: None) or [])
+        except Exception:
+            return bars
+        if not refreshed:
+            return bars
+        return _merge_bars_by_date(bars, refreshed)
+
+    def _latest_daily_snapshot_fresh(self, vt_symbol: str, ttl_seconds: int) -> bool:
+        database = self._database_or_none()
+        peewee_database = getattr(database, "db", None)
+        if peewee_database is None:
+            return False
+        placeholder = getattr(peewee_database, "param", "?")
+        try:
+            cursor = peewee_database.execute_sql(
+                "SELECT pulled_at "
+                "FROM market_bar_snapshot "
+                f"WHERE vt_symbol = {placeholder} AND interval = 'd' "
+                "ORDER BY datetime DESC, pulled_at DESC "
+                "LIMIT 1",
+                (vt_symbol,),
+            )
+            row = cursor.fetchone()
+        except Exception:
+            return False
+        if not row:
+            return False
+        pulled_at = row[0] if isinstance(row, (list, tuple)) else getattr(row, "pulled_at", None)
+        pulled_at_dt = _to_datetime_or_none(pulled_at)
+        if pulled_at_dt is None:
+            return False
+        now = datetime.now(pulled_at_dt.tzinfo) if pulled_at_dt.tzinfo else datetime.now()
+        return (now - pulled_at_dt).total_seconds() < ttl_seconds
 
     def _database_or_none(self) -> Any | None:
         if self._database is not None:
@@ -471,6 +558,31 @@ class VnpySevenBollHistoryProvider:
             "concept_tags": row[4],
         }
 
+    def _security_concepts_from_database(self, vt_symbol: str, limit: int = 3) -> list[str]:
+        database = self._database_or_none()
+        peewee_database = getattr(database, "db", None)
+        if peewee_database is None:
+            return []
+        placeholder = getattr(peewee_database, "param", "?")
+        try:
+            cursor = peewee_database.execute_sql(
+                "SELECT board_name "
+                "FROM security_concept_link "
+                f"WHERE vt_symbol = {placeholder} AND board_type = 'concept' "
+                "ORDER BY is_primary DESC, COALESCE(relevance_score, 0) DESC, board_name "
+                f"LIMIT {max(1, int(limit))}",
+                (vt_symbol,),
+            )
+            rows = cursor.fetchall()
+        except Exception:
+            return []
+        concepts: list[str] = []
+        for row in rows or []:
+            value = str(row[0] if isinstance(row, (list, tuple)) else row or "").strip()
+            if value and value not in concepts:
+                concepts.append(value)
+        return concepts
+
 
 def build_scan_request_from_settings(
     settings: Mapping[str, Any] | None = None,
@@ -531,7 +643,26 @@ def _scan_result_from_signal(
         regime=point.regime,
         bar_datetime=point.datetime,
         interval=Interval.DAILY.value,
+        boll_point=_boll_point_snapshot(point),
     )
+
+
+def _boll_point_snapshot(point: Any) -> dict[str, Any]:
+    return {
+        "current_price": point.close,
+        "bar_datetime": str(point.datetime),
+        "top_band": point.top_band,
+        "upper2_band": point.upper2_band,
+        "upper1_band": point.upper1_band,
+        "mid": point.mid,
+        "lower1_band": point.lower1_band,
+        "lower2_band": point.lower2_band,
+        "bottom_band": point.bottom_band,
+        "zscore": point.zscore,
+        "bandwidth_percentile": point.bandwidth_percentile,
+        "mid_slope": point.mid_slope,
+        "rail_zone": point.rail_zone,
+    }
 
 
 def _load_concept(history_provider: SevenBollHistoryProvider, vt_symbol: str) -> str:
@@ -549,7 +680,7 @@ def _concept_from_security_entity(entity: Any | None) -> str:
         return ""
     tags = getattr(entity, "concept_tags", ()) or ()
     if tags:
-        return str(next(iter(tags), "") or "")
+        return ",".join(str(item) for item in tags if str(item))
     return str(
         getattr(entity, "industry", "")
         or getattr(entity, "sector", "")
@@ -562,10 +693,58 @@ def _concept_from_security_metadata(metadata: dict[str, Any]) -> str:
         return ""
     tags = metadata.get("concept_tags") or ()
     if isinstance(tags, str):
-        tags = [item.strip() for item in tags.replace("，", ",").replace("|", ",").split(",") if item.strip()]
+        tags = _concept_tags_from_text(tags)
     if isinstance(tags, (list, tuple)) and tags:
-        return str(tags[0] or "")
+        return ",".join(str(item) for item in tags if str(item))
     return str(metadata.get("industry") or metadata.get("sector") or "")
+
+
+def _concept_tags_from_text(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError:
+            decoded = None
+        if isinstance(decoded, list):
+            return [str(item).strip() for item in decoded if str(item).strip()]
+    return [
+        item.strip()
+        for item in text.replace("，", ",").replace("|", ",").split(",")
+        if item.strip()
+    ]
+
+
+def _merge_bars_by_date(
+    bars: Sequence[BarData],
+    refreshed_bars: Sequence[BarData],
+) -> list[BarData]:
+    merged: dict[Any, BarData] = {}
+    for bar in bars:
+        if bar.datetime is None:
+            continue
+        merged[bar.datetime.date()] = bar
+    for bar in refreshed_bars:
+        if bar.datetime is None:
+            continue
+        merged[bar.datetime.date()] = bar
+    return sorted(merged.values(), key=lambda item: item.datetime)
+
+
+def _to_datetime_or_none(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _symbols_from_main_engine(
@@ -703,6 +882,14 @@ def _int_setting(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _bool_setting(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _scan_run_id() -> str:

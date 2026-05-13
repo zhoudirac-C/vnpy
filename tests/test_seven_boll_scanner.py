@@ -47,6 +47,10 @@ def test_scan_service_outputs_daily_candidate_fields(monkeypatch) -> None:
     assert result.interval == "d"
     assert result.to_context()["interval"] == "d"
     assert result.to_context()["concept"] == "白酒"
+    assert result.boll_point["current_price"] == 100
+    assert result.boll_point["mid"] == 95
+    assert result.boll_point["top_band"] == 110
+    assert result.to_context()["boll_point"]["rail_zone"] == "upper2_to_upper1"
     assert result.signal_types == ("trend_pullback_long",)
 
 
@@ -116,6 +120,76 @@ def test_vnpy_provider_falls_back_to_get_datafeed_daily_history(monkeypatch) -> 
     assert datafeed.requests
     assert datafeed.requests[0].vt_symbol == "600519.SSE"
     assert datafeed.requests[0].interval == Interval.DAILY
+
+
+def test_vnpy_provider_load_concept_prefers_security_concept_links() -> None:
+    from vnpy_seven_boll.scanner import VnpySevenBollHistoryProvider
+
+    provider = VnpySevenBollHistoryProvider(settings={})
+    provider._database = FakeDatabase([])
+    provider._database.db = FakePeeweeDatabase(
+        {
+            "security_concept_link": [
+                ("机器人概念",),
+                ("光伏概念",),
+            ],
+            "security_entity": [
+                ("华翔股份", "华翔股份", "汽车零部件", "制造业", '["旧概念"]'),
+            ],
+        }
+    )
+
+    assert provider.load_concept("603112.SSE") == "机器人概念,光伏概念"
+    assert provider._database.db.executed[0][0].startswith("SELECT board_name")
+
+
+def test_vnpy_provider_refreshes_today_daily_bar_through_router_datafeed() -> None:
+    from vnpy_seven_boll.scanner import SevenBollScanRequest, VnpySevenBollHistoryProvider
+
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    stale_bar = _bar()
+    stale_bar.datetime = today
+    stale_bar.close_price = 100
+    fresh_bar = _bar()
+    fresh_bar.datetime = today
+    fresh_bar.close_price = 101
+    database = FakeDatabase([stale_bar])
+    datafeed = RecordingRefreshDatafeed([fresh_bar])
+    provider = VnpySevenBollHistoryProvider(
+        settings={
+            "seven_boll.scan.refresh_latest_daily": True,
+            "seven_boll.scan.latest_daily_ttl_seconds": 0,
+        }
+    )
+    provider._database = database
+    provider._datafeed = datafeed
+
+    bars = provider.load_bars("600519.SSE", SevenBollScanRequest(end=datetime.now()))
+
+    assert bars[-1].datetime.date() == today.date()
+    assert bars[-1].close_price == 101
+    assert datafeed.refresh_requests
+    assert datafeed.refresh_requests[0].interval == Interval.DAILY
+
+
+def test_vnpy_provider_does_not_refresh_historical_daily_bar() -> None:
+    from vnpy_seven_boll.scanner import SevenBollScanRequest, VnpySevenBollHistoryProvider
+
+    database = FakeDatabase([_bar()])
+    datafeed = RecordingRefreshDatafeed([_bar()])
+    provider = VnpySevenBollHistoryProvider(
+        settings={
+            "seven_boll.scan.refresh_latest_daily": True,
+            "seven_boll.scan.latest_daily_ttl_seconds": 0,
+        }
+    )
+    provider._database = database
+    provider._datafeed = datafeed
+
+    bars = provider.load_bars("600519.SSE", SevenBollScanRequest(end=datetime(2024, 1, 3)))
+
+    assert bars == database.bars
+    assert datafeed.refresh_requests == []
 
 
 def _signal_result() -> SevenBollSignalResult:
@@ -227,9 +301,42 @@ class RecordingDatafeed:
         return self.bars
 
 
+class RecordingRefreshDatafeed(RecordingDatafeed):
+    def __init__(self, bars: list[BarData]) -> None:
+        super().__init__(bars)
+        self.refresh_requests = []
+
+    def refresh_bar_history(self, req, output=print):
+        self.refresh_requests.append(req)
+        return self.bars
+
+
 class FailingDatafeed(RecordingDatafeed):
     def __init__(self) -> None:
         super().__init__([])
 
     def query_bar_history(self, req, output=print):
         raise AssertionError("datafeed should not be used when database has daily bars")
+
+
+class FakePeeweeDatabase:
+    def __init__(self, rows_by_table: dict[str, list[tuple]]) -> None:
+        self.rows_by_table = rows_by_table
+        self.param = "?"
+        self.executed = []
+
+    def execute_sql(self, sql: str, params: tuple):
+        self.executed.append((sql, params))
+        table = "security_concept_link" if "security_concept_link" in sql else "security_entity"
+        return FakeCursor(self.rows_by_table.get(table, []))
+
+
+class FakeCursor:
+    def __init__(self, rows: list[tuple]) -> None:
+        self.rows = rows
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows

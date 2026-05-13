@@ -62,6 +62,7 @@ ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS dedup_window_seconds INTEGE
 ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS review_status TEXT;
 
 ALTER TABLE seven_boll_scan_result ADD COLUMN IF NOT EXISTS concept TEXT;
+ALTER TABLE seven_boll_scan_result ADD COLUMN IF NOT EXISTS boll_point_json TEXT;
 """
 
 

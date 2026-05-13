@@ -42,6 +42,8 @@ def test_seven_boll_storage_saves_scan_results_without_raw_bars() -> None:
     assert latest.run_id == "run-2"
     assert latest.buy_candidates[0].interval == "d"
     assert latest.buy_candidates[0].concept == "白酒"
+    assert latest.buy_candidates[0].boll_point["current_price"] == 100
+    assert latest.buy_candidates[0].boll_point["mid"] == 95
     assert latest.buy_candidates[0].signal_types == ("trend_pullback_long",)
     assert [summary.run_id for summary in history] == ["run-2", "run-1"]
     assert "concept" in repository.result_model._meta.fields
@@ -80,6 +82,13 @@ def _summary(run_id: str, started_at: datetime) -> SevenBollScanSummary:
         regime="trend_up",
         bar_datetime=started_at,
         interval="d",
+        boll_point={
+            "current_price": 100,
+            "mid": 95,
+            "upper1_band": 100,
+            "upper2_band": 105,
+            "rail_zone": "upper2_to_upper1",
+        },
     )
     return SevenBollScanSummary(
         run_id=run_id,

@@ -130,6 +130,42 @@ CREATE TABLE IF NOT EXISTS security_alias (
     updated_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (alias, vt_symbol)
 );
+
+CREATE TABLE IF NOT EXISTS concept_board (
+    board_id TEXT PRIMARY KEY,
+    board_type TEXT NOT NULL,
+    board_code TEXT NOT NULL,
+    board_name TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS concept_board_member (
+    board_id TEXT NOT NULL,
+    vt_symbol TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    exchange TEXT NOT NULL,
+    name TEXT,
+    rank INTEGER DEFAULT 0,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (board_id, vt_symbol, provider_name)
+);
+
+CREATE TABLE IF NOT EXISTS security_concept_link (
+    vt_symbol TEXT NOT NULL,
+    board_id TEXT NOT NULL,
+    board_name TEXT NOT NULL,
+    board_type TEXT NOT NULL,
+    relevance_score DOUBLE PRECISION,
+    is_primary BOOLEAN DEFAULT false,
+    provider_name TEXT NOT NULL,
+    provider_version TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (vt_symbol, board_id, provider_name)
+);
 """
 
 

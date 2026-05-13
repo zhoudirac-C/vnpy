@@ -143,6 +143,7 @@ class PeeweeSevenBollScanRepository:
             "regime": result.regime,
             "bar_datetime": _as_datetime(result.bar_datetime),
             "interval": result.interval,
+            "boll_point_json": _json_dumps(result.boll_point or {}),
             "analysis_run_id": result.report_run_id or None,
             "analysis_status": None,
         }
@@ -167,6 +168,7 @@ class PeeweeSevenBollScanRepository:
             regime=row.regime,
             bar_datetime=row.bar_datetime,
             interval=row.interval,
+            boll_point=_json_dict(getattr(row, "boll_point_json", "") or ""),
             report_run_id=row.analysis_run_id or "",
         )
 
@@ -175,6 +177,7 @@ class PeeweeSevenBollScanRepository:
         Add post-initial result columns without a standalone migration runner.
         """
         self._ensure_column("seven_boll_scan_result", "concept", "TEXT")
+        self._ensure_column("seven_boll_scan_result", "boll_point_json", "TEXT")
 
     def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
         try:
@@ -207,6 +210,13 @@ def _json_loads(value: str) -> list[Any]:
         return []
     loaded = json.loads(value)
     return list(loaded if isinstance(loaded, list) else [loaded])
+
+
+def _json_dict(value: str) -> dict[str, Any]:
+    if not value:
+        return {}
+    loaded = json.loads(value)
+    return dict(loaded) if isinstance(loaded, dict) else {}
 
 
 def _as_datetime(value: Any) -> datetime:

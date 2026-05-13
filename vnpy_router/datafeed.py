@@ -52,6 +52,16 @@ class Datafeed(BaseDatafeed):
         """
         return self.router.query_bar_history(req, output)
 
+    def refresh_bar_history(
+        self,
+        req: HistoryRequest,
+        output: Callable = print,
+    ) -> list[BarData]:
+        """
+        Force refresh bar history through router providers.
+        """
+        return self.router.refresh_bar_history(req, output)
+
     def query_tick_history(
         self,
         req: HistoryRequest,

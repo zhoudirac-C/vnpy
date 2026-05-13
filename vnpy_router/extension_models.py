@@ -21,6 +21,9 @@ ROUTER_EXTENSION_TABLE_NAMES: tuple[str, ...] = (
     "event_quality_report",
     "security_entity",
     "security_alias",
+    "concept_board",
+    "concept_board_member",
+    "security_concept_link",
     "financial_statement_snapshot",
     "financial_indicator_snapshot",
     "financial_report_document",
@@ -236,10 +239,10 @@ def build_router_extension_models(database: Any) -> list[type]:
         short_name = TextField(null=True)
         industry = TextField(null=True)
         sector = TextField(null=True)
-        concept_tags = BinaryJSONField(null=True)
+        concept_tags = BinaryJSONField(null=True, index=False)
         provider_name = TextField()
         provider_version = TextField(null=True)
-        updated_at = DateTimeField(constraints=[SQL("DEFAULT now()")], null=True)
+        updated_at = DateTimeField(null=True)
 
         class Meta:
             table_name = "security_entity"
@@ -257,6 +260,48 @@ def build_router_extension_models(database: Any) -> list[type]:
         class Meta:
             table_name = "security_alias"
             primary_key = CompositeKey("alias", "vt_symbol")
+
+    class ConceptBoard(BaseExtensionModel):
+        board_id = TextField(primary_key=True)
+        board_type = TextField()
+        board_code = TextField()
+        board_name = TextField()
+        provider_name = TextField()
+        provider_version = TextField(null=True)
+        updated_at = DateTimeField(null=True)
+
+        class Meta:
+            table_name = "concept_board"
+
+    class ConceptBoardMember(BaseExtensionModel):
+        board_id = TextField()
+        vt_symbol = TextField()
+        symbol = TextField()
+        exchange = TextField()
+        name = TextField(null=True)
+        rank = IntegerField(default=0)
+        provider_name = TextField()
+        provider_version = TextField(null=True)
+        updated_at = DateTimeField(null=True)
+
+        class Meta:
+            table_name = "concept_board_member"
+            primary_key = CompositeKey("board_id", "vt_symbol", "provider_name")
+
+    class SecurityConceptLink(BaseExtensionModel):
+        vt_symbol = TextField()
+        board_id = TextField()
+        board_name = TextField()
+        board_type = TextField()
+        relevance_score = FloatField(null=True)
+        is_primary = BooleanField(default=False)
+        provider_name = TextField()
+        provider_version = TextField(null=True)
+        updated_at = DateTimeField(null=True)
+
+        class Meta:
+            table_name = "security_concept_link"
+            primary_key = CompositeKey("vt_symbol", "board_id", "provider_name")
 
     class FinancialStatementSnapshot(BaseExtensionModel):
         vt_symbol = TextField()
@@ -333,6 +378,9 @@ def build_router_extension_models(database: Any) -> list[type]:
         EventQualityReport,
         SecurityEntity,
         SecurityAlias,
+        ConceptBoard,
+        ConceptBoardMember,
+        SecurityConceptLink,
         FinancialStatementSnapshot,
         FinancialIndicatorSnapshot,
         FinancialReportDocument,

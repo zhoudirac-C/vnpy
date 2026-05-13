@@ -62,6 +62,7 @@ def build_seven_boll_extension_models(database: Any) -> list[type]:
         regime = TextField(index=True)
         bar_datetime = DateTimeField(index=True)
         interval = TextField(index=True)
+        boll_point_json = TextField(null=True)
         analysis_run_id = TextField(null=True)
         analysis_status = TextField(null=True)
         created_at = DateTimeField(null=True)

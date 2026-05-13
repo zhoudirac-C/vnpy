@@ -89,6 +89,32 @@ class DataProviderRouter:
 
         return []
 
+    def refresh_bar_history(
+        self,
+        req: HistoryRequest,
+        output: Callable = print,
+    ) -> list[BarData]:
+        """
+        Force a provider fetch and update snapshot cache, bypassing cache reads.
+        """
+        for provider in self.providers:
+            capability: ProviderCapability | None = getattr(provider, "capability", None)
+            if capability and not capability.supports_history_request(req):
+                output(unsupported_reason(capability, req))
+                continue
+
+            try:
+                bars: list[BarData] = provider.query_bar_history(req, output)
+            except Exception as exc:
+                output(f"{provider.name} provider failed: {exc}")
+                continue
+
+            if bars:
+                self._save_snapshot_cache(bars, output)
+                return bars
+
+        return []
+
     def _query_snapshot_cache(
         self,
         req: HistoryRequest,

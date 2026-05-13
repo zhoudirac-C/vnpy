@@ -95,10 +95,11 @@ P1-P11 是第一轮骨架阶段，已完成项代表接口、边界、单测或 
 | P29 | [29-daily-market-review-vnpy-app.md](29-daily-market-review-vnpy-app.md) | 把 AI 每日全市场复盘迁入 vn.py，新增独立 App/UI 和后续数据流水线任务 |
 | P30 | [30-daily-review-lhb-seat-analysis.md](30-daily-review-lhb-seat-analysis.md) | 增强每日复盘龙虎榜证据：机构/活跃营业部/疑似游资、成功率、上榜原因、买卖集中度和 AI 提示词 |
 | P31 | [31-seven-boll-scanner-tradingagents.md](31-seven-boll-scanner-tradingagents.md) | 新增七轨布林线日线指标、CTA/回测策略、全市场日线扫描、午盘预览/收盘正式触发，以及和 TradingAgents 的单点/批量分析联动 |
+| P32 | [32-concept-board-daily-refresh-ui-enhancement.md](32-concept-board-daily-refresh-ui-enhancement.md) | 补券商优先概念板块主数据、当日 DAILY 最新 K 线刷新、TradingAgents 全页面股票名称展示、七轨模糊搜索和七轨点位展示 |
 
 ## 下一步推荐
 
-1. P31 先落七轨布林线日线指标、CTA/回测策略和全市场日线扫描，再把扫描结果接到 TradingAgents 分析管理页。
+1. P32 先补券商优先概念板块主数据、当日 DAILY 最新 K 线刷新和七轨扫描 UI 可读性增强，避免 P31 扫描结果缺概念、盘中重复扫描不刷新、股票名/点位信息不足。
 2. P29 继续补每日市场复盘的完整全市场数据流水线和连续运行验证。
 3. P30 继续强化龙虎榜深度证据和 AI 提示词，让每日复盘能区分机构推动、活跃营业部推动、疑似游资接力和高集中度风险。
 4. P28 继续补完整财报入库，否则 TradingAgents 的基本面分析只能看到行情和新闻，无法稳定读取三大报表和财务指标。

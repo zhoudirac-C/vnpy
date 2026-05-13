@@ -5,6 +5,7 @@ from typing import Any
 
 from vnpy.trader.constant import Exchange, Product
 from vnpy.trader.setting import SETTINGS
+from vnpy_router.concept_storage import PeeweeConceptBoardRepository
 from vnpy_router.event_storage import PostgresEventStorage
 from vnpy_router.financial_storage import PostgresFinancialStorage
 from vnpy_router.news_entity import SecurityEntityResolver
@@ -18,6 +19,11 @@ from .financial_ingestion import (
     FinancialIngestionJob,
     FinancialIngestionScheduler,
     build_financial_ingestion_provider,
+)
+from .concept_ingestion import (
+    ConceptBoardIngestionScheduler,
+    build_concept_ingestion_service,
+    concept_schedule_times,
 )
 from .manual_analysis import ManualAnalysisRequest, ManualAnalysisResult, TradingAgentsManualAnalysisService
 from .news_ingestion import (
@@ -39,6 +45,8 @@ NewsProviderFactory = Callable[[Mapping[str, Any]], Any]
 NewsSchedulerFactory = Callable[..., Any]
 FinancialProviderFactory = Callable[[Mapping[str, Any]], Any]
 FinancialSchedulerFactory = Callable[..., Any]
+ConceptServiceFactory = Callable[..., Any]
+ConceptSchedulerFactory = Callable[..., Any]
 AkshareLoader = Callable[[], Any | None]
 
 A_SHARE_EXCHANGES: set[Exchange] = {Exchange.SSE, Exchange.SZSE, Exchange.BSE}
@@ -100,6 +108,8 @@ def configure_tradingagents_services(
     news_scheduler_factory: NewsSchedulerFactory = ExternalNewsIngestionScheduler,
     financial_provider_factory: FinancialProviderFactory = build_financial_ingestion_provider,
     financial_scheduler_factory: FinancialSchedulerFactory = FinancialIngestionScheduler,
+    concept_service_factory: ConceptServiceFactory = build_concept_ingestion_service,
+    concept_scheduler_factory: ConceptSchedulerFactory = ConceptBoardIngestionScheduler,
 ) -> bool:
     """
     Wire TradingAgents runtime services after ``TradingAgentsApp`` is added.
@@ -176,6 +186,14 @@ def configure_tradingagents_services(
             snapshot_storage=snapshot_storage,
             financial_provider_factory=financial_provider_factory,
             financial_scheduler_factory=financial_scheduler_factory,
+        )
+        _configure_concept_ingestion(
+            engine=engine,
+            main_engine=main_engine,
+            settings=source_settings,
+            connection=connection,
+            concept_service_factory=concept_service_factory,
+            concept_scheduler_factory=concept_scheduler_factory,
         )
         _configure_seven_boll_scan(
             engine=engine,
@@ -484,6 +502,54 @@ def _configure_financial_ingestion(
         write_log = getattr(main_engine, "write_log", None)
         if callable(write_log):
             write_log(f"TradingAgents 财报定时任务启动失败：{exc}")
+
+
+def _configure_concept_ingestion(
+    *,
+    engine: Any,
+    main_engine: Any,
+    settings: Mapping[str, Any],
+    connection: Any,
+    concept_service_factory: ConceptServiceFactory,
+    concept_scheduler_factory: ConceptSchedulerFactory,
+) -> None:
+    """
+    Register low-frequency concept-board ingestion.
+    """
+    try:
+        database = getattr(connection, "database", None)
+        if database is None:
+            raise RuntimeError("PostgreSQL database handle is unavailable")
+
+        repository = PeeweeConceptBoardRepository(database)
+        repository.create_schema()
+        service = concept_service_factory(repository, settings)
+        event_engine = getattr(main_engine, "event_engine", None) or getattr(
+            engine,
+            "event_engine",
+            None,
+        )
+        scheduler = concept_scheduler_factory(
+            event_engine=event_engine,
+            service=service,
+            enabled=_to_bool(settings.get("concept.ingestion.enabled", True)),
+            schedule_times=concept_schedule_times(settings),
+        )
+        scheduler.start()
+
+        set_scheduler = getattr(engine, "set_concept_ingestion_scheduler", None)
+        if callable(set_scheduler):
+            set_scheduler(scheduler)
+        else:
+            engine.concept_ingestion_scheduler = scheduler
+    except Exception as exc:
+        set_error = getattr(engine, "set_concept_ingestion_error", None)
+        if callable(set_error):
+            set_error(str(exc))
+
+        write_log = getattr(main_engine, "write_log", None)
+        if callable(write_log):
+            write_log(f"TradingAgents 概念板块定时任务启动失败：{exc}")
 
 
 def _financial_schedule_times(settings: Mapping[str, Any]) -> tuple[str, ...]:
