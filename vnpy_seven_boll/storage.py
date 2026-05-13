@@ -29,6 +29,7 @@ class PeeweeSevenBollScanRepository:
         """
         self.database.connect(reuse_if_open=True)
         self.database.create_tables([self.run_model, self.result_model], safe=True)
+        self._ensure_result_schema()
 
     def save_scan_summary(self, summary: SevenBollScanSummary, scan_type: str = "manual") -> None:
         """
@@ -36,18 +37,27 @@ class PeeweeSevenBollScanRepository:
         """
         self.database.connect(reuse_if_open=True)
         candidates = summary.all_candidates
-        self.run_model.replace(
-            scan_run_id=summary.run_id,
-            scan_type=scan_type,
-            status=summary.status,
-            started_at=summary.started_at,
-            finished_at=summary.finished_at,
-            total_symbols=summary.total_symbols,
-            scanned_symbols=summary.scanned_symbols,
-            skipped_symbols=summary.skipped_symbols,
-            buy_count=len(summary.buy_candidates),
-            sell_count=len(summary.sell_candidates),
-            errors_json=_json_dumps(summary.errors),
+        run_payload = {
+            "scan_run_id": summary.run_id,
+            "scan_type": scan_type,
+            "status": summary.status,
+            "started_at": summary.started_at,
+            "finished_at": summary.finished_at,
+            "total_symbols": summary.total_symbols,
+            "scanned_symbols": summary.scanned_symbols,
+            "skipped_symbols": summary.skipped_symbols,
+            "buy_count": len(summary.buy_candidates),
+            "sell_count": len(summary.sell_candidates),
+            "errors_json": _json_dumps(summary.errors),
+        }
+        update_payload = {
+            key: value
+            for key, value in run_payload.items()
+            if key != "scan_run_id"
+        }
+        self.run_model.insert(**run_payload).on_conflict(
+            conflict_target=[self.run_model.scan_run_id],
+            update=update_payload,
         ).execute()
 
         self.result_model.delete().where(self.result_model.scan_run_id == summary.run_id).execute()
@@ -117,6 +127,7 @@ class PeeweeSevenBollScanRepository:
             "scan_run_id": scan_run_id,
             "vt_symbol": result.vt_symbol,
             "name": result.name,
+            "concept": result.concept or None,
             "action": result.action,
             "score": result.score,
             "buy_score": result.buy_score,
@@ -140,6 +151,7 @@ class PeeweeSevenBollScanRepository:
         return SevenBollScanResult(
             vt_symbol=row.vt_symbol,
             name=row.name,
+            concept=row.concept or "",
             action=row.action,
             score=row.score,
             buy_score=row.buy_score,
@@ -157,6 +169,33 @@ class PeeweeSevenBollScanRepository:
             interval=row.interval,
             report_run_id=row.analysis_run_id or "",
         )
+
+    def _ensure_result_schema(self) -> None:
+        """
+        Add post-initial result columns without a standalone migration runner.
+        """
+        self._ensure_column("seven_boll_scan_result", "concept", "TEXT")
+
+    def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
+        try:
+            columns = self.database.get_columns(table_name)
+            if any(getattr(column, "name", "") == column_name for column in columns):
+                return
+        except Exception:
+            pass
+
+        execute_sql = getattr(self.database, "execute_sql", None)
+        if not callable(execute_sql):
+            return
+
+        try:
+            execute_sql(
+                f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {definition}'
+            )
+        except Exception as exc:
+            message = str(exc).lower()
+            if "duplicate" not in message and "already exists" not in message:
+                raise
 
 
 def _json_dumps(value: Any) -> str:

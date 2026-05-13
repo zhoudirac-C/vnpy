@@ -60,6 +60,8 @@ ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS trust_score DOUBLE PRECISIO
 ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS spam_score DOUBLE PRECISION;
 ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS dedup_window_seconds INTEGER;
 ALTER TABLE social_post_raw ADD COLUMN IF NOT EXISTS review_status TEXT;
+
+ALTER TABLE seven_boll_scan_result ADD COLUMN IF NOT EXISTS concept TEXT;
 """
 
 

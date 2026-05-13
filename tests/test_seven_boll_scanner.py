@@ -42,10 +42,46 @@ def test_scan_service_outputs_daily_candidate_fields(monkeypatch) -> None:
     result = summary.buy_candidates[0]
     assert result.vt_symbol == "600519.SSE"
     assert result.name == "贵州茅台"
+    assert result.concept == "白酒"
     assert result.action == "buy_watch"
     assert result.interval == "d"
     assert result.to_context()["interval"] == "d"
+    assert result.to_context()["concept"] == "白酒"
     assert result.signal_types == ("trend_pullback_long",)
+
+
+def test_scan_service_reports_progress_and_honors_cancel(monkeypatch) -> None:
+    from vnpy_seven_boll import scanner as module
+    from vnpy_seven_boll.scanner import (
+        SevenBollScanProgress,
+        SevenBollScanRequest,
+        SevenBollScanService,
+    )
+
+    monkeypatch.setattr(module, "calculate_seven_bollinger", lambda bars, config: [_point()])
+    monkeypatch.setattr(module, "evaluate_seven_boll_signal", lambda bars, points, config: _signal_result())
+
+    progress_events: list[SevenBollScanProgress] = []
+
+    service = SevenBollScanService(
+        FakeHistoryProvider(["600519.SSE", "000001.SZSE"]),
+        run_id_factory=lambda: "scan-progress",
+    )
+    summary = service.scan(
+        SevenBollScanRequest(),
+        progress_callback=progress_events.append,
+        cancel_requested=lambda: len(progress_events) >= 2,
+    )
+
+    assert summary.status == "cancelled"
+    assert summary.run_id == "scan-progress"
+    assert summary.total_symbols == 2
+    assert summary.scanned_symbols == 1
+    assert summary.buy_candidates[0].vt_symbol == "600519.SSE"
+    assert progress_events[0].status == "running"
+    assert progress_events[0].total_symbols == 2
+    assert progress_events[-1].status == "cancelled"
+    assert progress_events[-1].buy_count == 1
 
 
 def test_vnpy_provider_prefers_database_daily_bars() -> None:
@@ -142,14 +178,20 @@ def _bar() -> BarData:
 
 
 class FakeHistoryProvider:
+    def __init__(self, symbols: list[str] | None = None) -> None:
+        self.symbols = symbols or ["600519.SSE"]
+
     def load_symbols(self, request) -> list[str]:
-        return ["600519.SSE"]
+        return self.symbols
 
     def load_bars(self, vt_symbol: str, request) -> list[BarData]:
         return [_bar()] * 25
 
     def load_name(self, vt_symbol: str) -> str:
-        return "贵州茅台"
+        return {"600519.SSE": "贵州茅台", "000001.SZSE": "平安银行"}.get(vt_symbol, "")
+
+    def load_concept(self, vt_symbol: str) -> str:
+        return {"600519.SSE": "白酒", "000001.SZSE": "银行"}.get(vt_symbol, "")
 
 
 class FakeDatabase:

@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 from datetime import datetime
 
@@ -59,7 +59,12 @@ class TradingAgentsEngine(BaseEngine):
         """
         self.seven_boll_scan_repository = repository
 
-    def run_seven_boll_scan(self, request: Any | None = None) -> Any:
+    def run_seven_boll_scan(
+        self,
+        request: Any | None = None,
+        progress_callback: Callable[[Any], None] | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> Any:
         """
         Run a seven-boll daily scan without requiring TradingAgents AI.
         """
@@ -69,7 +74,11 @@ class TradingAgentsEngine(BaseEngine):
             from vnpy_seven_boll.scanner import SevenBollScanRequest
 
             request = SevenBollScanRequest()
-        summary = self.seven_boll_scan_service.scan(request)
+        summary = self.seven_boll_scan_service.scan(
+            request,
+            progress_callback=progress_callback,
+            cancel_requested=cancel_requested,
+        )
         if self.seven_boll_scan_repository is not None:
             save = getattr(self.seven_boll_scan_repository, "save_scan_summary", None)
             if callable(save):

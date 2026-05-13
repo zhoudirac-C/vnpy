@@ -308,6 +308,48 @@ def test_configure_tradingagents_services_keeps_news_scheduler_disabled_by_defau
     assert engine.news_ingestion_scheduler is None
 
 
+def test_configure_tradingagents_services_attaches_seven_boll_scan_service():
+    """Seven-boll manual scan button should have a scanner after app startup."""
+    from vnpy_tradingagents.bootstrap import configure_tradingagents_services
+
+    database = FakePeeweeDatabase()
+    connection = FakeConnection(database=database)
+    engine = object.__new__(TradingAgentsEngine)
+    engine.runtime = FakeRuntime()
+    engine.manual_analysis_service = None
+    engine.seven_boll_scan_service = None
+    engine.seven_boll_scan_repository = None
+    engine.set_manual_analysis_service = lambda service: setattr(
+        engine,
+        "manual_analysis_service",
+        service,
+    )
+    engine.set_seven_boll_scan_service = lambda service: setattr(
+        engine,
+        "seven_boll_scan_service",
+        service,
+    )
+    engine.set_seven_boll_scan_repository = lambda repository: setattr(
+        engine,
+        "seven_boll_scan_repository",
+        repository,
+    )
+
+    ok = configure_tradingagents_services(
+        FakeMainEngine(engine),
+        settings={"database.name": "postgresql"},
+        connection_factory=lambda settings: connection,
+        worker_factory=lambda: FakeWorker(),
+    )
+
+    assert ok
+    assert engine.seven_boll_scan_service is not None
+    assert engine.seven_boll_scan_repository is not None
+    assert database.safe is True
+    assert "seven_boll_scan_run" in database.created_table_names
+    assert "seven_boll_scan_result" in database.created_table_names
+
+
 def test_news_ingestion_symbol_plan_uses_catalog_when_manual_symbols_are_empty(tmp_path):
     """Empty symbols can slowly rotate a configured catalog instead of requiring manual input."""
     from vnpy_tradingagents.bootstrap import build_news_ingestion_symbol_plan
@@ -527,8 +569,9 @@ class FakeWorker:
 class FakeConnection:
     """Connection fake used by SQL-backed storage wrappers."""
 
-    def __init__(self) -> None:
+    def __init__(self, database=None) -> None:
         self.cursor_obj = FakeCursor()
+        self.database = database
 
     def cursor(self):
         return self.cursor_obj
@@ -553,6 +596,23 @@ class FakeCursor:
 
     def close(self) -> None:
         pass
+
+
+class FakePeeweeDatabase:
+    """Small Peewee-like database used by seven-boll repository bootstrap."""
+
+    def __init__(self) -> None:
+        self.safe = None
+        self.created_models = []
+        self.created_table_names = []
+
+    def connect(self, reuse_if_open=False) -> None:
+        self.reuse_if_open = reuse_if_open
+
+    def create_tables(self, models, safe=False) -> None:
+        self.safe = safe
+        self.created_models = list(models)
+        self.created_table_names = [model._meta.table_name for model in models]
 
 
 class FakeNewsProvider:

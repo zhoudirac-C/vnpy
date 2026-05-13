@@ -46,6 +46,7 @@ def build_seven_boll_extension_models(database: Any) -> list[type]:
         scan_run_id = TextField(index=True)
         vt_symbol = TextField(index=True)
         name = TextField()
+        concept = TextField(null=True)
         action = TextField(index=True)
         score = FloatField()
         buy_score = FloatField()

@@ -9,6 +9,7 @@ from .indicator import (
 )
 from .scanner import (
     SevenBollScanRequest,
+    SevenBollScanProgress,
     SevenBollScanResult,
     SevenBollScanService,
     SevenBollScanSummary,
@@ -28,6 +29,7 @@ __all__ = [
     "SevenBollIndicatorConfig",
     "SevenBollPoint",
     "SevenBollScanRequest",
+    "SevenBollScanProgress",
     "SevenBollScanResult",
     "SevenBollScanService",
     "SevenBollScanSummary",

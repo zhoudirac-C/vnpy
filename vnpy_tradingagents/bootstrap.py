@@ -11,6 +11,8 @@ from vnpy_router.news_entity import SecurityEntityResolver
 from vnpy_router.peewee import connect_vnpy_postgres_adapter
 from vnpy_router.security_catalog import SecurityEntityCatalog
 from vnpy_router.storage import PostgresSnapshotReader, PostgresSnapshotStorage
+from vnpy_seven_boll.scanner import SevenBollScanService, VnpySevenBollHistoryProvider
+from vnpy_seven_boll.storage import PeeweeSevenBollScanRepository
 
 from .financial_ingestion import (
     FinancialIngestionJob,
@@ -175,6 +177,12 @@ def configure_tradingagents_services(
             financial_provider_factory=financial_provider_factory,
             financial_scheduler_factory=financial_scheduler_factory,
         )
+        _configure_seven_boll_scan(
+            engine=engine,
+            main_engine=main_engine,
+            settings=source_settings,
+            connection=connection,
+        )
     except Exception as exc:
         engine.set_manual_analysis_service(
             UnavailableManualAnalysisService(
@@ -184,6 +192,48 @@ def configure_tradingagents_services(
         return False
 
     return True
+
+
+def _configure_seven_boll_scan(
+    *,
+    engine: Any,
+    main_engine: Any,
+    settings: Mapping[str, Any],
+    connection: Any,
+) -> None:
+    """
+    Attach seven-boll daily scan service and persistence for the UI.
+    """
+    provider = VnpySevenBollHistoryProvider(
+        main_engine=main_engine,
+        settings=settings,
+    )
+    service = SevenBollScanService(provider)
+
+    set_service = getattr(engine, "set_seven_boll_scan_service", None)
+    if callable(set_service):
+        set_service(service)
+    else:
+        engine.seven_boll_scan_service = service
+
+    database = getattr(connection, "database", None)
+    if database is None:
+        return
+
+    try:
+        repository = PeeweeSevenBollScanRepository(database)
+        repository.create_schema()
+    except Exception as exc:
+        write_log = getattr(main_engine, "write_log", None)
+        if callable(write_log):
+            write_log(f"七轨布林线扫描结果表初始化失败：{exc}")
+        return
+
+    set_repository = getattr(engine, "set_seven_boll_scan_repository", None)
+    if callable(set_repository):
+        set_repository(repository)
+    else:
+        engine.seven_boll_scan_repository = repository
 
 
 def build_news_ingestion_symbol_plan(

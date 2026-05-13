@@ -105,6 +105,7 @@ SETTINGS: dict = {
     "seven_boll.indicator.window": 20,
     "seven_boll.indicator.std_ma_window": 5,
     "seven_boll.indicator.squeeze_lookback": 120,
+    "seven_boll.indicator.trend_slope_window": 5,
     "seven_boll.indicator.squeeze_percentile": 10.0,
     "seven_boll.indicator.pullback_tolerance": 0.01,
     "seven_boll.indicator.volume_breakout_ratio": 1.5,

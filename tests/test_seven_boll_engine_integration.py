@@ -23,6 +23,26 @@ def test_engine_runs_seven_boll_scan_without_tradingagents_service() -> None:
     assert repository.saved == [summary]
 
 
+def test_engine_forwards_seven_boll_scan_progress_and_cancel_callbacks() -> None:
+    from vnpy_tradingagents.engine import TradingAgentsEngine
+
+    engine = TradingAgentsEngine(None, EventEngine())  # type: ignore[arg-type]
+    service = FakeScanService(_summary())
+    engine.set_seven_boll_scan_service(service)
+
+    progress_callback = object()
+    cancel_requested = object()
+    summary = engine.run_seven_boll_scan(
+        SevenBollScanRequest(symbols=("600519.SSE",)),
+        progress_callback=progress_callback,
+        cancel_requested=cancel_requested,
+    )
+
+    assert summary.run_id == "scan-1"
+    assert service.progress_callback is progress_callback
+    assert service.cancel_requested is cancel_requested
+
+
 def test_engine_loads_latest_and_history_from_seven_boll_repository() -> None:
     from vnpy_tradingagents.engine import TradingAgentsEngine
 
@@ -105,9 +125,13 @@ class FakeScanService:
         self.summary = summary
         self.requests = []
         self.latest_summary = None
+        self.progress_callback = None
+        self.cancel_requested = None
 
-    def scan(self, request):
+    def scan(self, request, progress_callback=None, cancel_requested=None):
         self.requests.append(request)
+        self.progress_callback = progress_callback
+        self.cancel_requested = cancel_requested
         self.latest_summary = self.summary
         return self.summary
 

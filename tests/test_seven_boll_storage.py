@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from peewee import SqliteDatabase
 
@@ -40,18 +41,30 @@ def test_seven_boll_storage_saves_scan_results_without_raw_bars() -> None:
     assert latest is not None
     assert latest.run_id == "run-2"
     assert latest.buy_candidates[0].interval == "d"
+    assert latest.buy_candidates[0].concept == "白酒"
     assert latest.buy_candidates[0].signal_types == ("trend_pullback_long",)
     assert [summary.run_id for summary in history] == ["run-2", "run-1"]
+    assert "concept" in repository.result_model._meta.fields
     assert set(database.get_tables()) == {
         "seven_boll_scan_run",
         "seven_boll_scan_result",
     }
 
 
+def test_seven_boll_storage_uses_postgresql_compatible_upsert() -> None:
+    """PostgreSQL does not support Peewee replace(), so run rows use on_conflict update."""
+    source = Path("vnpy_seven_boll/storage.py").read_text(encoding="utf-8")
+
+    assert ".replace(" not in source
+    assert ".on_conflict(" in source
+    assert "conflict_target=[self.run_model.scan_run_id]" in source
+
+
 def _summary(run_id: str, started_at: datetime) -> SevenBollScanSummary:
     result = SevenBollScanResult(
         vt_symbol="600519.SSE",
         name="贵州茅台",
+        concept="白酒",
         action="buy_watch",
         score=80,
         buy_score=80,
